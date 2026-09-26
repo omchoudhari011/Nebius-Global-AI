@@ -1,0 +1,9 @@
+{
+  "expo": {
+    "name": "Custodian",
+    "slug": "custodian",
+    "scheme": "custodian",
+    "platforms": ["ios", "android", "web"],
+    "web": { "bundler": "metro" }
+  }
+}
