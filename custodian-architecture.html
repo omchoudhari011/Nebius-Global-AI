@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Custodian Architecture</title>
+<meta name="description" content="How Custodian's app, orchestrator, tool gate, memory and SQLite fit together.">
+<style>:root { color-scheme: light; } body { margin: 0; }</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+    --bg: #edeff3;
+    --grid: #d9dde5;
+    --surface: #ffffff;
+    --surface-2: #f5f6f9;
+    --ink: #181b24;
+    --muted: #596073;
+    --line: #c3c9d4;
+    --line-soft: #e2e5ec;
+    --edge: #737a90;
+    --path: #2f47c4;
+    --path-ink: #ffffff;
+    --lock: #0b775b;
+    --warn: #b03d26;
+    --ok: #0b775b;
+
+    --head-ink: #12141b;
+    --z-identity: #a897fa;
+    --z-access: #efc25e;
+    --z-skills: #88b4ff;
+    --z-chat: #5ed0bc;
+    --z-memory: #f2a5be;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #121419;
+      --grid: #1f232c;
+      --surface: #1b1e27;
+      --surface-2: #171a22;
+      --ink: #e6e8ef;
+      --muted: #969db1;
+      --line: #353b4a;
+      --line-soft: #252a35;
+      --edge: #7c849b;
+      --path: #93a8ff;
+      --path-ink: #10131c;
+      --lock: #5cd1a6;
+      --warn: #ff8b70;
+      --ok: #5cd1a6;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #121419;
+    --grid: #1f232c;
+    --surface: #1b1e27;
+    --surface-2: #171a22;
+    --ink: #e6e8ef;
+    --muted: #969db1;
+    --line: #353b4a;
+    --line-soft: #252a35;
+    --edge: #7c849b;
+    --path: #93a8ff;
+    --path-ink: #10131c;
+    --lock: #5cd1a6;
+    --warn: #ff8b70;
+    --ok: #5cd1a6;
+  }
+
+  body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); }
+  .wrap {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding-inline: clamp(16px, 3vw, 28px);
+    padding-block: 36px 64px;
+    display: grid;
+    gap: 44px;
+  }
+  .wrap > * { min-width: 0; }
+  p { margin: 0; }
+  code { font: 500 .86em var(--mono); overflow-wrap: anywhere; }
+  a { color: var(--path); text-underline-offset: 2px; }
+  a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 3px; }
+  h1, h2, h3 { text-wrap: balance; margin: 0; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .xscroll { overflow-x: auto; position: relative; }
+
+  /* header */
+  .top { display: grid; gap: 10px; max-width: 860px; }
+  .eyebrow { font: 500 11px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  h1 { font: 600 32px/1.15 var(--sans); letter-spacing: -.01em; }
+  .lede { max-width: 68ch; color: var(--muted); font-size: 16px; }
+  .stack { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .stack li {
+    font: 500 12px/1 var(--mono);
+    padding: 6px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+  }
+
+  .block { display: grid; gap: 16px; }
+  .block > * { min-width: 0; }
+  h2 { font: 600 22px/1.25 var(--sans); }
+
+  /* legend */
+  .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 26px; font-size: 13px; color: var(--muted); }
+  .lg { display: inline-flex; align-items: center; gap: 8px; }
+  .lg svg { height: 20px; width: auto; overflow: visible; flex: none; }
+  .lg-groups { flex-wrap: wrap; gap: 6px 10px; }
+  .gchip { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; color: var(--ink); }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; flex: none; }
+
+  /* figures */
+  figure { margin: 0; display: grid; gap: 10px; }
+  .scroll {
+    overflow-x: auto;
+    position: relative;
+    border-radius: 12px;
+    background-color: var(--bg);
+    background-image: radial-gradient(var(--grid) 1px, transparent 1.2px);
+    background-size: 18px 18px;
+    border: 1px solid var(--line-soft);
+  }
+  figcaption { font-size: 13.5px; color: var(--muted); max-width: 92ch; }
+  #arch { display: block; width: 100%; min-width: 980px; max-width: 1136px; height: auto; margin: 0 auto; }
+  #gate { display: block; width: 100%; min-width: 900px; max-width: 1136px; height: auto; margin: 0 auto; }
+
+  /* svg parts (styled from the page; no styles inside the svg) */
+  .phone { fill: var(--surface-2); stroke: var(--line); stroke-width: 1; }
+  .screen { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+  .boundary { fill: none; stroke: var(--edge); stroke-width: 1.3; }
+  .box { fill: var(--surface); stroke: var(--line); stroke-width: 1.1; }
+  .box.core { stroke: var(--ink); stroke-width: 1.7; }
+  .box.gate { stroke: var(--ink); stroke-width: 1.2; }
+  .box.ext { stroke: var(--muted); stroke-dasharray: 5 4; }
+  .box.db { fill: var(--surface-2); }
+  .band { fill: var(--surface-2); stroke: var(--line); stroke-width: 1; }
+  .tile { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+  .check { fill: var(--surface-2); stroke: var(--line); stroke-width: 1; }
+  .pill { stroke-width: 1; }
+  .pill.bad { fill: color-mix(in srgb, var(--warn) 13%, var(--surface)); stroke: color-mix(in srgb, var(--warn) 45%, transparent); }
+  .pill.ok { fill: color-mix(in srgb, var(--ok) 13%, var(--surface)); stroke: color-mix(in srgb, var(--ok) 45%, transparent); }
+  .pill.neutral { fill: var(--surface-2); stroke: var(--line); }
+
+  .g-identity { fill: var(--z-identity); background: var(--z-identity); }
+  .g-access { fill: var(--z-access); background: var(--z-access); }
+  .g-skills { fill: var(--z-skills); background: var(--z-skills); }
+  .g-chat { fill: var(--z-chat); background: var(--z-chat); }
+  .g-memory { fill: var(--z-memory); background: var(--z-memory); }
+
+  .t-big { font: 600 17px var(--sans); fill: var(--ink); }
+  .t-title { font: 600 13.5px var(--sans); fill: var(--ink); }
+  .t-title-s { font: 600 12.5px var(--sans); fill: var(--ink); }
+  .t-sub { font: 600 12px var(--sans); fill: var(--ink); }
+  .t-body { font: 400 12px var(--sans); fill: var(--ink); }
+  .t-muted { font: 400 11px var(--sans); fill: var(--muted); }
+  .t-code { font: 400 10.5px var(--mono); fill: var(--muted); }
+  .t-code-title { font: 600 12.5px var(--mono); fill: var(--ink); }
+  .t-code-title.sm { font-size: 10.5px; }
+  .t-tag { font: 400 10px var(--mono); fill: var(--muted); letter-spacing: .04em; }
+  .t-check { font: 500 11px var(--sans); fill: var(--ink); }
+  .t-boundary { font: 500 10.5px var(--mono); fill: var(--muted); letter-spacing: .12em; }
+  .t-tile-head { font: 600 10.5px var(--sans); fill: var(--head-ink); }
+  .t-tile { font: 400 10px var(--mono); fill: var(--ink); }
+  .t-pill { font: 500 11px var(--mono); fill: var(--ink); }
+  .t-pill.bad { fill: var(--warn); }
+  .t-pill.ok { fill: var(--ok); }
+  .t-label {
+    font: 500 11px var(--sans);
+    fill: var(--muted);
+    paint-order: stroke;
+    stroke: var(--bg);
+    stroke-width: 4px;
+    stroke-linejoin: round;
+  }
+  .t-label.path { fill: var(--path); }
+  .t-label.bad { fill: var(--warn); }
+  .t-label.mono { font-family: var(--mono); font-size: 10.5px; }
+
+  .ln { fill: none; stroke: var(--edge); stroke-width: 1.4; }
+  .ln.path { stroke: var(--path); stroke-width: 1.9; }
+  .ln.bad { stroke: var(--warn); stroke-width: 1.4; }
+  .ah { fill: var(--edge); }
+  .ah.path { fill: var(--path); }
+  .ah.bad { fill: var(--warn); }
+  .num circle { fill: var(--path); }
+  .num text { font: 700 10.5px var(--sans); fill: var(--path-ink); text-anchor: middle; }
+  .gsq { stroke: color-mix(in srgb, var(--head-ink) 25%, transparent); stroke-width: .6; }
+  .lock path { fill: none; stroke: var(--lock); stroke-width: 1.3; }
+  .lock rect { fill: var(--lock); }
+
+  /* steps */
+  .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; max-width: 80ch; counter-reset: none; }
+  .steps li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; align-items: start; }
+  .n {
+    display: inline-grid; place-items: center;
+    width: 22px; height: 22px; margin-top: 1px;
+    border-radius: 50%;
+    background: var(--path); color: var(--path-ink);
+    font: 700 11.5px/1 var(--sans);
+  }
+
+  /* other paths */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 14px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px 18px;
+    display: grid;
+    gap: 10px;
+    align-content: start;
+    font-size: 14px;
+  }
+  .card h3 { font: 600 16px/1.3 var(--sans); }
+  .route { font-size: 13px; color: var(--muted); }
+  .card ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+  .card ol li::marker { font: 600 12px var(--mono); color: var(--muted); }
+
+  /* components table */
+  .comp {
+    width: 100%;
+    min-width: 860px;
+    border-collapse: collapse;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    font-size: 13.5px;
+  }
+  .comp th, .comp td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line-soft); }
+  .comp thead th {
+    font: 500 10.5px/1.4 var(--mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+  }
+  .comp tbody th { font-weight: 600; white-space: nowrap; }
+  .comp tbody tr:last-child > * { border-bottom: 0; }
+  .comp .code-cell { color: var(--muted); font-size: 12.5px; min-width: 190px; max-width: 250px; }
+  .comp .code-cell code { white-space: nowrap; overflow-wrap: normal; }
+  .comp td.groups { min-width: 160px; }
+  .comp .gwrap { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12.5px; }
+
+  .foot { font-size: 13px; color: var(--muted); max-width: 90ch; }
+
+  @media (max-width: 640px) {
+    h1 { font-size: 26px; }
+  }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">Custodian · system architecture</p>
+    <h1>Custodian Architecture</h1>
+    <p class="lede">Custodian is a single-user AI assistant that remembers things about you, uses your tools only with your permission, and runs scheduled jobs. This page shows how its parts fit together and the path a chat message takes through them.</p>
+    <ul class="stack" aria-label="Tech stack"><li>Python backend</li><li>SQLite + FTS5</li><li>APScheduler</li><li>Fernet encryption</li><li>Nebius Nemotron</li><li>Mobile app</li></ul>
+  </header>
+
+  <section class="block" aria-labelledby="f1-h">
+    <h2 id="f1-h">How the parts fit together</h2>
+    <div class="legend" aria-label="Key">
+      <span class="lg"><svg viewBox="0 0 64 20" aria-hidden="true"><path class="ln path" d="M4 10H60"/><g class="num"><circle cx="32" cy="10" r="9"/><text x="32" y="13.8">1</text></g></svg>A chat message, in order</span>
+      <span class="lg"><svg viewBox="0 0 64 20" aria-hidden="true"><path class="ln" d="M4 10H56"/><path class="ah" d="M52 6L60 10L52 14z"/></svg>Other calls</span>
+      <span class="lg"><svg viewBox="0 0 40 20" aria-hidden="true"><rect class="box ext" x="2" y="2" width="36" height="16" rx="4"/></svg>Outside the backend</span>
+      <span class="lg"><svg viewBox="0 0 16 16" aria-hidden="true"><g class="lock" transform="translate(2 2)"><path d="M3.8 5.7V3.6a2.15 2.15 0 0 1 4.3 0V5.7"/><rect x="2.2" y="5.4" width="7.5" height="5.6" rx="1.2"/></g></svg>Encrypts before saving</span>
+      <span class="lg lg-groups">Squares show the database groups a part uses: <span class="gchip"><span class="sw g-identity"></span>Identity</span><span class="gchip"><span class="sw g-access"></span>Access control</span><span class="gchip"><span class="sw g-skills"></span>Skills & scheduling</span><span class="gchip"><span class="sw g-chat"></span>Conversation</span><span class="gchip"><span class="sw g-memory"></span>Memory</span></span>
+    </div>
+    <figure>
+      <div class="scroll"><svg id="arch" viewBox="0 0 1136 968" role="img" aria-label="Custodian architecture. Your messages arrive through POST /chat and scheduled tasks come from the scheduler; both go to one orchestrator, which recalls memories, picks a skill, calls the model backend outside the backend, and sends every tool call through the tool gate. All data is stored in SQLite through app/db.py, and message text, tool arguments and results, and memories are encrypted before they are saved."><defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker><marker id="a1p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah path" d="M0 0L10 5L0 10z"/></marker><marker id="a1b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah bad" d="M0 0L10 5L0 10z"/></marker></defs><rect class="phone" x="288" y="24" width="800" height="108" rx="12"/><text class="t-sub" x="304" y="46">Mobile app</text><text class="t-tag" x="1072" y="46" text-anchor="end">your phone</text><rect class="screen" x="300" y="58" width="152" height="60" rx="8"/><text class="t-title-s" x="376" y="84" text-anchor="middle">Chat screen</text><text class="t-muted" x="376" y="102" text-anchor="middle">send messages</text><rect class="screen" x="508" y="58" width="152" height="60" rx="8"/><text class="t-title-s" x="584" y="84" text-anchor="middle">Active Context</text><text class="t-muted" x="584" y="102" text-anchor="middle">memories used</text><rect class="screen" x="924" y="58" width="152" height="60" rx="8"/><text class="t-title-s" x="1000" y="84" text-anchor="middle">Tools &amp; Data</text><text class="t-muted" x="1000" y="102" text-anchor="middle">permission switches</text><text class="t-muted" x="792" y="84" text-anchor="middle">single user</text><text class="t-tag" x="792" y="102" text-anchor="middle">session cookie</text><rect class="boundary" x="228" y="164" width="884" height="780" rx="16"/><text class="t-boundary" x="248" y="934">CUSTODIAN BACKEND · PYTHON</text><rect class="box ext" x="24" y="320" width="144" height="128" rx="8"/><text class="t-title" x="40" y="346">Model backend</text><text class="t-body" x="40" y="366">Nebius Nemotron</text><text class="t-muted" x="40" y="383">or a local stub</text><text class="t-code" x="40" y="412">MODEL_BACKEND</text><text class="t-code" x="40" y="427">NEBIUS_MODEL_ID</text><rect class="box ext" x="24" y="800" width="144" height="104" rx="8"/><text class="t-title" x="40" y="824">Eval scripts</text><text class="t-code" x="40" y="842">eval/ · offline</text><text class="t-muted" x="40" y="866">latency</text><text class="t-muted" x="40" y="881">memory recall</text><text class="t-muted" x="40" y="896">permission-block rate</text><rect class="gsq g-memory" x="148" y="810" width="8" height="8" rx="2"/><rect class="gsq g-chat" x="136" y="810" width="8" height="8" rx="2"/><rect class="box" x="288" y="216" width="384" height="56" rx="8"/><text class="t-code-title" x="480" y="240" text-anchor="middle">POST /chat</text><text class="t-muted" x="480" y="259" text-anchor="middle">message in · reply out</text><rect class="box" x="704" y="216" width="176" height="56" rx="8"/><text class="t-title" x="792" y="240" text-anchor="middle">Scheduler</text><text class="t-code" x="792" y="259" text-anchor="middle">app/scheduler.py · cron</text><rect class="gsq g-memory" x="860" y="226" width="8" height="8" rx="2"/><rect class="gsq g-chat" x="848" y="226" width="8" height="8" rx="2"/><rect class="gsq g-skills" x="836" y="226" width="8" height="8" rx="2"/><rect class="box" x="912" y="216" width="176" height="56" rx="8"/><text class="t-code-title sm" x="1000" y="240" text-anchor="middle">POST /permissions/{toolId}</text><text class="t-muted" x="1000" y="259" text-anchor="middle">Tools &amp; Data switch</text><rect class="box core" x="288" y="320" width="384" height="144" rx="8"/><text class="t-big" x="308" y="350">Orchestrator</text><text class="t-code" x="308" y="371">orchestrator.handle()</text><text class="t-body" x="308" y="398">One agent loop for every chat</text><text class="t-body" x="308" y="416">and every scheduled task.</text><text class="t-muted" x="308" y="444">saves each turn · links recalled memories</text><rect class="gsq g-memory" x="652" y="330" width="8" height="8" rx="2"/><rect class="gsq g-chat" x="640" y="330" width="8" height="8" rx="2"/><rect class="gsq g-skills" x="628" y="330" width="8" height="8" rx="2"/><g class="lock" transform="translate(612 328)"><path d="M3.8 5.7V3.6a2.15 2.15 0 0 1 4.3 0V5.7"/><rect x="2.2" y="5.4" width="7.5" height="5.6" rx="1.2"/></g><rect class="box" x="912" y="320" width="176" height="104" rx="8"/><text class="t-title" x="928" y="346">Permissions</text><text class="t-code" x="928" y="366">grant() · revoke()</text><text class="t-code" x="928" y="382">check()</text><text class="t-muted" x="928" y="406">one switch per tool action</text><rect class="gsq g-access" x="1068" y="330" width="8" height="8" rx="2"/><rect class="box" x="288" y="536" width="176" height="112" rx="8"/><text class="t-title" x="304" y="562">Memory</text><text class="t-code" x="304" y="581">recall() · write()</text><text class="t-body" x="304" y="606">encrypted facts</text><text class="t-muted" x="304" y="623">+ FTS5 search index</text><rect class="gsq g-memory" x="444" y="546" width="8" height="8" rx="2"/><g class="lock" transform="translate(428 544)"><path d="M3.8 5.7V3.6a2.15 2.15 0 0 1 4.3 0V5.7"/><rect x="2.2" y="5.4" width="7.5" height="5.6" rx="1.2"/></g><rect class="box" x="496" y="536" width="176" height="112" rx="8"/><text class="t-title" x="512" y="562">Skills</text><text class="t-code" x="512" y="581">load_skill(name)</text><text class="t-body" x="512" y="606">versioned prompt</text><text class="t-muted" x="512" y="623">templates</text><rect class="gsq g-skills" x="652" y="546" width="8" height="8" rx="2"/><rect class="box gate" x="704" y="536" width="176" height="144" rx="8"/><text class="t-title" x="720" y="562">Tool gate</text><text class="t-code" x="720" y="581">app/tools/sandbox.py</text><rect class="check" x="720" y="594" width="144" height="20" rx="10"/><text class="t-check" x="792" y="608" text-anchor="middle">args valid?</text><rect class="check" x="720" y="620" width="144" height="20" rx="10"/><text class="t-check" x="792" y="634" text-anchor="middle">your switch on?</text><rect class="check" x="720" y="646" width="144" height="20" rx="10"/><text class="t-check" x="792" y="660" text-anchor="middle">skill allows it?</text><rect class="gsq g-chat" x="860" y="546" width="8" height="8" rx="2"/><rect class="gsq g-skills" x="848" y="546" width="8" height="8" rx="2"/><rect class="gsq g-access" x="836" y="546" width="8" height="8" rx="2"/><g class="lock" transform="translate(820 544)"><path d="M3.8 5.7V3.6a2.15 2.15 0 0 1 4.3 0V5.7"/><rect x="2.2" y="5.4" width="7.5" height="5.6" rx="1.2"/></g><rect class="box" x="912" y="536" width="176" height="112" rx="8"/><text class="t-title" x="928" y="562">Tools</text><text class="t-code" x="928" y="581">calendar · notes</text><text class="t-muted" x="928" y="606">runs in sandbox,</text><text class="t-muted" x="928" y="623">openshell or nemoclaw</text><rect class="band" x="288" y="712" width="384" height="48" rx="8"/><text class="t-code-title" x="304" y="733">app/db.py</text><text class="t-muted" x="304" y="750">SQL for every part above · foreign keys on</text><rect class="band" x="704" y="712" width="384" height="48" rx="8"/><g class="lock" transform="translate(720 723)"><path d="M3.8 5.7V3.6a2.15 2.15 0 0 1 4.3 0V5.7"/><rect x="2.2" y="5.4" width="7.5" height="5.6" rx="1.2"/></g><text class="t-code-title" x="738" y="733">app/crypto.py · Fernet</text><text class="t-muted" x="720" y="750">encrypts 4 columns before they are saved</text><rect class="box db" x="288" y="792" width="800" height="128" rx="8"/><text class="t-title" x="304" y="814">SQLite</text><text class="t-code" x="360" y="814">backend/schema.sql · 15 tables in 5 groups · triggers · FTS5 index</text><rect class="tile" x="304" y="828" width="144" height="80" rx="6"/><path class="g-identity" d="M304 848V834a6 6 0 0 1 6-6H442a6 6 0 0 1 6 6V848Z"/><text class="t-tile-head" x="312" y="842">Identity</text><text class="t-tile" x="312" y="862">users</text><rect class="tile" x="460" y="828" width="144" height="80" rx="6"/><path class="g-access" d="M460 848V834a6 6 0 0 1 6-6H598a6 6 0 0 1 6 6V848Z"/><text class="t-tile-head" x="468" y="842">Access control</text><text class="t-tile" x="468" y="862">tools</text><text class="t-tile" x="468" y="875">tool_scopes</text><text class="t-tile" x="468" y="888">permissions</text><text class="t-tile" x="468" y="901">permission_events</text><rect class="tile" x="616" y="828" width="144" height="80" rx="6"/><path class="g-skills" d="M616 848V834a6 6 0 0 1 6-6H754a6 6 0 0 1 6 6V848Z"/><text class="t-tile-head" x="624" y="842">Skills &amp; scheduling</text><text class="t-tile" x="624" y="862">skills</text><text class="t-tile" x="624" y="875">skill_tools</text><text class="t-tile" x="624" y="888">tasks</text><text class="t-tile" x="624" y="901">task_runs</text><rect class="tile" x="772" y="828" width="144" height="80" rx="6"/><path class="g-chat" d="M772 848V834a6 6 0 0 1 6-6H910a6 6 0 0 1 6 6V848Z"/><text class="t-tile-head" x="780" y="842">Conversation</text><text class="t-tile" x="780" y="862">conversations</text><text class="t-tile" x="780" y="875">messages</text><g class="lock" transform="translate(833 866) scale(0.85)"><path d="M3.8 5.7V3.6a2.15 2.15 0 0 1 4.3 0V5.7"/><rect x="2.2" y="5.4" width="7.5" height="5.6" rx="1.2"/></g><text class="t-tile" x="780" y="888">tool_calls</text><g class="lock" transform="translate(845 879) scale(0.85)"><path d="M3.8 5.7V3.6a2.15 2.15 0 0 1 4.3 0V5.7"/><rect x="2.2" y="5.4" width="7.5" height="5.6" rx="1.2"/></g><rect class="tile" x="928" y="828" width="144" height="80" rx="6"/><path class="g-memory" d="M928 848V834a6 6 0 0 1 6-6H1066a6 6 0 0 1 6 6V848Z"/><text class="t-tile-head" x="936" y="842">Memory</text><text class="t-tile" x="936" y="862">memories</text><g class="lock" transform="translate(989 853) scale(0.85)"><path d="M3.8 5.7V3.6a2.15 2.15 0 0 1 4.3 0V5.7"/><rect x="2.2" y="5.4" width="7.5" height="5.6" rx="1.2"/></g><text class="t-tile" x="936" y="875">memories_fts</text><text class="t-tile" x="936" y="888">message_memories</text><path class="ln path" d="M352 118V216" marker-end="url(#a1p)"/><g class="num"><circle cx="352" cy="150" r="9"/><text x="352" y="153.8">1</text></g><text class="t-label path" x="338" y="154" text-anchor="end">your message</text><path class="ln path" d="M400 216V118" marker-end="url(#a1p)"/><g class="num"><circle cx="400" cy="150" r="9"/><text x="400" y="153.8">7</text></g><text class="t-label path" x="414" y="154">reply</text><path class="ln path" d="M584 216V118" marker-end="url(#a1p)"/><text class="t-label path" x="598" y="154">used.memories</text><path class="ln" d="M1000 118V216" marker-end="url(#a1)"/><text class="t-label" x="1014" y="154">flip a switch</text><path class="ln path" d="M440 272V320" marker-end="url(#a1p)"/><text class="t-label path mono" x="432" y="300" text-anchor="end">handle()</text><path class="ln path" d="M520 320V272" marker-end="url(#a1p)"/><text class="t-label path" x="528" y="300">reply + used</text><path class="ln" d="M792 272V352H672" marker-end="url(#a1)"/><text class="t-label" x="732" y="344" text-anchor="middle">fires a task</text><text class="t-label" x="732" y="369" text-anchor="middle">no user message</text><path class="ln" d="M1000 272V320" marker-end="url(#a1)"/><text class="t-label" x="1012" y="300">grant / revoke</text><path class="ln path" d="M288 372H168" marker-end="url(#a1p)"/><g class="num"><circle cx="276" cy="372" r="9"/><text x="276" y="375.8">4</text></g><text class="t-label path" x="214" y="362" text-anchor="middle">history + prompt</text><path class="ln path" d="M168 404H288" marker-end="url(#a1p)"/><text class="t-label path" x="220" y="421" text-anchor="middle">reply + tool calls</text><path class="ln path" d="M376 464V536" marker-end="url(#a1p)" marker-start="url(#a1p)"/><g class="num"><circle cx="376" cy="488" r="9"/><text x="376" y="491.8">2</text></g><g class="num"><circle cx="376" cy="512" r="9"/><text x="376" y="515.8">6</text></g><text class="t-label path" x="392" y="492">recall</text><text class="t-label path" x="392" y="516">save new facts</text><path class="ln path" d="M584 464V536" marker-end="url(#a1p)"/><g class="num"><circle cx="584" cy="500" r="9"/><text x="584" y="503.8">3</text></g><text class="t-label path" x="600" y="504">pick by keyword</text><path class="ln path" d="M672 432H752V536" marker-end="url(#a1p)"/><g class="num"><circle cx="752" cy="500" r="9"/><text x="752" y="503.8">5</text></g><text class="t-label path" x="766" y="470">tool call</text><path class="ln path" d="M832 536V408H672" marker-end="url(#a1p)"/><text class="t-label path" x="820" y="522" text-anchor="end">result</text><path class="ln" d="M868 536V480H1000V424" marker-end="url(#a1)"/><text class="t-label mono" x="934" y="472" text-anchor="middle">check()</text><path class="ln" d="M880 600H912" marker-end="url(#a1)"/><text class="t-label" x="896" y="592" text-anchor="middle">run</text><path class="ln" d="M480 760V792" marker-end="url(#a1)" marker-start="url(#a1)"/><text class="t-label" x="492" y="781">SQL</text><path class="ln" d="M896 760V792" marker-end="url(#a1)"/><text class="t-label" x="908" y="781">ciphertext</text><path class="ln" d="M288 872H168" marker-end="url(#a1)"/><text class="t-label" x="228" y="864" text-anchor="middle">reads</text><path class="ln" d="M168 816H248V592H288" marker-end="url(#a1)"/><text class="t-label" x="208" y="790" text-anchor="middle">seeds test</text><text class="t-label" x="208" y="803" text-anchor="middle">memories</text></svg></div>
+      <figcaption>Work comes in two ways: your messages through <code>POST /chat</code>, and scheduled tasks from the scheduler. Both go to one orchestrator. The blue numbered arrows follow a chat message from start to finish. The model backend is the one part that sits outside the backend. Every tool call has to pass the tool gate, and private text is encrypted before it reaches SQLite.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block" aria-labelledby="steps-h">
+    <h2 id="steps-h">A chat message, step by step</h2>
+    <ol class="steps"><li><span class="n">1</span><p>Your message arrives through <code>POST /chat</code>. The orchestrator opens a <code>chat</code> thread in <code>conversations</code> (for a new chat) and saves your text in <code>messages</code>.</p></li><li><span class="n">2</span><p><code>memory.recall()</code> searches the FTS5 index <code>memories_fts</code>, reads the matching <code>memories</code>, and links them to the reply in <code>message_memories</code>.</p></li><li><span class="n">3</span><p>The orchestrator picks a skill from <code>skills</code> by keyword. Its prompt template shapes the model call.</p></li><li><span class="n">4</span><p>The model backend gets the conversation history and the prompt, and returns a reply that may propose tool calls. The reply is saved in <code>messages</code> with its <code>skill_id</code>.</p></li><li><span class="n">5</span><p>Each proposed tool call goes through the tool gate. Its result comes back as a <code>tool</code> message.</p></li><li><span class="n">6</span><p>The final reply is saved in <code>messages</code>, and new facts go to <code>memories</code> (encrypted) and <code>memories_fts</code> (the search index).</p></li><li><span class="n">7</span><p>The reply and the list of memories used go back to the app: the chat screen and the Active Context rail.</p></li></ol>
+  </section>
+
+  <section class="block" aria-labelledby="paths-h">
+    <h2 id="paths-h">Two more paths</h2>
+    <div class="cards"><article class="card"><h3>A scheduled task</h3><p class="route"><code>app/scheduler.py</code>, at each task's cron time</p><ol><li>Inserts a <code>task_runs</code> row with status <code>running</code>.</li><li>Opens a <code>conversations</code> row with channel <code>task</code> and runs the same orchestrator steps as a chat, with no user message.</li><li>Marks the run <code>succeeded</code> or <code>failed</code> and writes the next time to <code>tasks.next_run_at</code>.</li></ol><p class="muted small">Each task runs one pinned skill version, so its <code>skill_tools</code> list limits what the run may do. Only one run per task can be in progress.</p></article><article class="card"><h3>A permission switch</h3><p class="route">Tools &amp; Data screen → <code>POST /permissions/{toolId}</code></p><ol><li><code>permissions.grant()</code> or <code>revoke()</code> creates or updates the <code>permissions</code> row.</li><li>A database trigger appends the change to <code>permission_events</code>.</li></ol><p class="muted small">Every switch starts off (<code>granted = 0</code>), so nothing is allowed until you turn it on.</p></article></div>
+  </section>
+
+  <section class="block" aria-labelledby="f2-h">
+    <h2 id="f2-h">Inside the tool gate</h2>
+    <figure>
+      <div class="scroll"><svg id="gate" viewBox="0 0 1136 256" role="img" aria-label="The tool gate. The sandbox logs every proposed tool call in tool_calls, then checks that the arguments are valid (otherwise rejected) and that the call is allowed: tool enabled, your switch on and the skill lists it (otherwise denied). Only then does it run the tool, which ends as succeeded, failed or timed_out; the result goes back to the model as a tool message."><defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker><marker id="a2p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah path" d="M0 0L10 5L0 10z"/></marker><marker id="a2b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah bad" d="M0 0L10 5L0 10z"/></marker></defs><rect class="box" x="24" y="64" width="140" height="64" rx="8"/><text class="t-title-s" x="94" y="92" text-anchor="middle">Model proposes</text><text class="t-body" x="94" y="110" text-anchor="middle">a tool call</text><path class="ln path" d="M164 96H204" marker-end="url(#a2p)"/><rect class="box" x="204" y="64" width="150" height="64" rx="8"/><text class="t-title-s" x="279" y="88" text-anchor="middle">Sandbox logs it</text><text class="t-code" x="279" y="105" text-anchor="middle">new tool_calls row</text><text class="t-muted" x="279" y="120" text-anchor="middle">every attempt</text><path class="ln path" d="M354 96H394" marker-end="url(#a2p)"/><polygon class="box" points="394,96 466,56 538,96 466,136"/><text class="t-title-s" x="466" y="100" text-anchor="middle">Args valid?</text><path class="ln path" d="M538 96H578" marker-end="url(#a2p)"/><text class="t-label path" x="558" y="88" text-anchor="middle">yes</text><text class="t-muted" x="650" y="28" text-anchor="middle">tool enabled · your switch on · skill lists it</text><text class="t-code" x="650" y="44" text-anchor="middle">tools.enabled · permissions · skill_tools</text><polygon class="box" points="578,96 650,56 722,96 650,136"/><text class="t-title-s" x="650" y="100" text-anchor="middle">Allowed?</text><path class="ln path" d="M722 96H762" marker-end="url(#a2p)"/><text class="t-label path" x="742" y="88" text-anchor="middle">yes</text><rect class="box" x="762" y="64" width="150" height="64" rx="8"/><text class="t-title-s" x="837" y="88" text-anchor="middle">Run the tool</text><text class="t-code" x="837" y="105" text-anchor="middle">status: running</text><text class="t-muted" x="837" y="120" text-anchor="middle">runner: tools.executor</text><path class="ln path" d="M912 96H952" marker-end="url(#a2p)"/><rect class="box" x="952" y="64" width="160" height="64" rx="8"/><text class="t-title-s" x="1032" y="88" text-anchor="middle">Result returned</text><text class="t-body" x="1032" y="105" text-anchor="middle">as a tool message</text><text class="t-muted" x="1032" y="120" text-anchor="middle">result stored encrypted</text><path class="ln bad" d="M466 136V192" marker-end="url(#a2b)"/><text class="t-label bad" x="476" y="168">no</text><rect class="pill bad" x="426" y="192" width="80" height="26" rx="13"/><text class="t-pill bad" x="466" y="209" text-anchor="middle">rejected</text><text class="t-muted" x="466" y="238" text-anchor="middle">bad arguments</text><path class="ln bad" d="M650 136V192" marker-end="url(#a2b)"/><text class="t-label bad" x="660" y="168">no</text><rect class="pill bad" x="614" y="192" width="72" height="26" rx="13"/><text class="t-pill bad" x="650" y="209" text-anchor="middle">denied</text><text class="t-muted" x="650" y="238" text-anchor="middle">not allowed</text><path class="ln" d="M837 128V192" marker-end="url(#a1)"/><text class="t-label" x="847" y="168">ends as</text><rect class="pill ok" x="728" y="192" width="75" height="26" rx="13"/><text class="t-pill ok" x="765.5" y="209" text-anchor="middle">succeeded</text><rect class="pill neutral" x="809" y="192" width="56" height="26" rx="13"/><text class="t-pill neutral" x="837.0" y="209" text-anchor="middle">failed</text><rect class="pill neutral" x="871" y="192" width="75" height="26" rx="13"/><text class="t-pill neutral" x="908.5" y="209" text-anchor="middle">timed_out</text><text class="t-muted" x="837" y="238" text-anchor="middle">outcome saved on the same row</text></svg></div>
+      <figcaption>What happens to one proposed tool call. The sandbox logs the call before any check, so blocked attempts are recorded too. The status, error, timing and encrypted result are all written to that same <code>tool_calls</code> row.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block" aria-labelledby="comp-h">
+    <h2 id="comp-h">Components</h2>
+    <div class="xscroll">
+      <table class="comp">
+        <thead><tr><th scope="col">Part</th><th scope="col">Code</th><th scope="col">What it does</th><th scope="col">Database groups</th></tr></thead>
+        <tbody><tr><th scope="row">Mobile app</th><td class="code-cell">chat screen, Active Context rail, Tools &amp; Data screen</td><td>Where you chat, see which memories a reply used, and switch tool permissions on or off.</td><td class="groups"><div class="gwrap"><span class="muted">none</span></div></td></tr><tr><th scope="row">POST /chat</th><td class="code-cell">API endpoint</td><td>Takes your message and returns the reply with the <code>used</code> list.</td><td class="groups"><div class="gwrap"><span class="muted">none</span></div></td></tr><tr><th scope="row">POST /permissions/{toolId}</th><td class="code-cell">API endpoint</td><td>Flips one switch by running <code>permissions.grant()</code> or <code>revoke()</code>.</td><td class="groups"><div class="gwrap"><span class="muted">none</span></div></td></tr><tr><th scope="row">Scheduler</th><td class="code-cell"><code>app/scheduler.py</code> · APScheduler</td><td>Registers active tasks on startup, runs each one at its cron time, records <code>task_runs</code>, and deletes expired memories.</td><td class="groups"><div class="gwrap"><span class="gchip"><span class="sw g-skills"></span>Skills & scheduling</span><span class="gchip"><span class="sw g-chat"></span>Conversation</span><span class="gchip"><span class="sw g-memory"></span>Memory</span></div></td></tr><tr><th scope="row">Orchestrator</th><td class="code-cell"><code>orchestrator.handle()</code></td><td>The agent loop behind every chat and task: saves each turn, recalls memories, picks a skill, calls the model, sends tool calls to the gate, and saves the reply.</td><td class="groups"><div class="gwrap"><span class="gchip"><span class="sw g-skills"></span>Skills & scheduling</span><span class="gchip"><span class="sw g-chat"></span>Conversation</span><span class="gchip"><span class="sw g-memory"></span>Memory</span></div></td></tr><tr><th scope="row">Model backend</th><td class="code-cell">stub or Nebius Nemotron · <code>MODEL_BACKEND</code>, <code>NEBIUS_MODEL_ID</code></td><td>Writes each reply and proposes tool calls. It saves nothing itself.</td><td class="groups"><div class="gwrap"><span class="muted">none</span></div></td></tr><tr><th scope="row">Memory</th><td class="code-cell"><code>memory.recall()</code> · <code>memory.write()</code></td><td>Keyword search over your memories, and encrypted storage of new ones plus their search copy.</td><td class="groups"><div class="gwrap"><span class="gchip"><span class="sw g-memory"></span>Memory</span></div></td></tr><tr><th scope="row">Skills</th><td class="code-cell"><code>skills.load_skill(name)</code></td><td>Returns the highest active version of a prompt template. Saved versions can't be edited.</td><td class="groups"><div class="gwrap"><span class="gchip"><span class="sw g-skills"></span>Skills & scheduling</span></div></td></tr><tr><th scope="row">Tool gate</th><td class="code-cell"><code>app/tools/sandbox.py</code></td><td>Logs every proposed call, validates arguments, checks your switch and the skill's allowlist, runs the tool, and records the outcome.</td><td class="groups"><div class="gwrap"><span class="gchip"><span class="sw g-access"></span>Access control</span><span class="gchip"><span class="sw g-skills"></span>Skills & scheduling</span><span class="gchip"><span class="sw g-chat"></span>Conversation</span></div></td></tr><tr><th scope="row">Tools</th><td class="code-cell"><code>app/tools/</code> · calendar, notes</td><td>Run by the sandbox with the runner named in <code>tools.executor</code>: <code>sandbox</code>, <code>openshell</code> or <code>nemoclaw</code>.</td><td class="groups"><div class="gwrap"><span class="muted">none</span></div></td></tr><tr><th scope="row">Permissions</th><td class="code-cell"><code>permissions.grant()</code> · <code>revoke()</code> · <code>check()</code></td><td>Stores your on/off switch for each tool action; <code>check()</code> runs right before every tool call.</td><td class="groups"><div class="gwrap"><span class="gchip"><span class="sw g-access"></span>Access control</span></div></td></tr><tr><th scope="row">Crypto</th><td class="code-cell"><code>app/crypto.py</code> · Fernet, <code>APP_SECRET_KEY</code></td><td>Encrypts <code>messages.content</code>, <code>tool_calls.args</code>, <code>tool_calls.result</code> and <code>memories.content</code> before they are saved.</td><td class="groups"><div class="gwrap"><span class="muted">none</span></div></td></tr><tr><th scope="row">Database access</th><td class="code-cell"><code>app/db.py</code></td><td>Opens every database connection with foreign keys turned on.</td><td class="groups"><div class="gwrap"><span class="muted">none</span></div></td></tr><tr><th scope="row">SQLite</th><td class="code-cell"><code>backend/schema.sql</code></td><td>15 tables in 5 groups. Triggers log permission changes, keep <code>memories.updated_at</code> current, delete search copies, and block edits to saved skills.</td><td class="groups"><div class="gwrap"><span class="gchip"><span class="sw g-identity"></span>Identity</span><span class="gchip"><span class="sw g-access"></span>Access control</span><span class="gchip"><span class="sw g-skills"></span>Skills & scheduling</span><span class="gchip"><span class="sw g-chat"></span>Conversation</span><span class="gchip"><span class="sw g-memory"></span>Memory</span></div></td></tr><tr><th scope="row">Eval scripts</th><td class="code-cell"><code>eval/</code> · offline</td><td><code>memory_recall_eval.py</code> seeds test memories through <code>memory.write()</code>; <code>latency_eval.py</code> reads <code>latency_ms</code>; <code>tool_calls</code> feeds the permission-block rate in <code>eval/results.md</code>.</td><td class="groups"><div class="gwrap"><span class="gchip"><span class="sw g-chat"></span>Conversation</span><span class="gchip"><span class="sw g-memory"></span>Memory</span></div></td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <p class="foot">Based on the Custodian Database Guide. Most backend modules are still stubs, so this is the design the plan describes (<code>docs/PLAN.md</code>). For every table and column, see <a href="https://claude.ai/artifact/LjEK3mwcdVgSUWqz9zdW53">Custodian Schema</a>.</p>
+</div>
+</body>
+</html>
