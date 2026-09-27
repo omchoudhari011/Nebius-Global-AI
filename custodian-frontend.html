@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Custodian Frontend</title>
+<meta name="description" content="How the Custodian Expo app is built: routes, screens, components, state, API calls and gaps.">
+<style>:root { color-scheme: light; } body { margin: 0; }</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+    --bg: #edeff3;
+    --grid: #d9dde5;
+    --surface: #ffffff;
+    --surface-2: #f5f6f9;
+    --ink: #181b24;
+    --muted: #596073;
+    --line: #c3c9d4;
+    --line-soft: #e2e5ec;
+    --edge: #737a90;
+    --path: #2f47c4;
+    --path-ink: #ffffff;
+    --lock: #0b775b;
+    --warn: #b03d26;
+    --ok: #0b775b;
+
+    --head-ink: #12141b;
+    --z-identity: #a897fa;
+    --z-access: #efc25e;
+    --z-skills: #88b4ff;
+    --z-chat: #5ed0bc;
+    --z-memory: #f2a5be;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #121419;
+      --grid: #1f232c;
+      --surface: #1b1e27;
+      --surface-2: #171a22;
+      --ink: #e6e8ef;
+      --muted: #969db1;
+      --line: #353b4a;
+      --line-soft: #252a35;
+      --edge: #7c849b;
+      --path: #93a8ff;
+      --path-ink: #10131c;
+      --lock: #5cd1a6;
+      --warn: #ff8b70;
+      --ok: #5cd1a6;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #121419;
+    --grid: #1f232c;
+    --surface: #1b1e27;
+    --surface-2: #171a22;
+    --ink: #e6e8ef;
+    --muted: #969db1;
+    --line: #353b4a;
+    --line-soft: #252a35;
+    --edge: #7c849b;
+    --path: #93a8ff;
+    --path-ink: #10131c;
+    --lock: #5cd1a6;
+    --warn: #ff8b70;
+    --ok: #5cd1a6;
+  }
+
+  body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); }
+  .wrap {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding-inline: clamp(16px, 3vw, 28px);
+    padding-block: 36px 64px;
+    display: grid;
+    gap: 44px;
+  }
+  .wrap > * { min-width: 0; }
+  p { margin: 0; }
+  code { font: 500 .86em var(--mono); overflow-wrap: anywhere; }
+  a { color: var(--path); text-underline-offset: 2px; }
+  a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 3px; }
+  h1, h2, h3 { text-wrap: balance; margin: 0; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .xscroll { overflow-x: auto; position: relative; }
+
+  /* header */
+  .top { display: grid; gap: 10px; max-width: 860px; }
+  .eyebrow { font: 500 11px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  h1 { font: 600 32px/1.15 var(--sans); letter-spacing: -.01em; }
+  .lede { max-width: 68ch; color: var(--muted); font-size: 16px; }
+  .stack { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .stack li {
+    font: 500 12px/1 var(--mono);
+    padding: 6px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+  }
+
+  .block { display: grid; gap: 16px; }
+  .block > * { min-width: 0; }
+  h2 { font: 600 22px/1.25 var(--sans); }
+
+  /* legend */
+  .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 26px; font-size: 13px; color: var(--muted); }
+  .lg { display: inline-flex; align-items: center; gap: 8px; }
+  .lg svg { height: 20px; width: auto; overflow: visible; flex: none; }
+  .lg-groups { flex-wrap: wrap; gap: 6px 10px; }
+  .gchip { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; color: var(--ink); }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; flex: none; }
+
+  /* figures */
+  figure { margin: 0; display: grid; gap: 10px; }
+  .scroll {
+    overflow-x: auto;
+    position: relative;
+    border-radius: 12px;
+    background-color: var(--bg);
+    background-image: radial-gradient(var(--grid) 1px, transparent 1.2px);
+    background-size: 18px 18px;
+    border: 1px solid var(--line-soft);
+  }
+  figcaption { font-size: 13.5px; color: var(--muted); max-width: 92ch; }
+  #arch { display: block; width: 100%; min-width: 980px; max-width: 1136px; height: auto; margin: 0 auto; }
+  #gate { display: block; width: 100%; min-width: 900px; max-width: 1136px; height: auto; margin: 0 auto; }
+
+  /* svg parts (styled from the page; no styles inside the svg) */
+  .phone { fill: var(--surface-2); stroke: var(--line); stroke-width: 1; }
+  .screen { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+  .boundary { fill: none; stroke: var(--edge); stroke-width: 1.3; }
+  .box { fill: var(--surface); stroke: var(--line); stroke-width: 1.1; }
+  .box.core { stroke: var(--ink); stroke-width: 1.7; }
+  .box.gate { stroke: var(--ink); stroke-width: 1.2; }
+  .box.ext { stroke: var(--muted); stroke-dasharray: 5 4; }
+  .box.db { fill: var(--surface-2); }
+  .band { fill: var(--surface-2); stroke: var(--line); stroke-width: 1; }
+  .tile { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+  .check { fill: var(--surface-2); stroke: var(--line); stroke-width: 1; }
+  .pill { stroke-width: 1; }
+  .pill.bad { fill: color-mix(in srgb, var(--warn) 13%, var(--surface)); stroke: color-mix(in srgb, var(--warn) 45%, transparent); }
+  .pill.ok { fill: color-mix(in srgb, var(--ok) 13%, var(--surface)); stroke: color-mix(in srgb, var(--ok) 45%, transparent); }
+  .pill.neutral { fill: var(--surface-2); stroke: var(--line); }
+
+  .g-identity { fill: var(--z-identity); background: var(--z-identity); }
+  .g-access { fill: var(--z-access); background: var(--z-access); }
+  .g-skills { fill: var(--z-skills); background: var(--z-skills); }
+  .g-chat { fill: var(--z-chat); background: var(--z-chat); }
+  .g-memory { fill: var(--z-memory); background: var(--z-memory); }
+
+  .t-big { font: 600 17px var(--sans); fill: var(--ink); }
+  .t-title { font: 600 13.5px var(--sans); fill: var(--ink); }
+  .t-title-s { font: 600 12.5px var(--sans); fill: var(--ink); }
+  .t-sub { font: 600 12px var(--sans); fill: var(--ink); }
+  .t-body { font: 400 12px var(--sans); fill: var(--ink); }
+  .t-muted { font: 400 11px var(--sans); fill: var(--muted); }
+  .t-code { font: 400 10.5px var(--mono); fill: var(--muted); }
+  .t-code-title { font: 600 12.5px var(--mono); fill: var(--ink); }
+  .t-code-title.sm { font-size: 10.5px; }
+  .t-tag { font: 400 10px var(--mono); fill: var(--muted); letter-spacing: .04em; }
+  .t-check { font: 500 11px var(--sans); fill: var(--ink); }
+  .t-boundary { font: 500 10.5px var(--mono); fill: var(--muted); letter-spacing: .12em; }
+  .t-tile-head { font: 600 10.5px var(--sans); fill: var(--head-ink); }
+  .t-tile { font: 400 10px var(--mono); fill: var(--ink); }
+  .t-pill { font: 500 11px var(--mono); fill: var(--ink); }
+  .t-pill.bad { fill: var(--warn); }
+  .t-pill.ok { fill: var(--ok); }
+  .t-label {
+    font: 500 11px var(--sans);
+    fill: var(--muted);
+    paint-order: stroke;
+    stroke: var(--bg);
+    stroke-width: 4px;
+    stroke-linejoin: round;
+  }
+  .t-label.path { fill: var(--path); }
+  .t-label.bad { fill: var(--warn); }
+  .t-label.mono { font-family: var(--mono); font-size: 10.5px; }
+
+  .ln { fill: none; stroke: var(--edge); stroke-width: 1.4; }
+  .ln.path { stroke: var(--path); stroke-width: 1.9; }
+  .ln.bad { stroke: var(--warn); stroke-width: 1.4; }
+  .ah { fill: var(--edge); }
+  .ah.path { fill: var(--path); }
+  .ah.bad { fill: var(--warn); }
+  .num circle { fill: var(--path); }
+  .num text { font: 700 10.5px var(--sans); fill: var(--path-ink); text-anchor: middle; }
+  .gsq { stroke: color-mix(in srgb, var(--head-ink) 25%, transparent); stroke-width: .6; }
+  .lock path { fill: none; stroke: var(--lock); stroke-width: 1.3; }
+  .lock rect { fill: var(--lock); }
+
+  /* steps */
+  .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; max-width: 80ch; counter-reset: none; }
+  .steps li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; align-items: start; }
+  .n {
+    display: inline-grid; place-items: center;
+    width: 22px; height: 22px; margin-top: 1px;
+    border-radius: 50%;
+    background: var(--path); color: var(--path-ink);
+    font: 700 11.5px/1 var(--sans);
+  }
+
+  /* other paths */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 14px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px 18px;
+    display: grid;
+    gap: 10px;
+    align-content: start;
+    font-size: 14px;
+  }
+  .card h3 { font: 600 16px/1.3 var(--sans); }
+  .route { font-size: 13px; color: var(--muted); }
+  .card ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+  .card ol li::marker { font: 600 12px var(--mono); color: var(--muted); }
+
+  /* components table */
+  .comp {
+    width: 100%;
+    min-width: 860px;
+    border-collapse: collapse;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    font-size: 13.5px;
+  }
+  .comp th, .comp td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line-soft); }
+  .comp thead th {
+    font: 500 10.5px/1.4 var(--mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+  }
+  .comp tbody th { font-weight: 600; white-space: nowrap; }
+  .comp tbody tr:last-child > * { border-bottom: 0; }
+  .comp .code-cell { color: var(--muted); font-size: 12.5px; min-width: 190px; max-width: 250px; }
+  .comp .code-cell code { white-space: nowrap; overflow-wrap: normal; }
+  .comp td.groups { min-width: 160px; }
+  .comp .gwrap { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12.5px; }
+
+  .foot { font-size: 13px; color: var(--muted); max-width: 90ch; }
+
+  @media (max-width: 640px) {
+    h1 { font-size: 26px; }
+  }
+
+  /* ---------- frontend page additions */
+  .inner { fill: var(--surface-2); stroke: var(--line); stroke-width: 1; }
+  .box.plan { fill: var(--surface); stroke: var(--muted); stroke-dasharray: 5 4; }
+  .box.missing { fill: color-mix(in srgb, var(--warn) 6%, var(--surface)); stroke: var(--warn); stroke-dasharray: 5 4; }
+  .ln.plan { stroke-dasharray: 5 4; }
+  .t-warn { font: 500 11px var(--sans); fill: var(--warn); }
+  .t-mono { font: 500 11px var(--mono); fill: var(--ink); }
+  .t-code-title.xs { font-size: 10px; }
+  .warn-dot circle { fill: var(--warn); }
+  .warn-dot text { font: 700 11px var(--sans); fill: var(--surface); }
+  .tok { stroke: var(--line); stroke-width: 1; }
+  #front { display: block; width: 100%; min-width: 1000px; max-width: 1240px; height: auto; margin: 0 auto; }
+
+  .note { font-size: 13px; color: var(--muted); max-width: 80ch; }
+  .intro { color: var(--muted); max-width: 72ch; }
+  .steps p strong { font-weight: 600; }
+
+  .timeline { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; }
+  .timeline li {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: grid;
+    gap: 6px;
+    align-content: start;
+    font-size: 14px;
+  }
+  .timeline li.now { border-color: var(--path); box-shadow: inset 0 0 0 1px var(--path); }
+  .timeline h3 { font: 600 15px/1.3 var(--sans); }
+  .stepn { font: 600 11px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .timeline li.now .stepn { color: var(--path); }
+
+  .st {
+    display: inline-block;
+    font: 500 11.5px/1.3 var(--sans);
+    padding: 3px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+    margin: 0 6px 4px 0;
+  }
+  .st-ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
+  .st-plan { color: var(--muted); background: color-mix(in srgb, var(--muted) 14%, transparent); }
+  .st-miss { color: var(--warn); background: color-mix(in srgb, var(--warn) 13%, transparent); }
+  .comp.files tbody th, .comp.api tbody th { white-space: nowrap; font-weight: 500; }
+  .comp.files tbody th code { font-size: 12.5px; }
+  .comp.api td:last-child { min-width: 240px; }
+
+  .gaps { margin: 0; padding-left: 22px; display: grid; gap: 10px; max-width: 86ch; font-size: 14.5px; }
+  .gaps li::marker { font: 600 12.5px var(--mono); color: var(--warn); }
+  .gaps strong { font-weight: 600; }
+  .comp.api td:nth-child(2) code, .comp.api td:nth-child(3) code, .comp.api tbody th code { white-space: nowrap; overflow-wrap: normal; }
+  .comp.api { min-width: 980px; }
+  .fixed { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; max-width: 86ch; font-size: 14.5px; }
+  .fixed li { position: relative; padding-left: 28px; }
+  .fixed li::before {
+    content: ""; position: absolute; left: 0; top: .2em;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: color-mix(in srgb, var(--ok) 16%, transparent);
+  }
+  .fixed li::after {
+    content: ""; position: absolute; left: 6px; top: calc(.2em + 4px);
+    width: 5px; height: 9px; border: solid var(--ok); border-width: 0 2px 2px 0; transform: rotate(45deg);
+  }
+  .fixed strong { font-weight: 600; }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">Custodian · mobile app architecture</p>
+    <h1>Custodian Frontend</h1>
+    <p class="lede">The Custodian app is an Expo (React Native) app that runs on iOS, Android and the web. This page maps what is in the <code>mobile/</code> code today (Step 1) and what each later step wires up. Every box and label comes from the repo.</p>
+    <ul class="stack" aria-label="Tech stack"><li>Expo SDK 51</li><li>Expo Router 3.5</li><li>React Native 0.74</li><li>React 18.2</li><li>TypeScript (strict)</li><li>iOS · Android · Web</li></ul>
+    <p class="note">Dependency versions are the ones in <code>package.json</code>, which its README calls illustrative until <code>npm install</code> resolves them.</p>
+  </header>
+
+  <section class="block" aria-labelledby="f-h">
+    <h2 id="f-h">How the app is put together</h2>
+    <div class="legend" aria-label="Key">
+      <span class="lg"><svg viewBox="0 0 64 20" aria-hidden="true"><path class="ln path" d="M4 10H60"/><g class="num"><circle cx="32" cy="10" r="9"/><text x="32" y="13.8">1</text></g></svg>Sending a chat message (works today on iOS, Android and web)</span>
+      <span class="lg"><svg viewBox="0 0 40 20" aria-hidden="true"><rect class="box" x="2" y="2" width="36" height="16" rx="4"/></svg>In the code and used</span>
+      <span class="lg"><svg viewBox="0 0 40 20" aria-hidden="true"><rect class="box plan" x="2" y="2" width="36" height="16" rx="4"/></svg>In the code, not wired yet</span>
+      <span class="lg"><svg viewBox="0 0 40 20" aria-hidden="true"><rect class="box missing" x="2" y="2" width="36" height="16" rx="4"/></svg>Called by the app, missing on the backend</span>
+      <span class="lg"><svg viewBox="0 0 64 20" aria-hidden="true"><path class="ln plan" d="M4 10H56"/><path class="ah" d="M52 6L60 10L52 14z"/></svg>Planned call</span>
+    </div>
+    <figure>
+      <div class="scroll"><svg id="front" viewBox="0 0 1240 992" role="img" aria-label="Custodian mobile app architecture as it is in the code today. expo-router turns the files in app/ into two routes: the chat screen at / and the Tools and Data screen at /tools-data, joined by a bottom tab bar from app/_layout.tsx. On the chat screen, Send calls onSend, which adds your message to the messages state, calls sendMessage in lib/api.ts, posts to /chat on the FastAPI backend, adds the reply, and ChatThread re-renders. ContextRail, Banner, PermissionRow, getPermissions and setPermission are in the code but not wired yet, and the backend has no permission routes yet."><defs><marker id="f1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker><marker id="f1p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah path" d="M0 0L10 5L0 10z"/></marker><marker id="f1b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah bad" d="M0 0L10 5L0 10z"/></marker></defs><rect class="boundary" x="24" y="24" width="740" height="944" rx="16"/><text class="t-boundary" x="44" y="50">CUSTODIAN MOBILE APP · EXPO + REACT NATIVE · iOS · ANDROID · WEB</text><rect class="boundary" x="860" y="180" width="356" height="788" rx="16"/><text class="t-boundary" x="880" y="206">BACKEND · FASTAPI</text><text class="t-code" x="880" y="224">app/main.py · uvicorn :8000</text><rect class="box" x="48" y="72" width="236" height="64" rx="8"/><text class="t-code-title" x="64" y="96">expo-router/entry</text><text class="t-muted" x="64" y="113">package.json main</text><text class="t-muted" x="64" y="128">files in app/ become routes</text><rect class="box core" x="300" y="72" width="236" height="64" rx="8"/><text class="t-code-title" x="316" y="96">app/_layout.tsx</text><text class="t-muted" x="316" y="113">Tabs: Chat · Tools &amp; Data</text><text class="t-muted" x="316" y="128">tab bar joins both screens</text><rect class="box" x="552" y="72" width="188" height="64" rx="8"/><text class="t-code-title" x="568" y="96">app.json</text><text class="t-muted" x="568" y="113">name Custodian</text><text class="t-muted" x="568" y="128">scheme custodian · TS strict</text><path class="ln" d="M284 104H300" marker-end="url(#f1)"/><path class="ln" d="M418 136V180" marker-end="url(#f1)"/><text class="t-label" x="430" y="162">Chat tab</text><path class="ln" d="M316 136V152H36V612H48" marker-end="url(#f1)"/><text class="t-label" x="176" y="170" text-anchor="middle">Tools &amp; Data tab</text><rect class="box core" x="48" y="180" width="408" height="332" rx="8"/><text class="t-title" x="68" y="206">Chat screen</text><text class="t-code" x="68" y="224">app/index.tsx · route /</text><rect class="inner" x="68" y="244" width="160" height="48" rx="8"/><text class="t-title-s" x="80" y="264">TextInput + Send</text><text class="t-muted" x="80" y="281">submit or tap Send</text><rect class="inner" x="292" y="244" width="144" height="48" rx="8"/><text class="t-code-title" x="304" y="264">onSend()</text><text class="t-muted" x="304" y="281">async handler</text><rect class="inner" x="68" y="344" width="368" height="48" rx="8"/><text class="t-tag" x="80" y="362">STATE · useState</text><text class="t-mono" x="80" y="380">messages: Message[]</text><text class="t-mono" x="260" y="380">input: string</text><text class="t-tag" x="68" y="424">RENDERS</text><rect class="inner" x="68" y="432" width="120" height="64" rx="8"/><text class="t-title-s" x="80" y="452">StatusPill</text><text class="t-muted" x="80" y="468">status label</text><rect class="inner" x="200" y="432" width="120" height="64" rx="8"/><text class="t-title-s" x="212" y="452">ChatThread</text><text class="t-muted" x="212" y="468">message bubbles</text><text class="t-muted" x="212" y="483">used tag: Step 2</text><rect class="box plan" x="332" y="432" width="104" height="64" rx="8"/><text class="t-title-s" x="344" y="452">ContextRail</text><text class="t-muted" x="344" y="468">Step 5</text><text class="t-muted" x="344" y="483">not rendered</text><path class="ln path" d="M228 268H292" marker-end="url(#f1p)"/><g class="num"><circle cx="260" cy="268" r="9"/><text x="260" y="271.8">1</text></g><path class="ln path" d="M364 292V344" marker-end="url(#f1p)"/><g class="num"><circle cx="364" cy="304" r="9"/><text x="364" y="307.8">2</text></g><g class="num"><circle cx="364" cy="324" r="9"/><text x="364" y="327.8">5</text></g><text class="t-label path" x="350" y="308" text-anchor="end">adds your message</text><text class="t-label path" x="350" y="328" text-anchor="end">adds the reply</text><path class="ln path" d="M436 262H512" marker-end="url(#f1p)"/><path class="ln path" d="M512 284H436" marker-end="url(#f1p)"/><path class="ln path" d="M260 392V432" marker-end="url(#f1p)"/><g class="num"><circle cx="260" cy="412" r="9"/><text x="260" y="415.8">6</text></g><text class="t-label path" x="246" y="416" text-anchor="end">re-renders</text><path class="ln plan" d="M384 392V432" marker-end="url(#f1)"/><text class="t-label" x="372" y="416" text-anchor="end">used</text><rect class="box" x="48" y="588" width="408" height="250" rx="8"/><text class="t-title" x="68" y="614">Tools &amp; Data screen</text><text class="t-code" x="68" y="632">app/tools-data.tsx · route /tools-data</text><rect class="inner" x="68" y="648" width="368" height="40" rx="8"/><text class="t-tag" x="80" y="665">RENDERS TODAY</text><text class="t-body" x="80" y="681">placeholder text only</text><rect class="box plan" x="68" y="704" width="368" height="40" rx="8"/><text class="t-title-s" x="80" y="721">permissions state · Step 3</text><text class="t-code" x="80" y="737">rows from getPermissions()</text><rect class="box plan" x="68" y="760" width="172" height="60" rx="8"/><text class="t-title-s" x="80" y="780">Banner</text><text class="t-muted" x="80" y="796">privacy notice</text><text class="t-muted" x="80" y="811">Step 3</text><rect class="box plan" x="252" y="760" width="184" height="60" rx="8"/><text class="t-title-s" x="264" y="780">PermissionRow × n</text><text class="t-muted" x="264" y="796">tool name + Switch</text><text class="t-muted" x="264" y="811">Step 3 · toggle throws</text><path class="ln plan" d="M512 724H436" marker-end="url(#f1)"/><text class="t-label" x="474" y="716" text-anchor="middle">rows</text><path class="ln plan" d="M436 790H512" marker-end="url(#f1)"/><text class="t-label" x="474" y="782" text-anchor="middle">switch</text><rect class="box" x="496" y="180" width="244" height="658" rx="8"/><text class="t-code-title" x="512" y="206">lib/api.ts</text><text class="t-muted" x="512" y="224">fetch wrappers</text><rect class="inner" x="512" y="244" width="212" height="56" rx="8"/><text class="t-code-title sm" x="524" y="264">sendMessage(text)</text><text class="t-code" x="524" y="280">POST /chat</text><text class="t-muted" x="524" y="294">used by the chat screen</text><rect class="inner" x="512" y="420" width="212" height="60" rx="8"/><text class="t-code-title sm" x="524" y="440">API_BASE</text><text class="t-code" x="524" y="456">EXPO_PUBLIC_API_BASE</text><text class="t-code" x="524" y="471">?? http://localhost:8000</text><rect class="box plan" x="512" y="700" width="212" height="48" rx="8"/><text class="t-code-title sm" x="524" y="720">getPermissions()</text><text class="t-code" x="524" y="737">GET /permissions · not called</text><rect class="box plan" x="512" y="764" width="212" height="56" rx="8"/><text class="t-code-title xs" x="524" y="784">setPermission(toolId, granted)</text><text class="t-code" x="524" y="800">POST /permissions/{toolId}</text><text class="t-muted" x="524" y="814">not called yet</text><rect class="box" x="48" y="868" width="692" height="80" rx="8"/><text class="t-code-title" x="64" y="894">lib/tokens.ts</text><text class="t-muted" x="64" y="912">7 colour tokens, used by every screen and component</text><text class="t-muted" x="64" y="928">dark variant: Step 6</text><rect class="tok" x="520" y="886" width="22" height="22" rx="5" fill="#eef0f3"><title>bg #eef0f3</title></rect><rect class="tok" x="550" y="886" width="22" height="22" rx="5" fill="#ffffff"><title>surface #ffffff</title></rect><rect class="tok" x="580" y="886" width="22" height="22" rx="5" fill="#171a24"><title>ink #171a24</title></rect><rect class="tok" x="610" y="886" width="22" height="22" rx="5" fill="#565c6e"><title>inkSoft #565c6e</title></rect><rect class="tok" x="640" y="886" width="22" height="22" rx="5" fill="#5b4fc4"><title>accent #5b4fc4</title></rect><rect class="tok" x="670" y="886" width="22" height="22" rx="5" fill="#1f7a72"><title>accent2 #1f7a72</title></rect><rect class="tok" x="700" y="886" width="22" height="22" rx="5" fill="#ccd1db"><title>border #ccd1db</title></rect><rect class="box" x="884" y="244" width="308" height="56" rx="8"/><text class="t-code-title" x="900" y="264">POST /chat</text><text class="t-muted" x="900" y="280">built · echoes your message</text><text class="t-code" x="900" y="294">Step 2: orchestrator.handle()</text><rect class="box plan" x="884" y="332" width="308" height="80" rx="8"/><text class="t-title-s" x="900" y="352">require_session · Step 4</text><text class="t-muted" x="900" y="369">session cookie on every route</text><text class="t-muted" x="900" y="384">except /health, else 401</text><text class="t-muted" x="900" y="399">CORS credentials already on</text><rect class="box" x="884" y="436" width="308" height="44" rx="8"/><text class="t-code-title" x="900" y="455">GET /health</text><text class="t-muted" x="900" y="471">built · not called by the app</text><rect class="box missing" x="884" y="700" width="308" height="48" rx="8"/><text class="t-code-title" x="900" y="720">GET /permissions</text><text class="t-warn" x="900" y="737">not in main.py yet → 404</text><rect class="box missing" x="884" y="764" width="308" height="56" rx="8"/><text class="t-code-title sm" x="900" y="784">POST /permissions/{toolId}</text><text class="t-warn" x="900" y="800">not in main.py yet → 404</text><text class="t-code" x="900" y="814">Step 3: grant() / revoke()</text><rect class="box" x="884" y="516" width="308" height="100" rx="8"/><text class="t-code-title" x="900" y="536">CORSMiddleware</text><text class="t-muted" x="900" y="553">allows http://localhost:8081</text><text class="t-muted" x="900" y="568">more origins: CORS_ORIGINS in .env</text><text class="t-code-title sm" x="900" y="590">uvicorn --host 0.0.0.0</text><text class="t-muted" x="900" y="605">so a phone on your Wi-Fi can connect</text><text class="t-muted" x="880" y="948">Backend internals: Custodian Architecture</text><path class="ln path" d="M740 262H884" marker-end="url(#f1p)"/><g class="num"><circle cx="758" cy="262" r="9"/><text x="758" y="265.8">3</text></g><text class="t-label path mono" x="776" y="256">{&quot;message&quot;: text}</text><path class="ln path" d="M884 284H740" marker-end="url(#f1p)"/><g class="num"><circle cx="758" cy="284" r="9"/><text x="758" y="287.8">4</text></g><text class="t-label path mono" x="776" y="300">{reply, used}</text><path class="ln plan" d="M740 724H884" marker-end="url(#f1)"/><text class="t-label" x="812" y="716" text-anchor="middle">Step 3</text><path class="ln plan" d="M740 792H884" marker-end="url(#f1)"/><text class="t-label mono" x="812" y="784" text-anchor="middle">{&quot;granted&quot;: bool}</text><text class="t-label bad" x="812" y="808" text-anchor="middle">no scope sent</text></svg></div>
+      <figcaption>The app as it is in the code today (Step 1). <code>expo-router</code> turns the files in <code>app/</code> into two routes, and <code>app/_layout.tsx</code> joins them with a tab bar. The chat screen works end to end against <code>POST /chat</code> on iOS, Android and web. Everything dashed is in the code but not wired yet, and the two permission routes the app calls don't exist on the backend yet.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block" aria-labelledby="flow-h">
+    <h2 id="flow-h">Sending a message, step by step</h2>
+    <ol class="steps"><li><span class="n">1</span><p>You type in the <code>TextInput</code> and tap <strong>Send</strong> or press return. Both call <code>onSend()</code>; an empty message is ignored.</p></li><li><span class="n">2</span><p><code>onSend()</code> clears the input and adds your message to <code>messages</code>, so it shows straight away.</p></li><li><span class="n">3</span><p><code>sendMessage(text)</code> sends <code>POST {API_BASE}/chat</code> with the body <code>{"message": text}</code>.</p></li><li><span class="n">4</span><p>The backend answers <code>{reply, used}</code>. Today <code>/chat</code> replies <code>echo: &lt;your message&gt;</code> with an empty <code>used</code>; from Step 2 it runs <code>orchestrator.handle()</code>.</p></li><li><span class="n">5</span><p><code>onSend()</code> adds the reply to <code>messages</code>, keeping <code>used</code> on it for the provenance line (Step 2) and <code>ContextRail</code> (Step 5).</p></li><li><span class="n">6</span><p><code>ChatThread</code> re-renders its <code>FlatList</code>: your bubbles on the right in the accent colour, replies on the left.</p></li></ol>
+  </section>
+
+  <section class="block" aria-labelledby="build-h">
+    <h2 id="build-h">What each build step adds to the app</h2>
+    <p class="intro">From the step notes in the code. The plan itself (<code>docs/PLAN.md</code>) isn't in the zip.</p>
+    <ol class="timeline"><li class="now"><span class="stepn">Step 1</span><h3>In the code now</h3><p>Chat screen, <code>ChatThread</code>, <code>StatusPill</code>, <code>lib/api.ts</code>, base colour tokens, a placeholder Tools &amp; Data screen, and a tab bar joining the two. The backend's <code>/chat</code> echoes the message.</p></li><li class=""><span class="stepn">Step 2</span><h3>Provenance</h3><p><code>ChatThread</code> gets a tag line such as “used: Memory #12”. The backend's <code>/chat</code> calls <code>orchestrator.handle()</code>, which returns <code>used</code> as <code>{memories, tools, skill}</code>.</p></li><li class=""><span class="stepn">Step 3</span><h3>Tools &amp; Data</h3><p>The Tools &amp; Data screen is built for real: <code>Banner</code>, and a <code>PermissionRow</code> per switch that calls <code>setPermission()</code> and then re-fetches <code>getPermissions()</code>. The backend gets its permission gate and sandbox.</p></li><li class=""><span class="stepn">Step 4</span><h3>Sign-in and CORS</h3><p>The backend checks a signed session cookie on every route except <code>/health</code> (401 otherwise) and allows only the Expo web origin. The Nebius model backend is added.</p></li><li class=""><span class="stepn">Step 5</span><h3>Active Context</h3><p><code>ContextRail</code> shows the last reply's <code>used</code>: below the chat on screens under 700 px wide, beside it on wider ones. The backend gets the scheduler, skills and the notes tool.</p></li><li class=""><span class="stepn">Step 6</span><h3>Dark mode</h3><p><code>lib/tokens.ts</code> is filled in completely, including the dark variant.</p></li></ol>
+  </section>
+
+  <section class="block" aria-labelledby="files-h">
+    <h2 id="files-h">Every frontend file</h2>
+    <div class="xscroll">
+      <table class="comp files">
+        <thead><tr><th scope="col">File</th><th scope="col">Kind</th><th scope="col">What it does</th><th scope="col">Status</th></tr></thead>
+        <tbody><tr><th scope="row"><code>app/index.tsx</code></th><td>Screen · route <code>/</code></td><td>Chat screen. Holds <code>messages</code> and <code>input</code> in <code>useState</code>; renders <code>StatusPill</code>, <code>ChatThread</code> and a <code>TextInput</code> with a Send <code>Button</code>.</td><td><span class="st st-ok">In use</span></td></tr><tr><th scope="row"><code>app/tools-data.tsx</code></th><td>Screen · route <code>/tools-data</code></td><td>Tools &amp; Data screen. Shows placeholder text only.</td><td><span class="st st-plan">Placeholder · Step 3</span></td></tr><tr><th scope="row"><code>app/_layout.tsx</code></th><td>Root layout</td><td>Wraps both screens in a bottom tab bar (<code>Tabs</code> from <code>expo-router</code>): Chat and Tools &amp; Data, with Ionicons and colours from <code>lib/tokens.ts</code>.</td><td><span class="st st-ok">In use · new</span></td></tr><tr><th scope="row"><code>components/ChatThread.tsx</code></th><td>Component</td><td>A <code>FlatList</code> of message bubbles. Exports the <code>Message</code> type: <code>{role: "user" | "assistant", content, used?}</code>.</td><td><span class="st st-ok">In use</span></td></tr><tr><th scope="row"><code>components/StatusPill.tsx</code></th><td>Component</td><td>The label “ALWAYS ON — LOCAL” in the <code>accent2</code> colour, at the top of the chat.</td><td><span class="st st-ok">In use</span></td></tr><tr><th scope="row"><code>components/ContextRail.tsx</code></th><td>Component</td><td>The Active Context panel. Uses <code>useWindowDimensions()</code>: below the chat under 700 px wide, beside it (180 px) when wider.</td><td><span class="st st-plan">Not rendered · Step 5</span></td></tr><tr><th scope="row"><code>components/PermissionRow.tsx</code></th><td>Component</td><td>Tool name and a <code>Switch</code>. Exports the <code>Permission</code> type: <code>{tool_id, tool_name, scope, granted}</code>. Toggling it throws a “Step 3” error for now.</td><td><span class="st st-plan">Not rendered · Step 3</span></td></tr><tr><th scope="row"><code>components/Banner.tsx</code></th><td>Component</td><td>“Nothing is shared until you switch it on. Revoke anytime.”</td><td><span class="st st-plan">Not rendered · Step 3</span></td></tr><tr><th scope="row"><code>lib/api.ts</code></th><td>API client</td><td><code>fetch</code> wrappers: <code>sendMessage()</code> (used), <code>getPermissions()</code> and <code>setPermission()</code> (not called yet). Base URL from <code>EXPO_PUBLIC_API_BASE</code>, default <code>http://localhost:8000</code>.</td><td><span class="st st-ok">In use</span></td></tr><tr><th scope="row"><code>lib/tokens.ts</code></th><td>Design tokens</td><td><code>bg #eef0f3</code>, <code>surface #ffffff</code>, <code>ink #171a24</code>, <code>inkSoft #565c6e</code>, <code>accent #5b4fc4</code>, <code>accent2 #1f7a72</code>, <code>border #ccd1db</code>.</td><td><span class="st st-ok">In use · dark in Step 6</span></td></tr><tr><th scope="row"><code>app.json · package.json · tsconfig.json</code></th><td>Config</td><td>App name Custodian, scheme <code>custodian</code>, platforms iOS, Android and web (Metro). Entry <code>expo-router/entry</code>. TypeScript <code>strict</code>. Now lists the packages Expo Router needs; run <code>npx expo install --fix</code> after <code>npm install</code>.</td><td><span class="st st-ok">In use</span></td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="block" aria-labelledby="api-h">
+    <h2 id="api-h">The API the app calls</h2>
+    <div class="xscroll">
+      <table class="comp api">
+        <thead><tr><th scope="col">Function in lib/api.ts</th><th scope="col">Route</th><th scope="col">Request body</th><th scope="col">Response</th><th scope="col">Backend today</th></tr></thead>
+        <tbody><tr><th scope="row"><code>sendMessage(text)</code></th><td><code>POST /chat</code></td><td><code>{"message": text}</code></td><td><code>{reply: string, used: object}</code></td><td><span class="st st-ok">Built</span> Built. Echoes the message today; <code>orchestrator.handle()</code> from Step 2.</td></tr><tr><th scope="row"><code>getPermissions()</code></th><td><code>GET /permissions</code></td><td>—</td><td>Untyped JSON; <code>PermissionRow</code> expects <code>{tool_id, tool_name, scope, granted}</code></td><td><span class="st st-miss">Missing</span> Not in <code>main.py</code> yet, so it returns 404.</td></tr><tr><th scope="row"><code>setPermission(toolId, granted)</code></th><td><code>POST /permissions/{toolId}</code></td><td><code>{"granted": bool}</code></td><td>Untyped JSON</td><td><span class="st st-miss">Missing</span> Not in <code>main.py</code> yet, so it returns 404.</td></tr><tr><th scope="row">(not called by the app)</th><td><code>GET /health</code></td><td>—</td><td><code>{"status": "ok"}</code></td><td><span class="st st-ok">Built</span> Built. The one route that will skip the Step 4 session check.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="block" aria-labelledby="fixed-h">
+    <h2 id="fixed-h">Fixed in this version</h2>
+    <ul class="fixed"><li><strong>Tools &amp; Data can be reached.</strong> New <code>app/_layout.tsx</code> adds a bottom tab bar with Chat and Tools &amp; Data.</li><li><strong>Expo Router's packages are listed.</strong> <code>package.json</code> adds <code>react-native-safe-area-context</code>, <code>react-native-screens</code>, <code>expo-linking</code>, <code>expo-constants</code>, <code>expo-status-bar</code> and <code>@expo/vector-icons</code>. Run <code>npx expo install --fix</code> after <code>npm install</code> to match SDK 51 exactly.</li><li><strong>The web build can call the backend.</strong> <code>backend/app/main.py</code> adds <code>CORSMiddleware</code> for <code>http://localhost:8081</code>. Add more origins with <code>CORS_ORIGINS</code> in <code>backend/.env</code>, which <code>main.py</code> now loads.</li><li><strong>A phone can reach the backend.</strong> The backend README runs <code>uvicorn ... --host 0.0.0.0 --port 8000</code>, and the mobile README explains <code>EXPO_PUBLIC_API_BASE</code> for a phone, the Android emulator and the iOS simulator.</li></ul>
+  </section>
+
+  <section class="block" aria-labelledby="gaps-h">
+    <h2 id="gaps-h">Gaps still open</h2>
+    <p class="intro">The first five affect the app as it is today; the rest come up while building Steps 3 to 5.</p>
+    <ol class="gaps"><li><strong>The keyboard covers the message box on iOS.</strong> The input row sits at the bottom of the chat screen with no <code>KeyboardAvoidingView</code>, so the iOS keyboard slides over it while you type.</li><li><strong>Your own chat bubbles are hard to read.</strong> They use dark <code>ink</code> text on the <code>accent</code> purple: a contrast of 2.78:1, below the 4.5:1 readability minimum (WCAG AA). White text on the same purple is 6.25:1.</li><li><strong>Failed requests aren't handled.</strong> <code>sendMessage()</code> never checks <code>res.ok</code>, and <code>onSend()</code> has no <code>try/catch</code>, loading state or disabled Send button. A network error leaves your message with no reply, an error response (like the 401 coming in Step 4) shows an empty reply bubble, and tapping Send twice fires two requests.</li><li><strong>The chat doesn't follow new messages.</strong> The <code>FlatList</code> never scrolls to the end, so once the thread is taller than the screen, new messages land out of view.</li><li><strong>The safe area only works on iOS.</strong> Both screens use <code>SafeAreaView</code> from <code>react-native</code>, which does nothing on Android. The one from <code>react-native-safe-area-context</code> works on both.</li><li><strong>No scope is sent when you flip a switch.</strong> <code>setPermission(toolId, granted)</code> sends only <code>{granted}</code>, but the backend's <code>grant()</code> and <code>revoke()</code> take <code>(user_id, tool_id, scope)</code> and permissions are stored per scope. Calendar and notes each have <code>read</code> and <code>write</code>, so the request needs the scope too.</li><li><strong>Rows can't tell read from write.</strong> <code>PermissionRow</code> shows only <code>tool_name</code>, so a tool's <code>read</code> and <code>write</code> rows would look the same. Show <code>scope</code> on each row.</li><li><strong><code>tool_id</code> has the wrong type.</strong> It's a <code>string</code> in the app's <code>Permission</code> type and <code>setPermission()</code>, but an <code>INTEGER</code> in the database and an <code>int</code> in <code>permissions.py</code>.</li><li><strong>The permission routes don't exist yet.</strong> <code>backend/app/main.py</code> has only <code>/health</code> and <code>/chat</code>, so both permission calls return 404 today.</li><li><strong>The web build won't send the session cookie.</strong> The <code>fetch</code> calls don't set <code>credentials: "include"</code>, which the web build needs to send the Step 4 cookie to the API on another origin. Nothing issues that cookie yet either.</li><li><strong><code>used</code> is untyped.</strong> It's <code>Record&lt;string, unknown&gt;</code> in the app, while the orchestrator's planned shape is <code>{memories, tools, skill}</code>. Typing it makes the Step 2 tag line and <code>ContextRail</code> safer to build.</li><li><strong><code>ContextRail</code> can't sit beside the chat yet.</strong> Its wide layout sets a left margin and 180 px width, but the chat screen stacks its children in one column. It needs a row container on wide screens.</li><li><strong>The banner text will be nearly invisible.</strong> <code>Banner</code> sets <code>opacity: 0.12</code> on its container, which fades the text too: a contrast of about 1.1:1. A translucent background colour keeps the text readable.</li></ol>
+  </section>
+
+  <p class="foot">Source: <code>Nebius-Global-AI-main/mobile</code> and <code>backend/app</code>. See also <a href="https://claude.ai/artifact/CCBhCVEc5Sx46YJ6Q2gN5U">Custodian Architecture</a> for the backend and <a href="https://claude.ai/artifact/LjEK3mwcdVgSUWqz9zdW53">Custodian Schema</a> for the database.</p>
+</div>
+</body>
+</html>
