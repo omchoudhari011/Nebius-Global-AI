@@ -18,6 +18,9 @@ import binascii
 import io
 import logging
 import os
+import re
+
+from html import unescape
 
 import httpx
 
@@ -29,7 +32,8 @@ log = logging.getLogger(__name__)
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_TEXT_CHARS = 400_000  # ~100 parts of 4,000; more than that is cut
-TEXT_TYPES = ("text/", "application/json", "application/csv", "application/xml")
+TEXT_TYPES = ("text/", "application/json", "application/csv", "application/xml", "application/xhtml+xml")
+TEXT_EXTENSIONS = (".txt", ".md", ".csv", ".json", ".log", ".html", ".htm", ".xml")
 IMAGE_TYPES = ("image/png", "image/jpeg", "image/webp", "image/gif")
 VISION_PROMPT = (
     "Describe this image for someone who can't see it, in a few sentences. Then copy out every piece of "
@@ -131,12 +135,37 @@ def extract(name: str, content_type: str, data: bytes) -> tuple[str, str]:
             raise DocumentError("That file isn't a valid PDF.")
     elif declared in IMAGE_TYPES or lower.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
         raise DocumentError("That file isn't a PNG, JPEG, WebP or GIF image.")
-    elif not (declared.startswith(TEXT_TYPES) or lower.endswith((".txt", ".md", ".csv", ".json", ".log"))) or b"\x00" in data[:1024]:
-        raise DocumentError("Custodian can read PDFs, text files and photos (PNG, JPEG, WebP).")
+    elif not (declared.startswith(TEXT_TYPES) or lower.endswith(TEXT_EXTENSIONS)) or b"\x00" in data[:1024]:
+        raise DocumentError("Custodian can read PDFs, text and web pages, and photos (PNG, JPEG, WebP).")
     try:  # plain text, including a text file that was named or sent as a PDF
-        return "text", data.decode("utf-8")
+        text = data.decode("utf-8")
     except UnicodeDecodeError:
-        return "text", data.decode("latin-1")
+        text = data.decode("latin-1")
+    if declared in ("text/html", "application/xhtml+xml") or lower.endswith((".html", ".htm")):
+        return "text", _html_text(text)
+    return "text", text
+
+
+def _html_text(html: str) -> str:
+    """The readable text of a web page: no scripts, styles or tags, one line per block."""
+    html = re.sub(r"(?is)<(script|style|svg|noscript|head)\b.*?</\1>", " ", html)
+    html = re.sub(r"(?i)<br\s*/?>|</(p|div|li|h[1-6]|tr|section|article|header|footer|pre)>", "\n", html)
+    text = unescape(re.sub(r"<[^>]+>", " ", html))
+    lines = (" ".join(line.split()) for line in text.splitlines())
+    return "\n".join(line for line in lines if line)
+
+
+def get(user_id: int, doc_id: int) -> dict | None:
+    """One file with its full text, or None."""
+    folder = get_settings().tool_data_dir / "documents"
+    if not (folder / "documents.db").exists():
+        return None
+    conn = documents_tool.connect(folder)
+    try:
+        row = conn.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (doc_id, user_id)).fetchone()
+    finally:
+        conn.close()
+    return {**_row(row), "text": row["text"]} if row else None
 
 
 def add(user_id: int, name: str, content_type: str, data_b64: str) -> dict:

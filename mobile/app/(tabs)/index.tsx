@@ -31,7 +31,7 @@ import * as api from "../../lib/api";
 import { useInbox } from "../../lib/inbox";
 import { pickFile } from "../../lib/media";
 import { radius, space, themed, useTokens } from "../../lib/tokens";
-import type { Feedback, Used } from "../../lib/types";
+import type { DocumentFile, Feedback, Used } from "../../lib/types";
 
 const MAX_LENGTH = 8000;
 
@@ -70,6 +70,10 @@ const useStyles = themed((t) => ({
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, borderWidth: 1, borderColor: t.border },
   deepOn: { borderColor: t.accent, backgroundColor: t.surface2 },
   deepText: { color: t.inkSoft, fontSize: 12, fontWeight: "600" },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.sm },
+  chip: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 260, paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: radius.pill, borderWidth: 1, borderColor: t.accent, backgroundColor: t.surface2 },
+  chipText: { color: t.ink, fontSize: 13, flexShrink: 1 },
 }));
 
 export default function ChatScreen() {
@@ -89,6 +93,7 @@ export default function ChatScreen() {
   const sendingRef = useRef(false);
   const [deep, setDeep] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [attached, setAttached] = useState<DocumentFile[]>([]);
   const [composerNotice, setComposerNotice] = useState<{ tone: "danger" | "success" | "warning"; text: string } | null>(null);
   const { features, refresh: refreshInbox } = useInbox();
   const router = useRouter();
@@ -127,8 +132,8 @@ export default function ChatScreen() {
   }, [loadLatest]);
 
   const send = useCallback(
-    async (raw: string, retryKey?: string) => {
-      const text = raw.trim();
+    async (raw: string, retryKey?: string, files: DocumentFile[] = []) => {
+      const text = raw.trim() || (files.length ? "Please read the attached file and tell me what it's about." : "");
       if (!text || sendingRef.current) return;
       sendingRef.current = true;
       setSending(true);
@@ -136,10 +141,11 @@ export default function ChatScreen() {
       setItems((prev) =>
         retryKey
           ? prev.map((item) => (item.key === key ? { ...item, failed: false, error: undefined } : item))
-          : [...prev, { key, role: "user", content: text }],
+          : [...prev, { key, role: "user", content: text + files.map((d) => `
+📎 ${d.name}`).join("") }],
       );
       try {
-        const res = await api.sendMessage(text, conversationId, offTheRecord, deep);
+        const res = await api.sendMessage(text, conversationId, offTheRecord, deep, files.map((d) => d.id));
         setConversationId(res.conversation_id);
         setOffTheRecord(res.private);
         setItems((prev) => [
@@ -181,12 +187,8 @@ export default function ChatScreen() {
     setUploading(true);
     try {
       const doc = await api.uploadDocument(picked.name, picked.mimeType, picked.base64);
-      setComposerNotice(
-        doc.warning
-          ? { tone: "warning", text: `Saved “${doc.name}”. ${doc.warning}` }
-          : { tone: "success", text: `Saved “${doc.name}”. Ask about it any time; Files · read must be on in Tools & Data.` },
-      );
-      setInput((prev) => prev || `In my file “${doc.name}”, `);
+      setAttached((prev) => [...prev.filter((d) => d.id !== doc.id), doc].slice(-3));
+      if (doc.warning) setComposerNotice({ tone: "warning", text: `“${doc.name}”: ${doc.warning}` });
     } catch (err) {
       setComposerNotice({ tone: "danger", text: api.errorMessage(err) });
     } finally {
@@ -195,10 +197,12 @@ export default function ChatScreen() {
   }
 
   function submit() {
-    if (sending || !input.trim()) return;
+    if (sending || (!input.trim() && !attached.length)) return;
     const text = input;
+    const files = attached;
     setInput("");
-    void send(text);
+    setAttached([]);
+    void send(text, undefined, files);
   }
 
   function onKeyPress(e: NativeSyntheticEvent<TextInputKeyPressEventData>) {
@@ -217,7 +221,7 @@ export default function ChatScreen() {
     setLastUsed(null);
   }
 
-  const canSend = !!input.trim() && !sending;
+  const canSend = (!!input.trim() || attached.length > 0) && !sending;
 
   return (
     <View style={s.screen}>
@@ -283,6 +287,20 @@ export default function ChatScreen() {
                 <Ionicons name={deep ? "bulb" : "bulb-outline"} size={14} color={deep ? t.accentText : t.inkSoft} />
                 <Text style={[s.deepText, deep && { color: t.accentText }]}>Think harder</Text>
               </Pressable>
+            ) : null}
+            {attached.length ? (
+              <View style={s.chips}>
+                {attached.map((doc) => (
+                  <View key={doc.id} style={s.chip}>
+                    <Ionicons name="document-attach-outline" size={14} color={t.accentText} />
+                    <Text style={s.chipText} numberOfLines={1}>{doc.name}</Text>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${doc.name}`}
+                      onPress={() => setAttached((prev) => prev.filter((d) => d.id !== doc.id))}>
+                      <Ionicons name="close" size={14} color={t.inkSoft} />
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
             ) : null}
             <View style={s.composer}>
               <Pressable accessibilityRole="button" accessibilityLabel="Attach a file" style={s.tool} disabled={uploading || sending} onPress={() => void attach()}>

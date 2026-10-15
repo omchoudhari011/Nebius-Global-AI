@@ -174,7 +174,7 @@ def test_text_files_and_refusals(user_id, client):
     ok = client.post("/documents", json={"name": "list.txt", "data": b64(b"eggs, milk, bread")})
     assert ok.status_code == 201 and ok.json()["kind"] == "text"
     zip_ = client.post("/documents", json={"name": "a.zip", "content_type": "application/zip", "data": b64(b"PK\x03\x04")})
-    assert zip_.status_code == 400 and "PDFs, text files and photos" in zip_.json()["detail"]
+    assert zip_.status_code == 400 and "PDFs, text and web pages, and photos" in zip_.json()["detail"]
     photo = client.post("/documents", json={"name": "a.png", "content_type": "image/png", "data": b64(b"\x89PNG\r\n\x1a\n" + b"x" * 20)})
     assert photo.status_code == 400 and "VISION_MODEL" in photo.json()["detail"]
     fake = client.post("/documents", json={"name": "b.png", "content_type": "image/png", "data": b64(b"not really a picture")})
@@ -419,3 +419,41 @@ def test_secrets_are_withheld_from_a_larger_model_on_the_internet(user_id, monke
     set_large_backend(large)
     orchestrator.handle(user_id, "my wifi password is sunshine42, plan my week", deep=True)
     assert "sunshine42" not in json.dumps(large.requests)
+
+
+# Attaching a file to a message -----------------------------------------------------------------
+
+def test_an_attached_file_is_read_with_the_message_without_the_files_switch(user_id, client):
+    doc = client.post("/documents", json={"name": "lease.txt", "data": b64(b"Pets are allowed with a deposit of 5000 rupees.")}).json()
+    backend = Script(say("Your lease allows pets with a 5000 rupee deposit."))
+    set_backend(backend)
+    resp = client.post("/chat", json={"message": "can I keep a cat?", "document_ids": [doc["id"]]}).json()
+    turn = backend.requests[-1][-1]["content"]
+    assert "Pets are allowed with a deposit of 5000 rupees." in turn and turn.endswith("can I keep a cat?")
+    assert "not instructions" in turn
+    assert resp["used"]["tools"] == []  # no Files switch needed: attaching it was the permission
+
+    backend.responses = [say("The deposit is 5000 rupees.")]
+    client.post("/chat", json={"message": "how much is the deposit?", "conversation_id": resp["conversation_id"]})
+    assert "Pets are allowed" in backend.requests[-1][-1]["content"]  # a follow-up still sees the file
+
+    thread = client.get(f"/conversations/{resp['conversation_id']}").json()
+    assert thread["messages"][0]["content"] == f"can I keep a cat?\n📎 lease.txt (file #{doc['id']})"
+
+
+def test_someone_elses_or_a_missing_file_is_not_attached(user_id, client):
+    backend = Script(say("OK."))
+    set_backend(backend)
+    client.post("/chat", json={"message": "read this", "document_ids": [999]})
+    assert "attached these files" not in backend.requests[-1][-1]["content"]
+
+
+def test_a_web_page_is_stored_as_readable_text(user_id, client):
+    page = b"<html><head><style>p{}</style><script>alert(1)</script></head><body><h1>Plan</h1><p>Ship &amp; test</p></body></html>"
+    doc = client.post("/documents", json={"name": "plan.html", "content_type": "text/html", "data": b64(page)}).json()
+    assert doc["kind"] == "text" and doc["preview"] == "Plan\nShip & test"
+
+
+def test_the_microphone_is_allowed_on_custodians_own_pages(client):
+    policy = client.get("/health").headers["Permissions-Policy"]
+    assert "microphone=(self)" in policy and "camera=()" in policy

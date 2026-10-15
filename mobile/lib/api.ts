@@ -149,10 +149,10 @@ export const revokeOtherSessions = () => request<{ signed_out: number }>("/auth/
 // Chat --------------------------------------------------------------------------------
 
 /** `offTheRecord` starts a private chat; a continued chat keeps the setting it started with. */
-export const sendMessage = (message: string, conversationId?: number | null, offTheRecord = false, deep = false) =>
+export const sendMessage = (message: string, conversationId?: number | null, offTheRecord = false, deep = false, documentIds: number[] = []) =>
   request<ChatResponse>("/chat", {
     method: "POST",
-    body: { message, conversation_id: conversationId ?? null, private: offTheRecord, deep },
+    body: { message, conversation_id: conversationId ?? null, private: offTheRecord, deep, document_ids: documentIds },
     timeoutMs: 120_000,
   });
 export const listConversations = (channel?: "chat" | "task", limit = 30) =>

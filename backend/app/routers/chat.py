@@ -20,6 +20,8 @@ class ChatRequest(BaseModel):
     private: bool = False
     # Ask the larger model (LARGE_MODEL_ID) to answer this one, when the server has it.
     deep: bool = False
+    # Uploaded files attached to this message (POST /documents ids): their text is read with it.
+    document_ids: list[int] = Field(default_factory=list, max_length=3)
 
     @field_validator("message")
     @classmethod
@@ -36,7 +38,8 @@ def chat(body: ChatRequest, user_id: int = Depends(require_session)) -> dict:
     memories saved during the turn, and the accuracy and privacy checks on the reply."""
     usage.check_allowance(user_id)  # 402 when the plan's monthly model allowance is used up
     return orchestrator.handle(
-        user_id, body.message, conversation_id=body.conversation_id, private=body.private, deep=body.deep
+        user_id, body.message, conversation_id=body.conversation_id, private=body.private, deep=body.deep,
+        attachments=body.document_ids,
     )
 
 

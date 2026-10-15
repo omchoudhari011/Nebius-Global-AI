@@ -44,7 +44,7 @@ SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
-    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Permissions-Policy": "camera=(), microphone=(self), geolocation=()",  # the mic records voice messages
     "Cross-Origin-Opener-Policy": "same-origin",
 }
 # react-native-web injects <style> tags at runtime, so styles need 'unsafe-inline'.

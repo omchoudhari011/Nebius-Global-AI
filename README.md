@@ -165,8 +165,9 @@ from Custodian" unless you set `NTFY_SHOW_TEXT=true`. Finished scheduled tasks l
 inbox too. The accuracy check now flags "I'll remind you" only when no reminder was set,
 and still flags promises to text, email or call you, which Custodian can't do.
 
-**Files**: attach a PDF, text file or photo in the chat (the paperclip) or in Tools & Data,
-then ask about it in everyday words ("what does my lease say about pets?"). The server
+**Files**: attach a PDF, text file, web page or photo with the paperclip and it is read with
+that message (and follow-ups in the same chat) - attaching it is the permission, so no switch
+is needed. Files you add in Tools & Data stay available: ask about them later in everyday words ("what does my lease say about pets?"). The server
 extracts the text, judging the file by its content rather than its name: a PDF's text layer,
 or, for photos, a description and transcription by a vision model (`VISION_MODEL`, for
 example `llava` in Ollama on the same machine). The model reaches it only through **Files ·
@@ -449,7 +450,7 @@ All routes except `/health` and `/auth/login` need a session (cookie or `Authori
 | `GET /health` | Liveness and database check |
 | `POST /auth/login` · `POST /auth/logout` · `GET /auth/me` | Session |
 | `GET /auth/sessions` · `DELETE /auth/sessions/{id}` · `DELETE /auth/sessions` | Signed-in devices; sign one out, or every other one |
-| `POST /chat` | `{message, conversation_id?, private?, deep?}` → `{reply, used, conversation_id, message_id, private}` |
+| `POST /chat` | `{message, conversation_id?, private?, deep?, document_ids?}` → `{reply, used, conversation_id, message_id, private}` |
 | `GET /conversations` · `GET/DELETE /conversations/{id}` | History, with `used` per reply |
 | `GET /permissions` · `POST /permissions/{tool_id}` | Switches; body `{scope, granted}` |
 | `GET /permissions/events` | Switch history |
