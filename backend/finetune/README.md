@@ -60,6 +60,16 @@ Its 4 misses: 2 daily summaries that read the calendar but not the notes, 1 intr
 saved (the server's name backstop saves it anyway), and 1 `remember` call in an off-the-record
 chat (the server refuses it).
 
+**Second round (v2, 2026-10-16)** added reminders, file questions and the three-part daily
+summary (515 conversations; stopped at the best checkpoint, step 70 of 116, validation loss
+0.48). On the new held-out set it beat v1, 50/53 to 48/53, fixing earlier-chat recall, an
+injection and "text me" requests. But on the independent hallucination prompts it made 1
+false first draft out of 10 where v1 made 0: it answered an ordinary "remember that I'm moving
+to Pune" with "this chat is off the record", because that exact sentence appeared only in
+off-the-record examples. So `custodian-nemotron` (v1) stays the active model and v2 is kept as
+`custodian-nemotron-v2`. The dataset now pairs every off-the-record example with the same
+words in a normal chat that saves them, so the next run learns the rule, not the wording.
+
 ## Requirements and notes
 
 - An NVIDIA GPU with 8 GB or more, Docker Desktop with WSL 2 GPU support, Ollama.
