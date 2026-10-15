@@ -369,9 +369,12 @@ def review(reply: str, evidence: Evidence) -> list[Finding]:
     findings: list[Finding] = []
     clauses = _statements(reply)
 
+    reminder_set = evidence.succeeded("reminders", "create_reminder")
     for action in _ACTIONS:
         ways = ((action.tool, action.function), *action.also)
-        if not any(evidence.succeeded(*w) for w in ways) and any(_claims(c, action) for c in clauses):
+        # "I've set a reminder to call mum at 6pm" is about the reminder that was set, not an event.
+        considered = [c for c in clauses if not (reminder_set and action.kind == "unverified_event" and _REMINDER_WORDS.search(c))]
+        if not any(evidence.succeeded(*w) for w in ways) and any(_claims(c, action) for c in considered):
             tried = next((w for w in reversed(ways) if evidence.attempts(*w)), ways[0])
             why = _why_not(evidence, *tried)
             findings.append(

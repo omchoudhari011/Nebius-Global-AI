@@ -70,6 +70,21 @@ off-the-record examples. So `custodian-nemotron` (v1) stays the active model and
 `custodian-nemotron-v2`. The dataset now pairs every off-the-record example with the same
 words in a normal chat that saves them, so the next run learns the rule, not the wording.
 
+**Third round (v3, 2026-10-16) - the active model.** Same data as v2 plus those pairs (536
+conversations), 1.5 epochs, best validation loss 0.435 (v1 0.49, v2 0.48). Against v1:
+
+| | v1 | **v3** |
+|---|---|---|
+| Held-out first step right (55 conversations) | 49/55 | **52/55** |
+| False first drafts, hallucination prompts (2 runs of 10) | 1, 0 | **0, 0** |
+| Every tool asked for in plain words (calendar, notes, reminders, files, memory, daily summary) | - | **10/10** |
+
+v3 now searches your files when asked about "my lease", handles the injection and the
+introduction v1 missed, and reads calendar, notes and reminders for the daily summary. Its 3
+misses: a `remember` call in an off-the-record chat (the server refuses it), an extra notes
+search before answering from an earlier chat, and offering a reminder when asked to text.
+Ollama keeps `custodian-nemotron-v1` and `-v2`; `custodian-nemotron` is v3.
+
 ## Requirements and notes
 
 - An NVIDIA GPU with 8 GB or more, Docker Desktop with WSL 2 GPU support, Ollama.

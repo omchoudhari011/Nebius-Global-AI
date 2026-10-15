@@ -256,3 +256,19 @@ def test_a_reminder_with_a_time_is_not_mistaken_for_a_calendar_event(user_id, gr
                        say("I've set a reminder to stretch my back for 2 minutes from now (23:35).")))
     out = orchestrator.handle(user_id, "remind me to stretch my back in 2 minutes")
     assert out["used"]["checks"]["status"] == "passed"
+
+
+def test_a_reminder_to_call_someone_is_not_mistaken_for_an_event(user_id, grant):
+    grant("reminders", "write")
+    set_backend(Script(call("reminders_create_reminder", {"text": "Call mum", "at": "2099-01-01T18:00"}),
+                       say("I've set a reminder to call mum at 6pm tomorrow (2099-01-01).")))
+    out = orchestrator.handle(user_id, "remind me to call mum tomorrow at 6pm")
+    assert out["used"]["checks"]["status"] == "passed"
+
+
+def test_claiming_an_event_alongside_a_real_reminder_is_still_caught(user_id, grant):
+    grant("reminders", "write")
+    set_backend(Script(call("reminders_create_reminder", {"text": "Dentist", "at": "2099-01-01T09:00"}),
+                       say("I've added your dentist appointment to the calendar for 10am. I've also set a reminder.")))
+    out = orchestrator.handle(user_id, "book the dentist at 10 and remind me at 9")
+    assert any(i["kind"] == "unverified_event" for i in out["used"]["checks"]["items"])
