@@ -210,6 +210,7 @@ class _Action:
     done: str  # past forms
     promised: str  # base and -ing forms
     didnt: str  # what the user is told didn't happen
+    also: tuple[tuple[str, str], ...] = ()  # other tool functions that do the same thing (Google Calendar)
 
 
 _ACTIONS = (
@@ -218,6 +219,7 @@ _ACTIONS = (
         r"added|scheduled|created|booked|put|set|blocked|placed|entered|rescheduled|moved|arranged|reserved",
         r"add|schedule|create|book|put|set up|block|reschedule|move|adding|scheduling|creating|booking|putting",
         "no event was added to your calendar",
+        also=(("gcal", "create_event"),),
     ),
     _Action(
         "unverified_note", "notes", "create_note", _NOTE_NOUNS,
@@ -237,12 +239,25 @@ _MEMORY_CLAIM = re.compile(
     r"|^\s*noted\b",
     re.I | re.M,
 )
-# Custodian has no reminders, notifications or messaging, so promising them is always false.
+# A reminder is true only when the reminders tool set one in this turn.
 _REMINDER_CLAIM = re.compile(
-    r"\b(?:i'?ll|i will|i'm going to|i am going to)\s+(?:also\s+)?(?:remind|notify|alert|ping|message|text|email|call)\s+you\b"
+    r"\b(?:i'?ll|i will|i'm going to|i am going to)\s+(?:also\s+)?(?:remind|notify|alert|ping)\s+you\b"
     r"|\b(?:reminder|alarm|alert|notification)\s+(?:is|has been|was)\s+(?:now\s+|all\s+)?set\b"
     r"|\bi(?:'ve| have)\s+(?:also\s+)?set\s+(?:up\s+)?(?:a|an|the|your)?\s*(?:reminder|alarm|alert|notification)s?\b",
     re.I,
+)
+# Custodian can notify you (reminders) but can't send messages, emails or calls.
+_CONTACT_CLAIM = re.compile(
+    r"\b(?:i'?ll|i will|i'm going to|i am going to)\s+(?:also\s+)?(?:message|text|email|e-mail|call|phone|whatsapp)\s+you\b",
+    re.I,
+)
+# Tools that read something, and what to call it when a read failed.
+_READS = (
+    ("calendar", "list_events", "calendar"), ("gcal", "list_events", "Google Calendar"),
+    ("notes", "read_notes", "notes"), ("reminders", "list_reminders", "reminders"),
+    ("documents", "search_documents", "files"), ("documents", "read_document", "files"),
+    ("gmail", "search_messages", "email"), ("gmail", "read_message", "email"),
+    ("gdrive", "search_files", "Google Drive"), ("gdrive", "read_file", "Google Drive"),
 )
 _ACKNOWLEDGED = re.compile(
     r"\b(?:couldn'?t|could not|can'?t|cannot|unable|not able|wasn'?t able|no access|don'?t have (?:access|permission)"
@@ -294,7 +309,12 @@ def _statements(reply: str) -> list[str]:
     return clauses
 
 
+_REMINDER_WORDS = re.compile(r"\b(?:reminders?|remind(?:ing|ed)?|alarms?)\b", re.I)
+
+
 def _claims(clause: str, action: _Action) -> bool:
+    if action.kind == "unverified_event" and _REMINDER_WORDS.search(clause) and not _EVENT_NOUNS.search(_REMINDER_WORDS.sub("", clause)):
+        return False  # "I've set a reminder for 6pm" is a reminder claim (checked on its own), not an event
     for match in re.finditer(rf"\b(?:{action.done})\b", clause, re.I):
         if not (action.nouns.search(clause) or match.group(0).lower().endswith("down")):
             continue
@@ -350,23 +370,35 @@ def review(reply: str, evidence: Evidence) -> list[Finding]:
     clauses = _statements(reply)
 
     for action in _ACTIONS:
-        if not evidence.succeeded(action.tool, action.function) and any(_claims(c, action) for c in clauses):
-            why = _why_not(evidence, action.tool, action.function)
+        ways = ((action.tool, action.function), *action.also)
+        if not any(evidence.succeeded(*w) for w in ways) and any(_claims(c, action) for c in clauses):
+            tried = next((w for w in reversed(ways) if evidence.attempts(*w)), ways[0])
+            why = _why_not(evidence, *tried)
             findings.append(
                 Finding(
                     action.kind,
-                    f"You said this was done, but no {action.tool} {action.function} call succeeded in this turn ({why}).",
+                    f"You said this was done, but no {tried[0]} {tried[1]} call succeeded in this turn ({why}).",
                     f"{action.didnt[0].upper()}{action.didnt[1:]}: {why}.",
                 )
             )
 
-    if _says(reply, _REMINDER_CLAIM):
+    if not evidence.succeeded("reminders", "create_reminder") and _says(reply, _REMINDER_CLAIM):
+        why = _why_not(evidence, "reminders", "create_reminder")
+        findings.append(
+            Finding(
+                "unverified_reminder",
+                f"You promised a reminder, but no reminders create_reminder call succeeded in this turn ({why}). "
+                "Call it if you can, or say plainly that no reminder was set.",
+                f"No reminder was set: {why}.",
+            )
+        )
+    if _says(reply, _CONTACT_CLAIM):
         findings.append(
             Finding(
                 "unsupported_capability",
-                "You promised a reminder, notification or message, but Custodian can't send any. Don't promise one; "
-                "offer to add a calendar event instead.",
-                "Custodian can't send reminders or notifications, so nothing will remind you; it can add a calendar event instead.",
+                "You promised to message, email or call them, but Custodian can't send messages, emails or calls. "
+                "Offer a reminder instead.",
+                "Custodian can't send messages, emails or calls; it can set a reminder instead.",
             )
         )
 
@@ -382,21 +414,22 @@ def review(reply: str, evidence: Evidence) -> list[Finding]:
         if why:
             findings.append(Finding("unverified_memory", f"You said you'd remember this, but nothing was saved: {why}.", f"Nothing was saved to memory: {why}."))
 
-    for tool, function in (("calendar", "list_events"), ("notes", "read_notes")):
+    for tool, function, what in _READS:
         if evidence.attempts(tool, function) and not evidence.succeeded(tool, function) and not _ACKNOWLEDGED.search(reply):
             why = _why_not(evidence, tool, function)
             findings.append(
                 Finding(
                     "unchecked_read",
                     f"Your {tool} {function} call didn't succeed ({why}), yet the reply doesn't say so. Don't describe "
-                    f"their {tool} as if you had read it: say plainly that you couldn't check it, and why.",
-                    f"Custodian couldn't read your {tool} for this answer ({why}), so it wasn't checked against it.",
+                    f"their {what} as if you had read it: say plainly that you couldn't check it, and why.",
+                    f"Custodian couldn't read your {what} for this answer ({why}), so it wasn't checked against it.",
                 )
             )
 
     if (
         evidence.calendar_question
         and not evidence.attempts("calendar", "list_events")
+        and not evidence.attempts("gcal", "list_events")
         and not any(f.kind == "unverified_event" for f in findings)
         and not _ACKNOWLEDGED.search(reply)
         and _states_calendar(reply)

@@ -30,6 +30,9 @@ _CLEARED = (
     "COOKIE_SECURE", "COOKIE_SAMESITE", "WEB_DIST_DIR", "TOOL_TIMEOUT_SECONDS", "CUSTODIAN_USER_EMAIL",
     "SESSION_MAX_AGE_DAYS", "EMBEDDING_MODEL", "EMBEDDING_BASE_URL", "EMBEDDING_API_KEY", "EMBEDDING_MIN_SIMILARITY",
     "CUSTODIAN_PURCHASE_URL",
+    "LARGE_MODEL_ID", "LARGE_MODEL_BASE_URL", "LARGE_MODEL_API_KEY", "WHISPER_URL", "WHISPER_API_KEY", "VISION_MODEL",
+    "VISION_BASE_URL", "VISION_API_KEY", "NTFY_URL", "NTFY_SHOW_TEXT", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
+    "GOOGLE_REDIRECT_URI",
     "CUSTODIAN_PLAN", "CUSTODIAN_LICENSE_KEY", "MODEL_PRICE_INPUT_PER_M", "MODEL_PRICE_OUTPUT_PER_M",
 )
 os.environ.update(_BASE_ENV)
@@ -42,7 +45,7 @@ def isolated_env(tmp_path, monkeypatch):
     from app import embeddings, plans, vectors
     from app.auth import login_limiter
     from app.config import reset_settings
-    from app.model_backends import set_backend
+    from app.model_backends import set_backend, set_large_backend
 
     for name, value in _BASE_ENV.items():
         monkeypatch.setenv(name, value)
@@ -52,6 +55,7 @@ def isolated_env(tmp_path, monkeypatch):
     reset_settings()
     plans.reset()
     set_backend(None)
+    set_large_backend(None)
     embeddings.set_embedder(None)
     vectors.reset()
     login_limiter.reset()
@@ -60,6 +64,7 @@ def isolated_env(tmp_path, monkeypatch):
 
     scheduler.shutdown()
     set_backend(None)
+    set_large_backend(None)
     embeddings.set_embedder(None)
     vectors.reset()
     reset_settings()

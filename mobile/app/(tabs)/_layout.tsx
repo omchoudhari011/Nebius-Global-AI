@@ -7,6 +7,7 @@ import { Tabs } from "expo-router/js-tabs";
 import { ActivityIndicator, Platform, View } from "react-native";
 
 import { useAuth } from "../../lib/auth";
+import { InboxProvider } from "../../lib/inbox";
 import { useTokens } from "../../lib/tokens";
 
 export default function TabsLayout() {
@@ -23,6 +24,7 @@ export default function TabsLayout() {
   if (status === "signedOut") return <Redirect href="/sign-in" />;
 
   return (
+    <InboxProvider>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -66,5 +68,6 @@ export default function TabsLayout() {
         }}
       />
     </Tabs>
+    </InboxProvider>
   );
 }

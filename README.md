@@ -15,6 +15,11 @@ keep chats for a limited time, chat off the record, and keep secrets away from a
 ([Privacy](#privacy)). It's sold open core: Free to self-host, Pro and Cloud through license
 keys that are checked offline ([Plans and licensing](#plans-and-licensing)).
 
+Day to day it sets reminders that notify you, answers questions about files you give it
+(PDFs, photos), takes voice messages, works with your Google Calendar, Gmail and Drive when
+you allow it, can hand hard questions to a bigger model, and learns from the replies you rate
+([Everyday features](#everyday-features)).
+
 - **Backend** (`backend/`): FastAPI, SQLite with FTS5, NumPy for vector search, APScheduler.
   Message text, tool arguments and results, memories and their embeddings are encrypted with
   Fernet before they are saved.
@@ -143,6 +148,65 @@ be decrypted. To rotate it: set `APP_SECRET_KEY=new_key,old_key`, restart, run
 the app id is `io.github.omchoudhari011.custodian` in `app.json`; a fork should use its own). Release
 builds should talk to an HTTPS server; enter its address on the sign-in screen.
 
+## Everyday features
+
+Each one has its own switch in **Tools & Data** (all off until you turn them on), runs through
+the same permission gate, sandbox and accuracy checks as everything else, and is listed under
+**Account → Where your data goes** once it's set up.
+
+**Reminders** ("remind me to call mum at 6pm", "every weekday at 10am…"). The reminders tool
+stores them; every minute the server turns the ones that are due into a notification in the
+app's inbox (the bell in the chat header). The web app also shows a browser notification
+while it's open, and phones schedule each upcoming reminder as a local notification, so it
+goes off on time even offline. For a push to your phone from the server, install the
+[ntfy](https://ntfy.sh) app, subscribe to a long random topic, and set
+`NTFY_URL=https://ntfy.sh/<that-topic>` (or your own ntfy server). Pushes say only "Reminder
+from Custodian" unless you set `NTFY_SHOW_TEXT=true`. Finished scheduled tasks land in the
+inbox too. The accuracy check now flags "I'll remind you" only when no reminder was set,
+and still flags promises to text, email or call you, which Custodian can't do.
+
+**Files**: attach a PDF, text file or photo in the chat (the paperclip) or in Tools & Data,
+then ask about it in everyday words ("what does my lease say about pets?"). The server
+extracts the text, judging the file by its content rather than its name: a PDF's text layer,
+or, for photos, a description and transcription by a vision model (`VISION_MODEL`, for
+example `llava` in Ollama on the same machine). The model reaches it only through **Files ·
+read**. Small vision models can misread numbers in a photo; use a stronger one for receipts.
+
+**Voice**: the microphone records a message, the server transcribes it with a
+speech-to-text server, and the text lands in the message box for you to check before
+sending. Replies have a speaker button that reads them aloud with the device's own voice.
+For a Whisper server on this machine (nothing leaves it):
+
+```bash
+docker run -d --name whisper -p 9000:9000 hwdsl2/whisper-server   # prints an API key on first start
+# backend/.env:
+WHISPER_URL=http://127.0.0.1:9000/v1
+WHISPER_API_KEY=<the key it printed>
+```
+
+**Google Calendar, Gmail and Drive**: create an OAuth client at
+[console.cloud.google.com](https://console.cloud.google.com) → APIs & Services → Credentials
+(type "Web application"; enable the Calendar, Gmail and Drive APIs; add your server's
+`…/integrations/google/callback` as an authorised redirect URI), then set
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI` and press **Connect
+Google** in Tools & Data. Gmail and Drive are read only. The refresh token stays encrypted
+on the server; a Google tool gets a short-lived access token, and its sandbox may reach only
+Google's API hosts (every other address stays blocked). Email and file contents are treated
+as information, never as instructions.
+
+**Think harder**: with `LARGE_MODEL_ID` set (for example
+`nvidia/nemotron-3-super-120b-a12b` on Nebius Token Factory, with `LARGE_MODEL_API_KEY`), the
+chat shows a **Think harder** switch that sends the next message to that model, and a reply
+that fails the accuracy check twice is handed to it automatically. When it runs on the
+internet, secrets are withheld from it as from any online model.
+
+**Rate replies, and teach the model**: every reply has thumbs up and down. A thumbs down asks
+what it should have said. Tick **Use this to improve the model** and the reply - with the
+exact prompt behind it, kept encrypted with the chat - becomes training data the next time
+you run `backend\finetune\run_finetune.ps1` (`finetune/from_feedback.py` collects it; each
+counts three times). Off-the-record chats and anything that looks like a secret are never
+used, and nothing is sent anywhere.
+
 ## Plans and licensing
 
 Custodian is open core. Everything about privacy and safety is in every plan; what you pay
@@ -202,7 +266,7 @@ conversations built from Custodian's own prompts and tools, kept only when the a
 checks pass them, then installs the result in Ollama as `custodian-nemotron`:
 
 ```powershell
-cd backend; .inetuneun_finetune.ps1    # needs an NVIDIA GPU (8 GB+) and Docker Desktop
+cd backend; .\finetune\run_finetune.ps1    # needs an NVIDIA GPU (8 GB+) and Docker Desktop
 ```
 
 `finetune/compare.py` measures the base and tuned models on held-out conversations and the
@@ -236,6 +300,11 @@ Set in `backend/.env` (see `backend/.env.example` for every option).
 | `CUSTODIAN_LICENSE_KEY` | | A Pro or Cloud license key (wins over one pasted into Account) |
 | `CUSTODIAN_PLAN` | `pro` in development | Development only: preview `free`, `pro` or `cloud` without a license |
 | `CUSTODIAN_PURCHASE_URL` | (unset) | Where **Get a license** goes (your store); unset hides it |
+| `NTFY_URL` / `NTFY_SHOW_TEXT` | (unset) / `false` | Push reminders to your phone through ntfy; include their text or not |
+| `WHISPER_URL` / `WHISPER_API_KEY` | (unset) | OpenAI-compatible speech-to-text server for voice messages |
+| `VISION_MODEL` / `VISION_BASE_URL` / `VISION_API_KEY` | (unset) / `NEBIUS_BASE_URL` | Vision model that reads uploaded photos, e.g. `llava` |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` | (unset) | Your Google OAuth client, for Calendar, Gmail and Drive |
+| `LARGE_MODEL_ID` / `LARGE_MODEL_BASE_URL` / `LARGE_MODEL_API_KEY` | (unset) / Token Factory / `NEBIUS_API_KEY` | The larger model for **Think harder** and escalation |
 | `MODEL_PRICE_INPUT_PER_M` / `MODEL_PRICE_OUTPUT_PER_M` | (unset) | USD per million prompt / completion tokens, for cost estimates |
 
 ## How it works
@@ -380,7 +449,7 @@ All routes except `/health` and `/auth/login` need a session (cookie or `Authori
 | `GET /health` | Liveness and database check |
 | `POST /auth/login` · `POST /auth/logout` · `GET /auth/me` | Session |
 | `GET /auth/sessions` · `DELETE /auth/sessions/{id}` · `DELETE /auth/sessions` | Signed-in devices; sign one out, or every other one |
-| `POST /chat` | `{message, conversation_id?, private?}` → `{reply, used, conversation_id, message_id, private}` |
+| `POST /chat` | `{message, conversation_id?, private?, deep?}` → `{reply, used, conversation_id, message_id, private}` |
 | `GET /conversations` · `GET/DELETE /conversations/{id}` | History, with `used` per reply |
 | `GET /permissions` · `POST /permissions/{tool_id}` | Switches; body `{scope, granted}` |
 | `GET /permissions/events` | Switch history |
@@ -389,6 +458,13 @@ All routes except `/health` and `/auth/login` need a session (cookie or `Authori
 | `GET /skills` | Active skill versions |
 | `GET/POST /tasks` · `GET/PATCH/DELETE /tasks/{id}` | Scheduled tasks |
 | `POST /tasks/{id}/run` · `GET /tasks/{id}/runs` | Run now; run history |
+| `GET /features` | What this server has set up (voice, photos, larger model, Google, phone push), unread count |
+| `GET /notifications` · `POST /notifications/{id}/read` · `POST /notifications/read-all` | The inbox |
+| `GET /reminders` · `DELETE /reminders/{id}` | Upcoming reminders; cancel one |
+| `GET/POST /documents` · `DELETE /documents/{id}` | Files: upload `{name, content_type, data}` (base64, up to 10 MB) |
+| `POST /voice/transcribe` | Raw audio body → `{text}` |
+| `POST/DELETE /messages/{id}/feedback` | Rate a reply: `{rating: 1 or -1, correction?, share}` |
+| `GET /integrations` · `GET /integrations/google/start` · `DELETE /integrations/google` | Google connection |
 | `GET /privacy` · `PATCH /privacy/settings` | Where data goes, what's stored; `{retention_days?, redact_secrets?}` |
 | `GET /privacy/export` · `POST /privacy/erase` | Download everything; erase everything (body `{"confirm": "ERASE"}`) |
 | `GET /billing` · `POST/DELETE /billing/license` | Plan, limits and usage; activate (`{key}`) or remove a license |

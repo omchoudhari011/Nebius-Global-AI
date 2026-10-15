@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
@@ -69,3 +69,61 @@ class ReadNotesArgs(ToolArgs):
         default="", max_length=200, description="Keywords to search for. Empty returns the most recent notes."
     )
     limit: int = Field(default=10, ge=1, le=50, description="Maximum number of notes to return.")
+
+
+class CreateReminderArgs(ToolArgs):
+    text: SafeLine = Field(min_length=1, max_length=200, description="What to remind them about, e.g. 'Call mum'.")
+    at: datetime = Field(
+        description="When, in ISO 8601, e.g. 2026-10-05T18:00. Without a UTC offset it is read in the user's time zone."
+    )
+    repeat: Literal["daily", "weekdays", "weekly"] | None = Field(
+        default=None, description="Only for a reminder that repeats; leave out for a one-off."
+    )
+
+
+class ListRemindersArgs(ToolArgs):
+    include_done: bool = Field(default=False, description="Also list reminders that have already gone off.")
+    limit: int = Field(default=20, ge=1, le=50)
+
+
+class CancelReminderArgs(ToolArgs):
+    id: int = Field(ge=1, description="The reminder's id, from list_reminders.")
+
+
+class SearchDocumentsArgs(ToolArgs):
+    query: SafeLine = Field(default="", max_length=200, description="Keywords to search for. Empty lists the newest files.")
+    limit: int = Field(default=5, ge=1, le=20)
+
+
+class ReadDocumentArgs(ToolArgs):
+    id: int = Field(ge=1, description="The document's id, from search_documents.")
+    part: int = Field(default=1, ge=1, le=500, description="Which part of a long document to read (parts are ~4,000 characters).")
+
+
+class GoogleListEventsArgs(ListEventsArgs):
+    pass
+
+
+class GoogleCreateEventArgs(CreateEventArgs):
+    pass
+
+
+class SearchMailArgs(ToolArgs):
+    query: SafeLine = Field(
+        default="", max_length=200,
+        description="A Gmail search, e.g. 'from:bank newer_than:7d' or 'flight booking'. Empty lists the newest messages.",
+    )
+    limit: int = Field(default=5, ge=1, le=20)
+
+
+class ReadMailArgs(ToolArgs):
+    id: SafeLine = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$", description="The message id, from search_messages.")
+
+
+class SearchDriveArgs(ToolArgs):
+    query: SafeLine = Field(default="", max_length=200, description="Words in the file's name or text. Empty lists recent files.")
+    limit: int = Field(default=5, ge=1, le=20)
+
+
+class ReadDriveArgs(ToolArgs):
+    id: SafeLine = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$", description="The file id, from search_files.")

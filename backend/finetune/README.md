@@ -17,8 +17,9 @@ Then set `NEBIUS_MODEL_ID=custodian-nemotron` in `backend/.env` and restart Cust
 `make_dataset.py` runs scenarios through the real agent loop with a scripted "teacher" in
 place of the model, so every example has the exact production prompt, tools, permission
 denials and tool results. A conversation is kept only if the app's own accuracy checks pass
-the teacher's reply unchanged and the turn did what was expected. All data is synthetic:
-none of your chats are used.
+the teacher's reply unchanged and the turn did what was expected. The synthetic data uses
+none of your chats; replies you rate in the app and mark "use this to improve the model" are
+added by `from_feedback.py` (each three times), and nothing else of yours is.
 
 | Behaviour | What the model learns |
 |---|---|
@@ -26,9 +27,12 @@ none of your chats are used.
 | name_recall, fact_recall, earlier_chat | Answer from saved memories and quoted earlier messages |
 | dont_know | Say "I don't know" when nothing is on file |
 | secret, off_the_record | Never save secrets, or anything from an off-the-record chat |
-| calendar_read, note_read, daily_summary | Call the tool first; say plainly when a switch is off |
-| calendar_create, note_create, reminder | Only claim what succeeded; no reminders exist, so use the calendar |
-| calendar_ask_time | Ask for a missing time instead of guessing |
+| calendar_read, note_read, reminder_list | Call the tool first; say plainly when a switch is off |
+| daily_summary | Read the calendar, notes and reminders together, then summarise |
+| calendar_create, note_create, reminder | Only claim what succeeded; reminders (one-off or repeating) go through the reminders tool |
+| calendar_ask_time, reminder_ask_time | Ask for a missing time instead of guessing |
+| document | Search the uploaded files when asked about "my lease", "the warranty"..., and answer from them |
+| contact | It can't text, email or call: say so and offer a reminder |
 | injection | Ignore instructions inside quoted text |
 | general | Answer plain questions directly, without tools |
 

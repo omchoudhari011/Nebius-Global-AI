@@ -24,14 +24,16 @@ from __future__ import annotations
 import ipaddress
 import json
 import logging
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from . import db, embeddings, history_search, memory, permissions, plans, sensitive, tasks, vectors
+from . import db, embeddings, google_account, history_search, memory, notifications, permissions, plans, sensitive, tasks, vectors
 from .config import get_settings
+from .model_backends import large_base_url
 from .crypto import decrypt, decrypt_json
 
 log = logging.getLogger(__name__)
@@ -39,7 +41,13 @@ log = logging.getLogger(__name__)
 PRIVATE_CHAT_HOURS = 24
 REDACT_MODES = ("auto", "on", "off")
 EXPORT_FORMAT = "custodian-export/1"
-TOOL_TABLES = {"calendar": ("calendar.db", "events"), "notes": ("notes.db", "notes")}
+# tool -> (its database file, its table, the name used in summaries, exports and erase counts)
+TOOL_TABLES = {
+    "calendar": ("calendar.db", "events", "calendar_events"),
+    "notes": ("notes.db", "notes", "notes"),
+    "reminders": ("reminders.db", "reminders", "reminders"),
+    "documents": ("documents.db", "documents", "documents"),
+}
 _UNSET: Any = object()
 
 
@@ -102,9 +110,11 @@ def model_location() -> str:
     return "offline" if settings.model_backend == "stub" else endpoint_location(settings.nebius_base_url)
 
 
-def redaction_active(user_id: int) -> bool:
+def redaction_active(user_id: int, base_url: str | None = None) -> bool:
+    """Whether secrets are withheld from the model at `base_url` (default: the everyday model)."""
     mode = settings_for(user_id)["redact_secrets"]
-    return mode == "on" or (mode == "auto" and model_location() == "internet")
+    where = endpoint_location(base_url) if base_url else model_location()
+    return mode == "on" or (mode == "auto" and where == "internet")
 
 
 def prepare_outbound(messages: list[dict], active: bool) -> tuple[list[dict], int]:
@@ -128,7 +138,7 @@ def _service(url: str, name: str) -> dict:
 
 
 def _tool_db(tool: str) -> Path:
-    filename, _ = TOOL_TABLES[tool]
+    filename = TOOL_TABLES[tool][0]
     return get_settings().tool_data_dir / tool / filename
 
 
@@ -175,8 +185,9 @@ def summary(user_id: int) -> dict:
             "SELECT MIN(m.created_at) FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.user_id = ?",
             (user_id,),
         ).fetchone()[0]
-    stored["calendar_events"] = _tool_rows(user_id, "calendar", count_only=True)
-    stored["notes"] = _tool_rows(user_id, "notes", count_only=True)
+    for tool, (_, _, key) in TOOL_TABLES.items():
+        stored[key] = _tool_rows(user_id, tool, count_only=True)
+    stored["notifications"] = notifications.total_count(user_id)
     return {
         "model": (
             {"name": "Built-in offline model", "host": None, "location": "offline"}
@@ -184,6 +195,7 @@ def summary(user_id: int) -> dict:
             else _service(settings.nebius_base_url, settings.nebius_model_id)
         ),
         "embeddings": _service(settings.embedding_base_url, embedder.model) if embedder else None,
+        "other_services": _other_services(user_id),
         "redaction": {"mode": prefs["redact_secrets"], "active": redaction_active(user_id)},
         "retention_days": prefs["retention_days"],
         "private_chat_hours": PRIVATE_CHAT_HOURS,
@@ -192,8 +204,34 @@ def summary(user_id: int) -> dict:
         # Messages, memories, tool arguments and results, and embeddings are Fernet-encrypted;
         # the keyword index keeps a plaintext copy of memory text (see app/memory.py).
         "encrypted": ["messages", "memories", "tool calls", "embeddings"],
-        "plaintext": ["memory search index", "notes and calendar events (in each tool's own database)"],
+        "plaintext": ["memory search index", "notes, calendar events, reminders and uploaded files (in each tool's own database)"],
     }
+
+
+def _other_services(user_id: int) -> list[dict]:
+    """Every other place something you say or upload can go, with what goes there."""
+    out: list[dict] = []
+
+    def add(purpose: str, url: str, name: str, sends: str) -> None:
+        out.append({**_service(url, name), "purpose": purpose, "sends": sends})
+
+    if os.getenv("WHISPER_URL", "").strip():
+        add("Voice messages", os.environ["WHISPER_URL"], "Speech to text", "the recording of each voice message")
+    if os.getenv("VISION_MODEL", "").strip():
+        add("Photos", os.getenv("VISION_BASE_URL", "").strip() or get_settings().nebius_base_url,
+            os.environ["VISION_MODEL"], "each photo you upload")
+    large_id = os.getenv("LARGE_MODEL_ID", "").strip()
+    if large_id:
+        add("Think harder", large_base_url(), large_id, "the whole conversation, when you ask it to think harder "
+            "or the everyday model's reply fails its checks twice (secrets withheld if it's on the internet)")
+    ntfy = os.getenv("NTFY_URL", "").strip()
+    if ntfy:
+        show = os.getenv("NTFY_SHOW_TEXT", "").strip().lower() in ("1", "true", "yes")
+        add("Phone notifications", ntfy, "ntfy", "each reminder's text" if show else "only \"Reminder from Custodian\"")
+    if google_account.status(user_id)["connected"]:
+        out.append({"name": "Google", "host": "googleapis.com", "location": "internet", "purpose": "Google account",
+                    "sends": "requests for the calendar, email or Drive files you let Custodian read"})
+    return out
 
 
 # Retention ---------------------------------------------------------------------------------
@@ -297,8 +335,9 @@ def export(user_id: int) -> dict:
         "tasks": task_list,
         "permissions": permissions.list_for_user(user_id),
         "permission_events": permissions.events(user_id, limit=1_000_000),
-        "calendar_events": _tool_rows(user_id, "calendar"),
-        "notes": _tool_rows(user_id, "notes"),
+        **{key: _tool_rows(user_id, tool) for tool, (_, _, key) in TOOL_TABLES.items()},
+        "notifications": notifications.list_for(user_id, limit=1_000_000),
+        "connected_accounts": [s for s in [google_account.status(user_id)] if s["connected"]],
         "usage": usage_rows,
     }
 
@@ -316,9 +355,10 @@ def _compact(path: Path) -> None:
 
 
 def erase(user_id: int) -> dict:
-    """Delete everything the user has stored - conversations (with their tool calls),
-    memories, tasks, switch history, notes and calendar events - and return the counts.
-    The account, its switches, privacy settings, license and usage counters stay."""
+    """Delete everything the user has stored - conversations (with their tool calls and
+    feedback), memories, tasks, switch history, notifications, notes, calendar events,
+    reminders and uploaded files - disconnect Google, and return the counts. The account, its
+    switches, privacy settings, license and usage counters stay."""
     from . import scheduler  # here: scheduler -> orchestrator -> this module
 
     with db.connect() as conn:
@@ -337,17 +377,19 @@ def erase(user_id: int) -> dict:
             "switch_history": conn.execute(
                 "DELETE FROM permission_events WHERE permission_id IN (SELECT id FROM permissions WHERE user_id = ?)", (user_id,)
             ).rowcount,
+            "notifications": conn.execute("DELETE FROM notifications WHERE user_id = ?", (user_id,)).rowcount,
         }
         memory.purge_search_index(conn)
-    for tool, (_, table) in TOOL_TABLES.items():
+    google_account.disconnect(user_id)
+    for tool, (_, table, key) in TOOL_TABLES.items():
         path = _tool_db(tool)
-        counts["calendar_events" if tool == "calendar" else "notes"] = 0
+        counts[key] = 0
         if not path.exists():
             continue
         conn = sqlite3.connect(path, timeout=10)
         try:
             conn.execute("PRAGMA secure_delete = ON")
-            counts["calendar_events" if tool == "calendar" else "notes"] = conn.execute(
+            counts[key] = conn.execute(
                 f"DELETE FROM {table} WHERE user_id = ?", (user_id,)
             ).rowcount
             conn.commit()

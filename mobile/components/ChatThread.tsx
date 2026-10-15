@@ -1,13 +1,17 @@
 // The message list. Your bubbles sit on the right in the accent colour (white text,
 // 6:1 contrast); replies sit on the left with a provenance line saying what they used.
-// The list follows new messages, and failed sends get a Retry button.
+// The list follows new messages, and failed sends get a Retry button. Under each reply:
+// read it aloud, and rate it (FeedbackSheet).
 
-import { useEffect, useRef } from "react";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native";
 
 import { toolLabel } from "../lib/format";
+import { stopSpeech, toggleSpeech } from "../lib/media";
 import { radius, space, themed, useTokens } from "../lib/tokens";
-import type { Used } from "../lib/types";
+import type { Feedback, Used } from "../lib/types";
+import { FeedbackSheet } from "./FeedbackSheet";
 import { Chip, statusTone } from "./ui";
 
 export type ChatItem = {
@@ -15,6 +19,9 @@ export type ChatItem = {
   role: "user" | "assistant";
   content: string;
   used?: Used;
+  /** The server's id for a final reply, which can be rated. */
+  messageId?: number;
+  feedback?: Feedback | null;
   failed?: boolean;
   error?: string;
 };
@@ -27,6 +34,7 @@ const SUGGESTIONS = [
   "Remember that I prefer meetings before noon",
   "Take a note: call the plumber about the kitchen tap",
   "Give me a summary of my day",
+  "Remind me to drink water at 4pm",
 ];
 
 const useStyles = themed((t) => ({
@@ -50,6 +58,8 @@ const useStyles = themed((t) => ({
   suggestions: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: space.sm, maxWidth: 520 },
   suggestion: { borderWidth: 1, borderColor: t.border, backgroundColor: t.surface, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 8 },
   suggestionText: { color: t.ink, fontSize: 14 },
+  actions: { flexDirection: "row", gap: 2, marginLeft: -6 },
+  action: { width: 34, height: 30, alignItems: "center", justifyContent: "center", borderRadius: radius.sm },
 }));
 
 function Provenance({ used }: { used: Used }) {
@@ -74,6 +84,7 @@ function Provenance({ used }: { used: Used }) {
   const checks = used.checks;
   if (checks?.status === "corrected") chips.push({ key: "c", label: "Corrected before sending", tone: "accent" });
   if (checks?.status === "flagged") chips.push({ key: "c", label: "Unverified claim flagged", tone: "warning" });
+  if (checks?.larger_model) chips.push({ key: "l", label: "Answered by the larger model", tone: "accent" });
   if (checks?.secrets_withheld) {
     chips.push({ key: "s", label: `${checks.secrets_withheld} ${checks.secrets_withheld === 1 ? "secret" : "secrets"} withheld from the model`, tone: "success" });
   }
@@ -93,15 +104,21 @@ export function ChatThread({
   pending,
   onRetry,
   onSuggestion,
+  onFeedback,
 }: {
   items: ChatItem[];
   pending?: boolean;
   onRetry?: (item: ChatItem) => void;
   onSuggestion?: (text: string) => void;
+  onFeedback?: (messageId: number, feedback: Feedback | null) => void;
 }) {
   const s = useStyles();
   const t = useTokens();
   const listRef = useRef<FlatList<ChatItem>>(null);
+  const [speaking, setSpeaking] = useState<string | null>(null);
+  const [rating, setRating] = useState<{ item: ChatItem; value: 1 | -1 } | null>(null);
+
+  useEffect(() => stopSpeech, []);
 
   useEffect(() => {
     const id = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
@@ -109,6 +126,7 @@ export function ChatThread({
   }, [items.length, pending]);
 
   return (
+    <>
     <FlatList
       ref={listRef}
       data={items}
@@ -164,9 +182,43 @@ export function ChatThread({
               </Text>
             ) : null}
             {item.used ? <Provenance used={item.used} /> : null}
+            {!mine && !item.failed ? (
+              <View style={s.actions}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={speaking === item.key ? "Stop reading aloud" : "Read aloud"}
+                  style={s.action}
+                  onPress={() => setSpeaking(toggleSpeech(item.key, item.content, () => setSpeaking(null)) ? item.key : null)}
+                >
+                  <Ionicons name={speaking === item.key ? "stop-circle-outline" : "volume-medium-outline"} size={18} color={t.inkSoft} />
+                </Pressable>
+                {item.messageId != null && onFeedback ? (
+                  <>
+                    <Pressable accessibilityRole="button" accessibilityLabel="Good reply" accessibilityState={{ selected: item.feedback?.rating === 1 }}
+                      style={s.action} onPress={() => setRating({ item, value: 1 })}>
+                      <Ionicons name={item.feedback?.rating === 1 ? "thumbs-up" : "thumbs-up-outline"} size={17}
+                        color={item.feedback?.rating === 1 ? t.accent2 : t.inkSoft} />
+                    </Pressable>
+                    <Pressable accessibilityRole="button" accessibilityLabel="Bad reply" accessibilityState={{ selected: item.feedback?.rating === -1 }}
+                      style={s.action} onPress={() => setRating({ item, value: -1 })}>
+                      <Ionicons name={item.feedback?.rating === -1 ? "thumbs-down" : "thumbs-down-outline"} size={17}
+                        color={item.feedback?.rating === -1 ? t.danger : t.inkSoft} />
+                    </Pressable>
+                  </>
+                ) : null}
+              </View>
+            ) : null}
           </View>
         );
       }}
     />
+    <FeedbackSheet
+      messageId={rating?.item.messageId ?? null}
+      rating={rating?.value ?? 1}
+      current={rating?.item.feedback}
+      onClose={() => setRating(null)}
+      onSaved={(feedback) => rating?.item.messageId != null && onFeedback?.(rating.item.messageId, feedback)}
+    />
+    </>
   );
 }

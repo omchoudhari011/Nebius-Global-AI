@@ -96,7 +96,22 @@ def test_promising_a_reminder_is_caught(user_id):
     set_backend(Script(say("Sure, I'll remind you tomorrow morning.")))
     out = orchestrator.handle(user_id, "remind me to call mum tomorrow")
     assert out["used"]["checks"]["status"] == "flagged"
-    assert "Custodian can't send reminders or notifications" in out["reply"]
+    assert "No reminder was set: the reminders tool was never actually called" in out["reply"]
+
+
+def test_a_reminder_that_was_set_is_not_flagged(user_id, grant):
+    grant("reminders", "write")
+    set_backend(Script(call("reminders_create_reminder", {"text": "Call mum", "at": "2099-01-01T18:00"}),
+                       say("Done - I'll remind you to call mum at 18:00 on 1 Jan.")))
+    out = orchestrator.handle(user_id, "remind me to call mum on 1 Jan 2099 at 6pm")
+    assert out["used"]["tools"][0]["status"] == "succeeded"
+    assert out["used"]["checks"]["status"] == "passed"
+
+
+def test_promising_to_text_them_is_caught(user_id):
+    set_backend(Script(say("Sure, I'll text you the list tonight.")))
+    out = orchestrator.handle(user_id, "send me the shopping list")
+    assert "Custodian can't send messages, emails or calls" in out["reply"]
 
 
 def test_answering_from_a_blocked_tool_is_caught(user_id):
@@ -233,3 +248,11 @@ def test_claim_detection(reply, outcomes, flagged):
         message="hi", outcomes=[SimpleNamespace(tool=t, function=f, status=s, error=None) for t, f, s in outcomes]
     )
     assert bool(grounding.review(reply, evidence)) is flagged
+
+
+def test_a_reminder_with_a_time_is_not_mistaken_for_a_calendar_event(user_id, grant):
+    grant("reminders", "write")
+    set_backend(Script(call("reminders_create_reminder", {"text": "Stretch", "at": "2099-01-01T23:35"}),
+                       say("I've set a reminder to stretch my back for 2 minutes from now (23:35).")))
+    out = orchestrator.handle(user_id, "remind me to stretch my back in 2 minutes")
+    assert out["used"]["checks"]["status"] == "passed"

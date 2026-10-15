@@ -31,10 +31,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from . import conversations, db, grounding, history_search, memory, plans, privacy, sensitive, skills, usage, vectors
+from . import conversations, db, google_account, grounding, history_search, memory, plans, privacy, sensitive, skills, usage, vectors
 from .config import get_settings
 from .crypto import decrypt, encrypt, encrypt_json
-from .model_backends import ModelError, get_backend
+from .model_backends import ModelError, get_backend, get_large_backend, large_base_url
 from .model_backends.base import ToolCallRequest
 from .tools import registry, sandbox
 
@@ -343,6 +343,11 @@ def _save_checks(message_id: int, checks: dict) -> None:
         conn.execute("UPDATE messages SET checks = ? WHERE id = ?", (encrypt_json(checks), message_id))
 
 
+def _save_trace(message_id: int, trace: dict) -> None:
+    with db.connect() as conn:
+        conn.execute("UPDATE messages SET trace = ? WHERE id = ?", (encrypt_json(trace), message_id))
+
+
 def handle(
     user_id: int,
     message: str | None,
@@ -351,11 +356,15 @@ def handle(
     conversation_id: int | None = None,
     task: TaskContext | None = None,
     private: bool = False,
+    deep: bool = False,
 ) -> dict:
     """Run one turn. `message` is None for scheduled tasks, which pass `task`. `private` starts
-    an off-the-record chat (a conversation keeps the setting it was started with)."""
+    an off-the-record chat (a conversation keeps the setting it was started with). `deep` asks
+    the larger model (LARGE_MODEL_ID) to answer, when one is set up."""
     settings = get_settings()
-    backend = get_backend()
+    large = get_large_backend()
+    escalated = bool(deep and large)
+    backend = large if escalated else get_backend()
     channel = "task" if task else "chat"
 
     # 1. The conversation and the incoming turn.
@@ -446,7 +455,9 @@ def handle(
         instruction = message
     model_messages: list[dict] = [{"role": "system", "content": system_prompt}, *history, {"role": "user", "content": instruction}]
     allowed = skill.tools if skill else None
-    tool_schemas = [f.openai_schema() for f in registry.for_scopes(allowed)] + ([] if private else [REMEMBER_TOOL])
+    connected = {"google"} if google_account.status(user_id)["connected"] else set()
+    offered = [f for f in registry.for_scopes(allowed) if f.account is None or f.account in connected]
+    tool_schemas = [f.openai_schema() for f in offered] + ([] if private else [REMEMBER_TOOL])
     # A memory has to be something the user said: their words in this turn, this chat and the
     # earlier messages quoted to the model. A scheduled run has none, so it saves no memories.
     said = (
@@ -460,7 +471,10 @@ def handle(
         calendar_question=grounding.asks_about_calendar(message, skill.name if skill else None),
         memory_ids={m["id"] for m, _ in context_memories},
     )
-    redact = privacy.redaction_active(user_id)
+    def redaction() -> bool:  # withheld secrets depend on where the answering model runs
+        return privacy.redaction_active(user_id, large_base_url() if escalated else None)
+
+    redact = redaction()
 
     # 5. The loop: model -> gate -> model, until it answers without tools. Each answer is
     #    reviewed against what the turn really did (app/grounding.py). A draft with a false
@@ -473,8 +487,10 @@ def handle(
     repaired: list[grounding.Finding] = []
     findings: list[grounding.Finding] = []
     auto_remembered = False
+    trace: dict = {}
     for round_no in range(MAX_TOOL_ROUNDS + 1):
         offer = tool_schemas if round_no < MAX_TOOL_ROUNDS else None
+        trace = {"messages": list(model_messages), "tools": offer}  # what produced this round's answer
         outbound, withheld = privacy.prepare_outbound(model_messages, redact)
         started = time.perf_counter()
         response = backend.generate(outbound, offer)
@@ -499,8 +515,15 @@ def handle(
                 auto_remembered = True
                 evidence.saved_memories += _auto_remember(user_id, message, source_id)
             findings = grounding.review(content, evidence)
-            if findings and not repaired and round_no < MAX_TOOL_ROUNDS:
-                repaired = findings
+            # A false claim gets one repair round; if the rewrite still has one and a larger
+            # model is set up, that model takes over for one more try.
+            retry = findings and round_no < MAX_TOOL_ROUNDS and (not repaired or (large is not None and not escalated))
+            if retry:
+                if repaired:
+                    escalated, backend = True, large
+                    redact = redaction()
+                else:
+                    repaired = findings
                 _set_content(final_id, "")
                 model_messages.append({"role": "assistant", "content": content})
                 model_messages.append({"role": "user", "content": grounding.repair_request(findings)})
@@ -553,8 +576,11 @@ def handle(
             + [{"kind": f.kind, "note": f.note, "fixed": True} for f in repaired if f.kind not in unresolved],
             "memories_not_saved": len(evidence.rejected_memories),
             "secrets_withheld": withheld,
+            "larger_model": escalated,
         },
     )
+    if message is not None and not private:  # kept so a reply you rate can teach the model (app/feedback.py)
+        _save_trace(final_id, trace)
 
     # 6. Link what the model was given to the reply, and report what shaped it. A memory or
     #    conversation deleted while the model was working is skipped, not linked.

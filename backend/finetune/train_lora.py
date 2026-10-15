@@ -24,6 +24,9 @@ BASE_MODEL = "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16"
 IGNORE = -100
 
 
+FEEDBACK_REPEATS = 3  # real conversations you rated count more than synthetic ones
+
+
 def load_rows(path: Path) -> list[dict]:
     with open(path, encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
@@ -163,6 +166,11 @@ def train(args: argparse.Namespace) -> int:
         return [e for e in (encode(tokenizer, r, args.max_len) for r in load_rows(args.data / f"{split}.jsonl")) if e]
 
     train_set, valid_set = dataset("train"), dataset("valid")
+    feedback_file = args.data / "feedback.jsonl"  # your own rated replies (from_feedback.py)
+    if feedback_file.exists():
+        real = [e for e in (encode(tokenizer, r, args.max_len) for r in load_rows(feedback_file)) if e]
+        train_set += real * FEEDBACK_REPEATS
+        print(f"{len(real)} of your rated replies added ({FEEDBACK_REPEATS}x each)")
     print(f"{len(train_set)} training and {len(valid_set)} validation conversations")
 
     quantization = (

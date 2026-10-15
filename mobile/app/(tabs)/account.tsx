@@ -356,6 +356,11 @@ export default function AccountScreen() {
               <Text style={s.label}>Where your data goes</Text>
               <Text style={s.body}>Chat model: {service(privacy.model)}</Text>
               <Text style={s.body}>Search by meaning: {privacy.embeddings ? service(privacy.embeddings) : "off"}</Text>
+              {privacy.other_services.map((item) => (
+                <Text key={item.purpose} style={s.body}>
+                  {item.purpose}: {service(item)} <Text style={s.meta}>(sends {item.sends})</Text>
+                </Text>
+              ))}
               <View style={s.divider} />
               <Text style={s.label}>Withhold secrets from the model</Text>
               <Text style={s.meta}>

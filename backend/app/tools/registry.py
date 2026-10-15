@@ -10,7 +10,32 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .schemas import CreateEventArgs, CreateNoteArgs, ListEventsArgs, ReadNotesArgs, ToolArgs
+from .schemas import (
+    CancelReminderArgs,
+    CreateEventArgs,
+    CreateNoteArgs,
+    CreateReminderArgs,
+    GoogleCreateEventArgs,
+    GoogleListEventsArgs,
+    ListEventsArgs,
+    ListRemindersArgs,
+    ReadDocumentArgs,
+    ReadDriveArgs,
+    ReadMailArgs,
+    ReadNotesArgs,
+    SearchDocumentsArgs,
+    SearchDriveArgs,
+    SearchMailArgs,
+    ToolArgs,
+)
+
+GOOGLE_HOSTS = ("www.googleapis.com", "gmail.googleapis.com")
+# How each tool is named to the user, in switches and in "turn on ..." messages.
+DISPLAY_NAMES = {"gcal": "Google Calendar", "gmail": "Gmail", "gdrive": "Google Drive", "documents": "Files"}
+
+
+def display_name(tool: str) -> str:
+    return DISPLAY_NAMES.get(tool, tool.capitalize())
 
 
 @dataclass(frozen=True)
@@ -21,6 +46,8 @@ class ToolFunction:
     description: str
     args_model: type[ToolArgs]
     module: str
+    account: str | None = None  # a connected account the tool needs ("google"); the gate passes its token
+    hosts: tuple[str, ...] = ()  # the only hosts the sandbox lets this tool reach
 
     @property
     def exposed_name(self) -> str:
@@ -69,6 +96,106 @@ FUNCTIONS: tuple[ToolFunction, ...] = (
         description="Search the user's notes by keyword, or list the most recent ones.",
         args_model=ReadNotesArgs,
         module="app.tools.notes_tool",
+    ),
+    ToolFunction(
+        tool="reminders",
+        function="create_reminder",
+        scope="write",
+        description="Set a reminder: Custodian notifies the user at that time (in the app, and on their phone if set up).",
+        args_model=CreateReminderArgs,
+        module="app.tools.reminders_tool",
+    ),
+    ToolFunction(
+        tool="reminders",
+        function="list_reminders",
+        scope="read",
+        description="List the user's upcoming reminders.",
+        args_model=ListRemindersArgs,
+        module="app.tools.reminders_tool",
+    ),
+    ToolFunction(
+        tool="reminders",
+        function="cancel_reminder",
+        scope="write",
+        description="Cancel a pending reminder by its id (from list_reminders).",
+        args_model=CancelReminderArgs,
+        module="app.tools.reminders_tool",
+    ),
+    ToolFunction(
+        tool="documents",
+        function="search_documents",
+        scope="read",
+        description="Search the files the user uploaded (PDFs, text, photos) by keyword; returns ids and snippets.",
+        args_model=SearchDocumentsArgs,
+        module="app.tools.documents_tool",
+    ),
+    ToolFunction(
+        tool="documents",
+        function="read_document",
+        scope="read",
+        description="Read part of an uploaded file by its id (from search_documents).",
+        args_model=ReadDocumentArgs,
+        module="app.tools.documents_tool",
+    ),
+    ToolFunction(
+        tool="gcal",
+        function="list_events",
+        scope="read",
+        description="List events on the user's Google Calendar for a day or a range of days.",
+        args_model=GoogleListEventsArgs,
+        module="app.tools.google_tools",
+        account="google",
+        hosts=GOOGLE_HOSTS,
+    ),
+    ToolFunction(
+        tool="gcal",
+        function="create_event",
+        scope="write",
+        description="Add an event to the user's Google Calendar.",
+        args_model=GoogleCreateEventArgs,
+        module="app.tools.google_tools",
+        account="google",
+        hosts=GOOGLE_HOSTS,
+    ),
+    ToolFunction(
+        tool="gmail",
+        function="search_messages",
+        scope="read",
+        description="Search the user's Gmail (Gmail search syntax); returns sender, subject, date and a snippet.",
+        args_model=SearchMailArgs,
+        module="app.tools.google_tools",
+        account="google",
+        hosts=GOOGLE_HOSTS,
+    ),
+    ToolFunction(
+        tool="gmail",
+        function="read_message",
+        scope="read",
+        description="Read one email by its id (from search_messages).",
+        args_model=ReadMailArgs,
+        module="app.tools.google_tools",
+        account="google",
+        hosts=GOOGLE_HOSTS,
+    ),
+    ToolFunction(
+        tool="gdrive",
+        function="search_files",
+        scope="read",
+        description="Search the user's Google Drive by file name or text.",
+        args_model=SearchDriveArgs,
+        module="app.tools.google_tools",
+        account="google",
+        hosts=GOOGLE_HOSTS,
+    ),
+    ToolFunction(
+        tool="gdrive",
+        function="read_file",
+        scope="read",
+        description="Read the text of a Google Doc, Sheet, Slides or text file by its id (from search_files).",
+        args_model=ReadDriveArgs,
+        module="app.tools.google_tools",
+        account="google",
+        hosts=GOOGLE_HOSTS,
     ),
 )
 

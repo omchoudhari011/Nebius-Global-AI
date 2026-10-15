@@ -32,6 +32,7 @@ from .orchestrator import ConversationNotFound, SkillUnavailable
 from .routers import auth as auth_routes
 from .routers import billing as billing_routes
 from .routers import chat as chat_routes
+from .routers import everyday as everyday_routes
 from .routers import data as data_routes
 from .routers import privacy as privacy_routes
 from .routers import tasks as task_routes
@@ -55,6 +56,8 @@ _REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 # The largest real request is a chat message (8,000 characters, under 50 KB as escaped JSON).
 MAX_BODY_BYTES = 256 * 1024
+# Uploads: a 10 MB file is ~13.4 MB in base64; a voice message is sent as raw audio.
+LARGE_BODY_PATHS = {"/documents": 15 * 1024 * 1024, "/voice/transcribe": 11 * 1024 * 1024}
 
 
 class BodySizeLimit:
@@ -68,9 +71,10 @@ class BodySizeLimit:
     async def __call__(self, scope, receive, send):  # type: ignore[no-untyped-def]
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
+        limit = LARGE_BODY_PATHS.get(scope.get("path", ""), self.max_bytes)
         for name, value in scope["headers"]:
             if name == b"content-length":
-                if not value.isdigit() or int(value) > self.max_bytes:
+                if not value.isdigit() or int(value) > limit:
                     response = JSONResponse(status_code=413, content={"detail": "Request body too large"})
                     return await response(scope, receive, send)
         received = 0
@@ -80,7 +84,7 @@ class BodySizeLimit:
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
-                if received > self.max_bytes:
+                if received > limit:
                     raise HTTPException(413, detail="Request body too large")
             return message
 
@@ -271,6 +275,7 @@ def create_app() -> FastAPI:
     app.include_router(task_routes.router)
     app.include_router(privacy_routes.router)
     app.include_router(billing_routes.router)
+    app.include_router(everyday_routes.router)
 
     web = _web_dir(settings)
     if web is not None:

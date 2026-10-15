@@ -24,12 +24,18 @@ and `/auth/login` still requires the passcode.
 | Path | Role |
 |---|---|
 | `app/main.py` | App factory: startup, middleware, error mapping, serving the web build |
-| `app/routers/` | HTTP routes: `auth`, `chat` (+ conversations), `data` (permissions, memories, audit log), `tasks` (+ skills), `privacy`, `billing` |
+| `app/routers/` | HTTP routes: `auth`, `chat` (+ conversations), `data` (permissions, memories, audit log), `tasks` (+ skills), `privacy`, `billing`, `everyday` (inbox, reminders, files, voice, feedback, Google) |
 | `app/orchestrator.py` | The agent loop for chat and scheduled tasks |
 | `app/grounding.py` | Accuracy checks: memories must be the user's words; replies are checked against what the turn did, with one repair round |
 | `app/privacy.py` | Where data goes, secret withholding for an online model, retention, off-the-record chats, export and erase |
 | `app/plans.py`, `app/licensing.py` | Plans and their limits; offline Ed25519 license keys |
 | `app/usage.py` | Per-day counters of turns, model calls and tokens; cost estimates and the Cloud allowance |
+| `app/notifications.py` | The inbox; delivers due reminders every minute; optional ntfy push |
+| `app/documents.py` | File uploads: PDF text, photos through a vision model, plain text; stored for the documents tool |
+| `app/voice.py` | Voice messages through an OpenAI-compatible speech-to-text server |
+| `app/feedback.py` | Ratings on replies; shared ones become fine-tuning examples |
+| `app/google_account.py` | Google OAuth (PKCE), encrypted tokens, short-lived access tokens for tools |
+| `app/tools/reminders_tool.py`, `documents_tool.py`, `google_tools.py` | The new tools; Google's run with a host allowlist in the sandbox |
 | `finetune/` | Fine-tuning dataset from the agent loop, LoRA training, GGUF export, Ollama install, before/after comparison ([README](finetune/README.md)) |
 | `../store/` | Stripe store: issues license keys, provisions Cloud tenants ([README](../store/README.md)) |
 | `app/tools/sandbox.py` | The tool gate and the subprocess executor |

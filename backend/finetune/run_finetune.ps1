@@ -1,6 +1,7 @@
 # Fine-tunes your local model for Custodian, end to end, on this PC's NVIDIA GPU:
 #
 #   1. builds the dataset from the app's own prompts and checks   (make_dataset.py, here)
+#      plus the replies you rated and shared in the app            (from_feedback.py, here)
 #   2. trains a LoRA adapter in a Linux CUDA container            (train_lora.py, Docker)
 #   3. merges it and converts it to GGUF                          (export_gguf.py, Docker)
 #   4. installs it in Ollama as "custodian-nemotron"              (install_ollama.py, here)
@@ -38,6 +39,7 @@ try {
     if (-not $SkipData) {
         Step "1/5 Building the dataset"
         & $python finetune\make_dataset.py --per-kind $PerKind; Check "make_dataset"
+        & $python finetune\from_feedback.py; Check "from_feedback"  # replies you rated and shared in the app
     }
 
     Step "2/5 Training (this takes a while; the first run also downloads the base model)"

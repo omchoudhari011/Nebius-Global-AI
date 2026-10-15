@@ -55,6 +55,8 @@ export type Checks = {
   items: CheckItem[];
   memories_not_saved: number;
   secrets_withheld: number;
+  /** The larger model answered (think harder, or after the everyday model failed twice). */
+  larger_model?: boolean;
 };
 
 /** What shaped one reply: the memories and earlier messages in its context, tool calls,
@@ -87,6 +89,7 @@ export type ConversationMessage = {
   content: string;
   created_at: string;
   used?: Used;
+  feedback?: Feedback | null;
 };
 
 export type Conversation = {
@@ -202,6 +205,8 @@ export type RedactMode = "auto" | "on" | "off";
 export type PrivacySummary = {
   model: DataService;
   embeddings: DataService | null;
+  /** Voice, photos, the larger model, phone pushes, Google: where else data goes. */
+  other_services: (DataService & { purpose: string; sends: string })[];
   redaction: { mode: RedactMode; active: boolean };
   retention_days: number | null;
   private_chat_hours: number;
@@ -273,4 +278,51 @@ export type Billing = {
   };
   plans: Plan[];
   purchase_url: string | null;
+};
+
+// Day-to-day features (backend/app/routers/everyday.py) -------------------------------------
+
+/** Your verdict on a reply; `share` lets it become fine-tuning data on your server. */
+export type Feedback = { rating: 1 | -1; correction: string | null; share: boolean };
+
+/** What this server has set up, so the app shows only what works. */
+export type Features = {
+  voice: boolean;
+  photos: boolean;
+  larger_model: string | null;
+  google: boolean;
+  phone_push: boolean;
+  unread: number;
+  feedback: { good: number; bad: number; shared: number };
+};
+
+export type AppNotification = {
+  id: number;
+  kind: "reminder" | "task" | "system";
+  title: string;
+  body: string | null;
+  ref: string | null;
+  created_at: string;
+  read_at: string | null;
+};
+
+export type Reminder = { id: number; text: string; due: string; repeat: "daily" | "weekdays" | "weekly" | null; status: string };
+
+export type DocumentFile = {
+  id: number;
+  name: string;
+  kind: "pdf" | "text" | "image";
+  bytes: number;
+  characters: number;
+  preview: string;
+  created_at: string;
+  warning?: string | null;
+};
+
+export type Integration = {
+  provider: "google";
+  configured: boolean;
+  connected: boolean;
+  account: string | null;
+  connected_at: string | null;
 };

@@ -1,4 +1,4 @@
-# Custodian schema (v6)
+# Custodian schema (v7)
 
 The DDL is in [schema.sql](schema.sql). This page has the diagram and the reasons behind the
 design. The diagram is Mermaid: GitHub renders it, and you can paste it into
@@ -12,6 +12,9 @@ erDiagram
   users ||--o{ tasks : schedules
   users ||--o| user_settings : chooses
   users ||--o{ sessions : "signs in as"
+  users ||--o{ notifications : receives
+  users ||--o{ integrations : connects
+  messages ||--o| message_feedback : "rated by"
   users ||--o{ usage_daily : uses
 
   tools ||--|{ tool_scopes : defines
@@ -43,6 +46,33 @@ erDiagram
     int id PK
     text email UK
     text created_at
+  }
+  notifications {
+    int id PK
+    int user_id FK
+    text kind "reminder | task | system"
+    blob title "Fernet"
+    blob body "Fernet"
+    text ref
+    text created_at
+    text read_at
+  }
+  message_feedback {
+    int message_id PK, FK
+    int rating "1 | -1"
+    blob correction "Fernet"
+    int share "may train the model"
+    text created_at
+    text updated_at
+  }
+  integrations {
+    int user_id PK, FK
+    text provider PK "google"
+    text account
+    text scopes
+    blob refresh_token "Fernet"
+    blob access_token "Fernet"
+    text expires_at
   }
   sessions {
     int id PK
@@ -146,6 +176,7 @@ erDiagram
     text model
     int latency_ms
     blob checks "Fernet JSON: accuracy checks"
+    blob trace "Fernet JSON: prompt and tools behind a final reply"
     text created_at
   }
   tool_calls {
@@ -198,6 +229,17 @@ erDiagram
     blob vector "Fernet; NULL = never embedded"
   }
 ```
+
+## What v7 adds: reminders, files, Google, feedback
+
+| Need | v7 |
+|---|---|
+| Tell you something without being asked (a reminder, a finished task) | `notifications`, Fernet-encrypted, shown in the app's inbox. Reminders themselves live in the reminders tool's own file (`DATA_DIR/tools/reminders/reminders.db`); the server delivers due ones every minute. |
+| Files you upload | Stored as text in the documents tool's own file (`DATA_DIR/tools/documents/documents.db`, FTS5), like notes; nothing new in this database. |
+| A connected Google account | `integrations`: the refresh and access tokens are Fernet-encrypted; a tool only ever gets a short-lived access token. |
+| Learn from replies you rate | `message_feedback`, plus `messages.trace`: the exact prompt and tools behind each final reply (Fernet JSON, deleted with the chat, never kept for off-the-record chats), so a reply you share becomes an exact training example. |
+| New tools and switches | `tools` rows for reminders, documents, gcal, gmail and gdrive with their `tool_scopes`; every switch starts off. |
+| Existing v6 databases | `db.MIGRATIONS[6]` adds the column, the three tables and the tool rows in one transaction. |
 
 ## What v6 adds: signed-in devices
 
@@ -265,7 +307,7 @@ prompt, plus what they said in earlier conversations that matches the message.
 | `embedding_ref` in the diagram, but the code uses FTS5 | Removed. If vectors are added later, also store the embedding model so you know what to re-embed. |
 | Foreign keys never enforced | `app/db.py` runs `PRAGMA foreign_keys = ON` for every connection (SQLite's default is off). |
 | No enums, `ON DELETE` rules or indexes | `CHECK` constraints on every enum-like column; deleting a user cascades everywhere; indexes for the scheduler, recall and conversation queries. |
-| No schema versioning | `PRAGMA user_version` (now 6); `init_db()` upgrades a v2, v3, v4 or v5 file in place with `db.MIGRATIONS` and refuses a v1 or unknown database instead of half-applying the schema. |
+| No schema versioning | `PRAGMA user_version` (now 7); `init_db()` upgrades a v2, v3, v4, v5 or v6 file in place with `db.MIGRATIONS` and refuses a v1 or unknown database instead of half-applying the schema. |
 
 ## Deliberately not added
 

@@ -3,7 +3,7 @@
 
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, RefreshControl, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Linking, Platform, RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { Banner } from "../../components/Banner";
 import { PermissionRow } from "../../components/PermissionRow";
@@ -11,7 +11,8 @@ import { Button, Card, Chip, Field, IconButton, Notice, ScreenHeader, SectionTit
 import * as api from "../../lib/api";
 import { confirmAction, formatWhen, toolLabel } from "../../lib/format";
 import { space, themed, useTokens } from "../../lib/tokens";
-import type { Memory, MemoryType, Permission, PermissionEvent, ToolCallLog } from "../../lib/types";
+import { pickFile } from "../../lib/media";
+import type { DocumentFile, Integration, Memory, MemoryType, Permission, PermissionEvent, Reminder, ToolCallLog } from "../../lib/types";
 
 const MEMORY_TYPES: { value: MemoryType; label: string }[] = [
   { value: "semantic", label: "Fact" },
@@ -28,6 +29,8 @@ const useStyles = themed((t) => ({
   rowBetween: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: space.md },
   body: { color: t.ink, fontSize: 15, lineHeight: 21 },
   meta: { color: t.inkSoft, fontSize: 13 },
+  itemText: { color: t.ink, fontSize: 15, fontWeight: "600" },
+  fileRow: { flexDirection: "row", alignItems: "center", gap: space.md, paddingVertical: 4 },
   chips: { flexDirection: "row", gap: 6, flexWrap: "wrap", alignItems: "center" },
   empty: { color: t.inkSoft, fontSize: 14 },
 }));
@@ -47,15 +50,26 @@ export default function ToolsDataScreen() {
   const [newMemory, setNewMemory] = useState("");
   const [newType, setNewType] = useState<MemoryType>("semantic");
   const [adding, setAdding] = useState(false);
+  const [google, setGoogle] = useState<Integration | null>(null);
+  const [files, setFiles] = useState<DocumentFile[]>([]);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [p, m, a, e] = await Promise.all([
+      const [p, m, a, e, g, d, r] = await Promise.all([
         api.getPermissions(),
         api.getMemories(),
         api.getToolCalls(25),
         api.getPermissionEvents(10),
+        api.getIntegrations(),
+        api.getDocuments(),
+        api.getReminders(),
       ]);
+      setGoogle(g.find((i) => i.provider === "google") ?? null);
+      setFiles(d);
+      setReminders(r);
       setPermissions(p);
       setMemories(m);
       setActivity(a);
@@ -74,6 +88,68 @@ export default function ToolsDataScreen() {
       void load();
     }, [load]),
   );
+
+  async function connectGoogle() {
+    setBusy("google");
+    try {
+      const { url } = await api.startGoogle();
+      if (Platform.OS === "web" && typeof window !== "undefined") window.location.assign(url);
+      else await Linking.openURL(url);
+    } catch (err) {
+      setError(api.errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function disconnectGoogle() {
+    if (!(await confirmAction("Disconnect Google?", "Custodian forgets its access to your Google account and asks Google to revoke it.", "Disconnect"))) return;
+    setBusy("google");
+    try {
+      await api.disconnectGoogle();
+      await load();
+    } catch (err) {
+      setError(api.errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function addFile() {
+    setBusy("upload");
+    try {
+      const picked = await pickFile();
+      if (picked) {
+        const doc = await api.uploadDocument(picked.name, picked.mimeType, picked.base64);
+        setInfo(doc.warning ? `Saved “${doc.name}”. ${doc.warning}` : `Saved “${doc.name}” (${doc.characters.toLocaleString()} characters of text).`);
+        await load();
+      }
+    } catch (err) {
+      setError(api.errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeFile(file: DocumentFile) {
+    if (!(await confirmAction(`Delete “${file.name}”?`, "Custodian won't be able to read it any more."))) return;
+    try {
+      await api.deleteDocument(file.id);
+      setFiles((prev) => prev.filter((f) => f.id !== file.id));
+    } catch (err) {
+      setError(api.errorMessage(err));
+    }
+  }
+
+  async function cancelReminder(reminder: Reminder) {
+    if (!(await confirmAction("Cancel this reminder?", reminder.text, "Cancel reminder"))) return;
+    try {
+      await api.cancelReminder(reminder.id);
+      setReminders((prev) => prev.filter((r) => r.id !== reminder.id));
+    } catch (err) {
+      setError(api.errorMessage(err));
+    }
+  }
 
   const byTool = useMemo(() => {
     const groups = new Map<string, Permission[]>();
@@ -136,6 +212,56 @@ export default function ToolsDataScreen() {
         <Banner />
         {error ? <Notice message={error} actionLabel="Retry" onAction={load} /> : null}
         {loading ? <ActivityIndicator color={t.accent2} /> : null}
+
+        {info ? <Notice tone="success" message={info} actionLabel="Dismiss" onAction={() => setInfo(null)} /> : null}
+
+        <SectionTitle title="Google account" hint="Google Calendar, Gmail (read only) and Google Drive (read only). Each has its own switch below, all off until you turn them on." />
+        <Card>
+          {google?.connected ? (
+            <>
+              <Text style={s.toolName}>Connected{google.account ? ` as ${google.account}` : ""}</Text>
+              <Text style={s.meta}>Custodian keeps the access encrypted on your server; tools get only a short-lived pass to Google's servers.</Text>
+              <Button compact variant="danger" icon="unlink-outline" label="Disconnect Google" loading={busy === "google"} onPress={() => void disconnectGoogle()} />
+            </>
+          ) : google?.configured ? (
+            <>
+              <Text style={s.meta}>Sign in with Google to let Custodian see your calendar, email and Drive files when you allow it.</Text>
+              <Button compact icon="logo-google" label="Connect Google" loading={busy === "google"} onPress={() => void connectGoogle()} />
+            </>
+          ) : (
+            <Text style={s.meta}>Not set up on this server: it needs a Google OAuth client (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET; see the README).</Text>
+          )}
+        </Card>
+
+        <SectionTitle title={`Files (${files.length})`} hint="PDFs, text files and photos you gave Custodian. It reads them only when Files · read is on." />
+        <Card>
+          {files.map((file) => (
+            <View key={file.id} style={s.fileRow}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={s.itemText}>{file.name}</Text>
+                <Text style={s.meta}>{file.kind.toUpperCase()} · {Math.max(1, Math.round(file.bytes / 1024))} KB · {formatWhen(file.created_at)}</Text>
+              </View>
+              <IconButton icon="trash-outline" label={`Delete ${file.name}`} onPress={() => void removeFile(file)} />
+            </View>
+          ))}
+          {!files.length ? <Text style={s.meta}>No files yet. Attach one in the chat or here.</Text> : null}
+          <Button compact variant="secondary" icon="cloud-upload-outline" label="Add a file" loading={busy === "upload"} onPress={() => void addFile()} />
+        </Card>
+
+        <SectionTitle title={`Upcoming reminders (${reminders.length})`} hint="Set them in the chat (“remind me to … at …”). They show in the inbox, and on this phone, when due." />
+        {reminders.length ? (
+          <Card>
+            {reminders.map((r) => (
+              <View key={r.id} style={s.fileRow}>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={s.itemText}>{r.text}</Text>
+                  <Text style={s.meta}>{formatWhen(r.due)}{r.repeat ? ` · repeats ${r.repeat}` : ""}</Text>
+                </View>
+                <IconButton icon="close-circle-outline" label={`Cancel reminder: ${r.text}`} onPress={() => void cancelReminder(r)} />
+              </View>
+            ))}
+          </Card>
+        ) : null}
 
         {byTool.length ? <SectionTitle title="Tool permissions" hint="Each switch covers one kind of access. Everything starts off." /> : null}
         {byTool.map(([tool, rows]) => (

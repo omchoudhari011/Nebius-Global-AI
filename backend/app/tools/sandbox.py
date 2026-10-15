@@ -38,6 +38,7 @@ log = logging.getLogger(__name__)
 
 RUNNER = Path(__file__).resolve().parent / "runner.py"
 MAX_OUTPUT_BYTES = 1_000_000
+NETWORK_TIMEOUT_SECONDS = 25  # tools that call an outside service (several requests each)
 
 
 class SubprocessSandbox(ToolExecutor):
@@ -199,7 +200,7 @@ def execute(
         return outcome
 
     # 2. Allowed? Checked fresh, immediately before running.
-    label = f"{fn.tool.capitalize()} · {fn.scope}"
+    label = f"{registry.display_name(fn.tool)} · {fn.scope}"
     if not tool["enabled"]:
         reason = f"The {fn.tool} tool is switched off on this server."
     elif not permissions.check(user_id, tool["id"], fn.scope):
@@ -213,22 +214,31 @@ def execute(
         _finish(call_id, outcome.status, error=reason)
         return outcome
 
-    # 3. Run
+    # 3. Run. A tool that works on a connected account gets a short-lived access token (never
+    #    the refresh token) and may reach only that service's hosts.
     settings = get_settings()
-    request = ToolRequest(
-        module=fn.module,
-        function=fn.function,
-        args=validated.model_dump(mode="json"),
-        context={
-            "user_id": user_id,
-            "data_dir": str(settings.tool_data_dir / fn.tool),
-            "timezone": settings.timezone,
-        },
-    )
+    context: dict[str, Any] = {
+        "user_id": user_id,
+        "data_dir": str(settings.tool_data_dir / fn.tool),
+        "timezone": settings.timezone,
+    }
+    timeout = settings.tool_timeout_seconds
+    if fn.account == "google":
+        from .. import google_account
+
+        try:
+            context["access_token"] = google_account.access_token(user_id)
+        except google_account.GoogleError as exc:
+            outcome.status, outcome.error = "denied", str(exc)
+            _finish(call_id, outcome.status, error=outcome.error)
+            return outcome
+        context["allow_hosts"] = list(fn.hosts)
+        timeout = max(timeout, NETWORK_TIMEOUT_SECONDS)
+    request = ToolRequest(module=fn.module, function=fn.function, args=validated.model_dump(mode="json"), context=context)
     executor = EXECUTORS.get(tool["executor"]) or UnavailableExecutor(tool["executor"])
     started = time.perf_counter()
     try:
-        outcome.result = executor.run(request, settings.tool_timeout_seconds)
+        outcome.result = executor.run(request, timeout)
         outcome.status = "succeeded"
     except ToolTimeout as exc:
         outcome.status, outcome.error = "timed_out", str(exc)

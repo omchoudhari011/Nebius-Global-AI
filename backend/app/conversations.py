@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from . import db, history_search, vectors
+from . import db, feedback, history_search, vectors
 from .crypto import decrypt, decrypt_json
 
 
@@ -171,6 +171,7 @@ def get_conversation(user_id: int, conversation_id: int) -> dict | None:
                     "content": text,
                     "created_at": db.iso(final["created_at"]),
                     "used": build_used(conn, final["id"], [a["id"] for a in assistants], start_id),
+                    "feedback": feedback.for_messages(conn, [final["id"]]).get(final["id"]),
                 }
             )
 

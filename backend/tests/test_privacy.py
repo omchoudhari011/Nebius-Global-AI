@@ -227,3 +227,18 @@ def test_privacy_summary(client):
     assert summary["redaction"] == {"mode": "auto", "active": False}
     assert summary["private_chat_hours"] == privacy.PRIVATE_CHAT_HOURS
     assert set(summary["stored"]) >= {"conversations", "messages", "memories", "notes", "calendar_events"}
+
+
+def test_every_outside_service_is_listed(user_id, client, monkeypatch):
+    assert client.get("/privacy").json()["other_services"] == []
+    monkeypatch.setenv("WHISPER_URL", "http://127.0.0.1:9000/v1")
+    monkeypatch.setenv("VISION_MODEL", "llava")
+    monkeypatch.setenv("VISION_BASE_URL", "http://127.0.0.1:11434/v1")
+    monkeypatch.setenv("NTFY_URL", "https://ntfy.sh/secret-topic")
+    monkeypatch.setenv("LARGE_MODEL_ID", "nvidia/nemotron-3-super-120b-a12b")
+    services = {s["purpose"]: s for s in client.get("/privacy").json()["other_services"]}
+    assert services["Voice messages"]["location"] == "this device"
+    assert services["Photos"]["location"] == "this device"
+    assert services["Phone notifications"]["location"] == "internet"
+    assert services["Phone notifications"]["sends"] == 'only "Reminder from Custodian"'
+    assert services["Think harder"]["location"] == "internet"

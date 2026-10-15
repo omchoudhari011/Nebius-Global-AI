@@ -8,7 +8,10 @@ directory. It reads one JSON request on stdin and writes one JSON reply on stdou
 Before the tool function runs, an audit hook (sys.addaudithook - it can't be removed
 once added) blocks sockets and DNS (so: no network), starting processes, loading native
 libraries through ctypes, and opening or changing files outside the tool's data
-directory; reading Python's own files stays allowed so lazy imports work. On POSIX it
+directory; reading Python's own files stays allowed so lazy imports work. A tool that needs
+an outside service (Google) gets `allow_hosts` from the gate: it may resolve exactly those
+names and connect only to the addresses they resolved to, over TCP, and read the system's CA
+certificates for TLS. Every other name, address and socket stays blocked. On POSIX it
 also caps CPU time, memory and file size. This hardens our own tool code against bad
 arguments; it is not an OS-level sandbox, so the container should still run unprivileged.
 
@@ -97,18 +100,62 @@ def _as_path(value: object) -> str | None:
         return "\0invalid"
 
 
-def install_guard(data_dir: str) -> None:
+NETWORK_EVENTS = frozenset({"socket.__new__", "socket.getaddrinfo", "socket.connect"})
+
+
+def _ca_paths() -> set[str]:
+    import ssl
+
+    paths = ssl.get_default_verify_paths()
+    return {_norm(p) for p in (paths.cafile, paths.capath, paths.openssl_cafile, paths.openssl_capath) if p}
+
+
+def install_guard(data_dir: str, allow_hosts: tuple[str, ...] = ()) -> None:
     data_root = _norm(data_dir)
+    hosts = frozenset(h.lower() for h in allow_hosts)
     read_roots = tuple(
         {_norm(p) for p in (sys.prefix, sys.base_prefix, sys.exec_prefix, sys.base_exec_prefix) if p}
         | {_norm(os.path.join(BACKEND_DIR, "app"))}
+        | (_ca_paths() if hosts else set())
     )
+    resolved: set[str] = set()  # addresses the allowed names resolved to
+    resolving: list[bool] = []  # set while the hook itself resolves a name (its call re-enters the hook)
 
     def deny(what: str) -> None:
         raise PermissionError(f"sandbox: {what} is not allowed for tools")
 
+    def network(event: str, args: tuple) -> None:
+        if event == "socket.__new__":
+            import socket
+
+            family = args[1] if len(args) > 1 else socket.AF_INET
+            kind = args[2] if len(args) > 2 else socket.SOCK_STREAM
+            if family not in (socket.AF_INET, socket.AF_INET6) or (kind != -1 and kind & 0xF != socket.SOCK_STREAM):
+                deny("that kind of socket")  # TCP over IP only: no UDP, raw or local sockets
+        elif event == "socket.getaddrinfo":
+            if resolving:
+                return
+            host = args[0].decode() if isinstance(args[0], bytes) else str(args[0])
+            if host.lower() not in hosts and host not in resolved:
+                deny(f"looking up {host}")
+            if host.lower() in hosts:
+                import socket
+
+                resolving.append(True)
+                try:
+                    for info in socket.getaddrinfo(host, None):
+                        resolved.add(info[4][0])
+                finally:
+                    resolving.pop()
+        elif event == "socket.connect":
+            address = args[1] if len(args) > 1 else None
+            if not (isinstance(address, tuple) and address and address[0] in resolved):
+                deny(f"connecting to {address!r}")
+
     def hook(event: str, args: tuple) -> None:
-        if event in BLOCKED_EVENTS:
+        if hosts and event in NETWORK_EVENTS:
+            network(event, args)
+        elif event in BLOCKED_EVENTS:
             deny(event)
         elif event == "open":
             path = _as_path(args[0])
@@ -198,8 +245,13 @@ def main() -> int:
         _reply({"ok": False, "error": f"can't load tool: {type(exc).__name__}: {exc}"})
         return 1
 
+    allow_hosts = tuple(ctx.get("allow_hosts") or ())
+    if allow_hosts:
+        import ssl  # noqa: F401 - load the TLS module and its native library before the guard
+
+        import urllib.request  # noqa: F401
     _limit_resources(timeout)
-    install_guard(data_dir)
+    install_guard(data_dir, allow_hosts)
 
     try:
         result = fn(ctx, **args)

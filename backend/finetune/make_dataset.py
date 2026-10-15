@@ -171,10 +171,39 @@ NO_TIME = [  # (request, title, day text)
     ("put movie night on my calendar", "Movie night", None),
     ("book a car service on Friday", "Car service", "Friday"),
 ]
-REMINDERS = [  # (request, title, hour, minute, day offset)
-    ("Remind me to call mum tomorrow at 6pm", "Call mum", 18, 0, 1),
-    ("remind me to pay rent today at 7pm", "Pay rent", 19, 0, 0),
-    ("Set a reminder to take my medicine tomorrow at 9am", "Take medicine", 9, 0, 1),
+REMINDERS = [  # (request, text, hour, minute, day offset, repeat)
+    ("Remind me to call mum tomorrow at 6pm", "Call mum", 18, 0, 1, None),
+    ("remind me to pay rent tomorrow at 7pm", "Pay rent", 19, 0, 1, None),
+    ("Set a reminder to take my medicine tomorrow at 9am", "Take medicine", 9, 0, 1, None),
+    ("remind me to water the plants tomorrow at 8am", "Water the plants", 8, 0, 1, None),
+    ("ping me tomorrow at 4pm to submit the report", "Submit the report", 16, 0, 1, None),
+    ("don't let me forget to book the train tickets tomorrow at 11am", "Book the train tickets", 11, 0, 1, None),
+    ("remind me every day at 9pm to take my vitamins", "Take vitamins", 21, 0, 1, "daily"),
+    ("remind me on weekdays at 10am to stand up and stretch", "Stand up and stretch", 10, 0, 1, "weekdays"),
+    ("every week remind me at 6pm to put the bins out", "Put the bins out", 18, 0, 1, "weekly"),
+]
+REMINDER_NO_TIME = [("remind me to call the bank", "Call the bank"), ("set a reminder to renew my passport", "Renew my passport"),
+                    ("remind me to buy milk", "Buy milk"), ("don't let me forget to email Priya", "Email Priya")]
+CONTACT_REQUESTS = [  # Custodian can't send messages: say so, offer what it can do
+    ("text me the shopping list later", "I can't send texts, but I can set a reminder or save the list as a note - which would you like?"),
+    ("email me a summary of my day tonight", "I can't send emails, but I can give you the summary here, or set a reminder for tonight."),
+    ("call me at 7 to wake me up", "I can't make calls, but I can set a reminder for 7:00 - shall I?"),
+]
+# Uploaded files: (name, text, question in everyday words, search words, answer)
+DOCS = [
+    ("lease.pdf", "Flat 4B lease. Pets are allowed with a refundable deposit of 5000 rupees. Rent is due on the 5th.",
+     "what does my lease say about pets?", "pets", "Your lease (lease.pdf) allows pets with a refundable deposit of 5000 rupees."),
+    ("lease.pdf", "Flat 4B lease. Pets are allowed with a refundable deposit of 5000 rupees. Rent is due on the 5th.",
+     "when is my rent due?", "rent due", "According to your lease (lease.pdf), rent is due on the 5th."),
+    ("warranty.pdf", "Washing machine warranty. Covered for 2 years from purchase, until 12 March 2027. Call 1800 200 300 for service.",
+     "until when is my washing machine under warranty?", "washing machine warranty",
+     "Your washing machine warranty (warranty.pdf) runs until 12 March 2027."),
+    ("electricity-bill.pdf", "BESCOM bill for September. Amount due 1840 rupees. Pay by 20 October.",
+     "how much is my electricity bill?", "electricity bill amount", "Your September electricity bill (electricity-bill.pdf) is 1840 rupees, due by 20 October."),
+    ("recipe.txt", "Grandma's dal: soak 1 cup toor dal for 30 minutes, pressure cook 3 whistles, temper with ghee, cumin and garlic.",
+     "how many whistles for grandma's dal?", "dal whistles", "Grandma's dal recipe (recipe.txt) says 3 whistles in the pressure cooker."),
+    ("insurance.pdf", "Health policy HP-2291. Sum insured 5 lakh rupees. Renewal date 1 February 2027.",
+     "when does my health insurance renew?", "health insurance renewal", "Your health policy (insurance.pdf) renews on 1 February 2027."),
 ]
 NOTES_NEW = [
     ("Take a note: call the plumber about the kitchen tap", "Call the plumber", "Call the plumber about the kitchen tap"),
@@ -320,6 +349,8 @@ class World:
         self.rng = random.Random(seed)
         with db.connect() as conn:
             self.tool_ids = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM tools")}
+            self.scopes = [(r["name"], r["tool_id"], r["scope"]) for r in conn.execute(
+                "SELECT t.name, s.tool_id, s.scope FROM tool_scopes s JOIN tools t ON t.id = s.tool_id")]
 
     @property
     def today(self) -> date:
@@ -334,7 +365,9 @@ class World:
             conn.execute("DELETE FROM memories WHERE user_id = ?", (self.user_id,))
         history_search.reset()
         vectors.reset()
-        for tool, (filename, table) in {"calendar": ("calendar.db", "events"), "notes": ("notes.db", "notes")}.items():
+        from app.privacy import TOOL_TABLES
+
+        for tool, (filename, table, _) in TOOL_TABLES.items():
             path = self.settings.tool_data_dir / tool / filename
             if path.exists():
                 conn = sqlite3.connect(path)
@@ -345,9 +378,8 @@ class World:
                     pass
                 finally:
                     conn.close()
-        for tool, tool_id in self.tool_ids.items():
-            for scope in ("read", "write"):
-                permissions.set_granted(self.user_id, tool_id, scope, scope in (grants or {}).get(tool, ()))
+        for tool, tool_id, scope in self.scopes:
+            permissions.set_granted(self.user_id, tool_id, scope, scope in (grants or {}).get(tool, ()))
 
     def remember(self, text: str, kind: str = "semantic") -> None:
         from app import memory
@@ -377,6 +409,21 @@ class World:
         day = self.today + timedelta(days=day_offset)
         for title, hour, minute, length, location in sorted(self.rng.sample(EVENTS, count), key=lambda e: (e[1], e[2])):
             calendar_tool.create_event(ctx, title, f"{day.isoformat()}T{hour:02d}:{minute:02d}", length, location)
+
+    def add_document(self, name: str, text: str) -> None:
+        import base64
+
+        from app import documents
+
+        documents.add(self.user_id, name, "text/plain", base64.b64encode(text.encode()).decode())
+
+    def add_reminder(self, text: str, hours_from_now: int) -> None:
+        from app.tools import reminders_tool
+
+        ctx = {"user_id": self.user_id, "data_dir": str(self.settings.tool_data_dir / "reminders"), "timezone": TIMEZONE}
+        Path(ctx["data_dir"]).mkdir(parents=True, exist_ok=True)
+        when = datetime.now(ZoneInfo(TIMEZONE)) + timedelta(hours=hours_from_now)
+        reminders_tool.create_reminder(ctx, text, when.replace(minute=0, second=0, microsecond=0, tzinfo=None).isoformat())
 
     def add_notes(self) -> None:
         from app.tools import notes_tool
@@ -513,27 +560,83 @@ def scenarios(world: World, per_kind: int) -> list[Scenario]:
             grants={"calendar": ("read", "write")},
         ))
 
-    def reminder_reply(title: str) -> Callable[[list[dict]], str]:
+    def reminder_reply(text: str) -> Callable[[list[dict]], str]:
         def reply(results: list[dict]) -> str:
             result = results[0]
             if result["status"] == "denied":
-                return (f"I can't send reminders, and I couldn't add “{title}” to your calendar either: "
-                        f"{_denied_switch(result)} is switched off in Tools & Data.")
-            event = result["result"]["created"]
-            return (f"I can't send reminders or notifications, but I've added “{event['title']}” to your calendar "
-                    f"for {_pretty(event['start'])} so you'll see it there.")
+                return (f"I couldn't set that reminder: {_denied_switch(result)} is switched off in Tools & Data. "
+                        "Turn it on and ask me again.")
+            made = result["result"]["created"]
+            what = made["text"][0].lower() + made["text"][1:]
+            repeat = {"daily": "every day", "weekdays": "every weekday", "weekly": "every week"}.get(made["repeat"] or "")
+            if repeat:
+                return f"Done - I'll remind you to {what} {repeat} at {made['due'][11:16]}."
+            return f"Done - I'll remind you to {what} on {_pretty(made['due'])}."
         return reply
 
-    for _ in range(per_kind // 2):  # reminders: no notifications exist; use the calendar
-        request, title, hour, minute, offset = pick(REMINDERS)
-        granted = rng.random() < 0.6
+    for _ in range(per_kind):  # set a reminder (granted or not); repeating ones too
+        request, text, hour, minute, offset, repeat = pick(REMINDERS)
+        granted = rng.random() < 0.7
         day = today + timedelta(days=offset)
+        args = {"text": text, "at": f"{day.isoformat()}T{hour:02d}:{minute:02d}"}
+        if repeat:
+            args["repeat"] = repeat
         out.append(Scenario(
-            "reminder", request,
-            Plan([("calendar_create_event", {"title": title, "start": f"{day.isoformat()}T{hour:02d}:{minute:02d}"})],
-                 reminder_reply(title)),
-            grants={"calendar": ("read", "write")} if granted else {"calendar": ("read",)},
-            expect_status={"create_event": "succeeded" if granted else "denied"},
+            "reminder", request, Plan([("reminders_create_reminder", args)], reminder_reply(text)),
+            grants={"reminders": ("read", "write")} if granted else {"reminders": ("read",)},
+            expect_status={"create_reminder": "succeeded" if granted else "denied"},
+        ))
+
+    for _ in range(per_kind // 4):  # no time given: ask, don't guess
+        request, text = pick(REMINDER_NO_TIME)
+        out.append(Scenario(
+            "reminder_ask_time", request,
+            Plan(reply=lambda r, x=text: f"When should I remind you to {x[0].lower() + x[1:]}?"),
+            grants={"reminders": ("read", "write")},
+        ))
+
+    def reminders_listed(results: list[dict]) -> str:
+        result = results[0]
+        if result["status"] == "denied":
+            return f"I can't check your reminders: {_denied_switch(result)} is switched off in Tools & Data."
+        items = result["result"]["reminders"]
+        if not items:
+            return "You have no upcoming reminders."
+        return "Your upcoming reminders:\n" + "\n".join(f"• {_pretty(r['due'])} - {r['text']}" for r in items)
+
+    for _ in range(per_kind // 4):  # list reminders
+        granted = rng.random() < 0.7
+        count = rng.choice([0, 1, 2])
+        out.append(Scenario(
+            "reminder_list", pick(["what reminders do I have?", "any reminders coming up?", "show my reminders"]),
+            Plan([("reminders_list_reminders", {})], reminders_listed),
+            grants={"reminders": ("read",)} if granted else {},
+            setup=lambda w, c=count: [w.add_reminder(t, h) for t, h in [("Call mum", 5), ("Pay rent", 30)][:c]],
+            expect_status={"list_reminders": "succeeded" if granted else "denied"},
+        ))
+
+    for _ in range(per_kind // 4):  # it can't text, email or call: say so, offer a reminder
+        request, answer = pick(CONTACT_REQUESTS)
+        out.append(Scenario("contact", request, Plan(reply=lambda r, a=answer: a)))
+
+    def doc_answer(answer: str) -> Callable[[list[dict]], str]:
+        def reply(results: list[dict]) -> str:
+            result = results[0]
+            if result["status"] == "denied":
+                return f"I can't look in your files: {_denied_switch(result)} is switched off in Tools & Data."
+            if not result["result"]["documents"]:
+                return "I didn't find that in the files you've uploaded."
+            return answer
+        return reply
+
+    for _ in range(per_kind):  # a question about an uploaded file, asked in everyday words
+        name, text, question, query, answer = pick(DOCS)
+        granted = rng.random() < 0.75
+        out.append(Scenario(
+            "document", question, Plan([("documents_search_documents", {"query": query})], doc_answer(answer)),
+            grants={"documents": ("read",)} if granted else {},
+            setup=lambda w, n=name, x=text: w.add_document(n, x),
+            expect_status={"search_documents": "succeeded" if granted else "denied"},
         ))
 
     def note_saved(results: list[dict]) -> str:
@@ -604,16 +707,30 @@ def scenarios(world: World, per_kind: int) -> list[Scenario]:
                 parts.append("Recent notes:\n" + "\n".join(f"• {n['title']} - {n['body']}" for n in notes[:3]) if notes
                              else "No recent notes." if notes is not None else
                              f"I couldn't read your notes ({_denied_switch(result)} is off in Tools & Data).")
+            elif result["function"] == "list_reminders":
+                items = result["result"]["reminders"] if result["status"] == "succeeded" else None
+                parts.append("Reminders:\n" + "\n".join(f"• {_pretty(r['due'])} - {r['text']}" for r in items[:3]) if items
+                             else "No reminders coming up." if items is not None else
+                             f"I couldn't check your reminders ({_denied_switch(result)} is off in Tools & Data).")
         return "\n\n".join(parts)
 
-    for _ in range(per_kind // 2):  # the daily summary (scheduled, or asked for in chat)
-        grants = rng.choice([{"calendar": ("read",), "notes": ("read",)}, {"calendar": ("read",)}, {}])
+    for _ in range(per_kind):  # the daily summary: calendar, notes and reminders, all read together
+        grants = rng.choice([
+            {"calendar": ("read",), "notes": ("read",), "reminders": ("read",)},
+            {"calendar": ("read",), "notes": ("read",), "reminders": ("read",)},
+            {"calendar": ("read",), "notes": ("read",)},
+            {"calendar": ("read",)},
+            {},
+        ])
         count = rng.choice([0, 2, 3])
         out.append(Scenario(
-            "daily_summary", None if rng.random() < 0.5 else pick(["Give me a summary of my day", "brief me on today"]),
-            Plan([("calendar_list_events", {}), ("notes_read_notes", {"query": ""})], summary_reply),
+            "daily_summary", None if rng.random() < 0.5 else pick(["Give me a summary of my day", "brief me on today",
+                                                                  "what does my day look like?", "morning briefing please"]),
+            Plan([("calendar_list_events", {}), ("notes_read_notes", {"query": ""}), ("reminders_list_reminders", {})],
+                 summary_reply),
             grants=grants, task=True,
-            setup=lambda w, c=count: (w.add_events(c) if c else None, w.add_notes()),
+            setup=lambda w, c=count: (w.add_events(c) if c else None, w.add_notes(),
+                                      w.add_reminder("Pay rent", 6) if c else None),
         ))
     return out
 

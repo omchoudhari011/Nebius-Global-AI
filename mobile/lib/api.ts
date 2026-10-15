@@ -12,6 +12,12 @@
 import { Platform } from "react-native";
 
 import type {
+  AppNotification,
+  DocumentFile,
+  Feedback,
+  Features,
+  Integration,
+  Reminder,
   AuthResponse,
   Billing,
   ChatResponse,
@@ -143,10 +149,10 @@ export const revokeOtherSessions = () => request<{ signed_out: number }>("/auth/
 // Chat --------------------------------------------------------------------------------
 
 /** `offTheRecord` starts a private chat; a continued chat keeps the setting it started with. */
-export const sendMessage = (message: string, conversationId?: number | null, offTheRecord = false) =>
+export const sendMessage = (message: string, conversationId?: number | null, offTheRecord = false, deep = false) =>
   request<ChatResponse>("/chat", {
     method: "POST",
-    body: { message, conversation_id: conversationId ?? null, private: offTheRecord },
+    body: { message, conversation_id: conversationId ?? null, private: offTheRecord, deep },
     timeoutMs: 120_000,
   });
 export const listConversations = (channel?: "chat" | "task", limit = 30) =>
@@ -195,3 +201,43 @@ export const eraseData = () =>
 export const getBilling = () => request<Billing>("/billing");
 export const activateLicense = (key: string) => request<Billing>("/billing/license", { method: "POST", body: { key } });
 export const removeLicense = () => request<Billing>("/billing/license", { method: "DELETE" });
+
+// Day-to-day features -------------------------------------------------------------------------
+
+export const getFeatures = () => request<Features>("/features");
+
+export const getNotifications = (unread = false) => request<AppNotification[]>(`/notifications${unread ? "?unread=true" : ""}`);
+export const markNotificationRead = (id: number) => request<void>(`/notifications/${id}/read`, { method: "POST" });
+export const markAllNotificationsRead = () => request<{ marked: number }>("/notifications/read-all", { method: "POST" });
+
+export const getReminders = () => request<Reminder[]>("/reminders");
+export const cancelReminder = (id: number) => request<void>(`/reminders/${id}`, { method: "DELETE" });
+
+export const getDocuments = () => request<DocumentFile[]>("/documents");
+export const uploadDocument = (name: string, contentType: string, base64: string) =>
+  request<DocumentFile>("/documents", { method: "POST", body: { name, content_type: contentType, data: base64 }, timeoutMs: 240_000 });
+export const deleteDocument = (id: number) => request<void>(`/documents/${id}`, { method: "DELETE" });
+
+export const rateMessage = (messageId: number, rating: 1 | -1, correction: string | null, share: boolean) =>
+  request<Feedback>(`/messages/${messageId}/feedback`, { method: "POST", body: { rating, correction, share } });
+export const clearRating = (messageId: number) => request<void>(`/messages/${messageId}/feedback`, { method: "DELETE" });
+
+export const getIntegrations = () => request<Integration[]>("/integrations");
+export const startGoogle = () => request<{ url: string }>("/integrations/google/start");
+export const disconnectGoogle = () => request<void>("/integrations/google", { method: "DELETE" });
+
+/** Sends a recording as the raw request body and returns what was said. */
+export async function transcribe(audio: Blob | ArrayBuffer, contentType: string): Promise<string> {
+  const headers: Record<string, string> = { Accept: "application/json", "Content-Type": contentType };
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase}/voice/transcribe`, { method: "POST", headers, body: audio as BodyInit, credentials: "include" });
+  } catch {
+    throw new ApiError(0, "Can't reach the Custodian server to transcribe that.");
+  }
+  if (res.status === 401) unauthorizedHandler?.();
+  const data = (await res.json().catch(() => ({}))) as { text?: string; detail?: string };
+  if (!res.ok) throw new ApiError(res.status, data.detail ?? `Transcription failed (${res.status})`);
+  return data.text ?? "";
+}

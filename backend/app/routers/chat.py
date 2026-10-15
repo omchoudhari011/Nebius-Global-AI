@@ -18,6 +18,8 @@ class ChatRequest(BaseModel):
     conversation_id: int | None = Field(default=None, ge=1)
     # Start an off-the-record chat (ignored when continuing one, which keeps its own setting).
     private: bool = False
+    # Ask the larger model (LARGE_MODEL_ID) to answer this one, when the server has it.
+    deep: bool = False
 
     @field_validator("message")
     @classmethod
@@ -33,7 +35,9 @@ def chat(body: ChatRequest, user_id: int = Depends(require_session)) -> dict:
     lists the memories recalled, tool calls made (with their gate status), the skill version,
     memories saved during the turn, and the accuracy and privacy checks on the reply."""
     usage.check_allowance(user_id)  # 402 when the plan's monthly model allowance is used up
-    return orchestrator.handle(user_id, body.message, conversation_id=body.conversation_id, private=body.private)
+    return orchestrator.handle(
+        user_id, body.message, conversation_id=body.conversation_id, private=body.private, deep=body.deep
+    )
 
 
 @router.get("/conversations")

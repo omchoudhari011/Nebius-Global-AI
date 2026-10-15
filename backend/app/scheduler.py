@@ -3,7 +3,8 @@ chat uses, with no user message - one code path serves both triggers.
 
 On startup: leftover 'running' task_runs (from a process that crashed) are marked
 'failed', every active task is registered with its CronTrigger in its own time zone, and
-an hourly job deletes expired memories. Each fire inserts a task_runs row; the partial
+an hourly job deletes expired memories; a
+per-minute job delivers reminders that have come due (app/notifications.py). Each fire inserts a task_runs row; the partial
 unique index task_runs_one_running guarantees at most one run in progress per task, even
 if a run is triggered by hand while the cron job fires.
 
@@ -29,11 +30,12 @@ from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from . import auth, db, memory, orchestrator, plans, privacy, tasks, usage
+from . import auth, db, memory, notifications, orchestrator, plans, privacy, tasks, usage
 
 log = logging.getLogger(__name__)
 
 PURGE_JOB_ID = "purge-expired-memories"
+REMINDERS_JOB_ID = "deliver-reminders"
 MAX_RUNS_PER_DAY = 48
 SKIPPED = "skipped:"
 
@@ -89,6 +91,13 @@ def start() -> None:
             _purge,
             IntervalTrigger(hours=1, timezone=timezone.utc),
             id=PURGE_JOB_ID,
+            next_run_time=datetime.now(timezone.utc),
+            replace_existing=True,
+        )
+        sched.add_job(
+            notifications.deliver_due,
+            IntervalTrigger(minutes=1, timezone=timezone.utc),
+            id=REMINDERS_JOB_ID,
             next_run_time=datetime.now(timezone.utc),
             replace_existing=True,
         )
@@ -158,7 +167,7 @@ def run_task(task_id: int) -> int | None:
     log.info("running task %s (%s), run %s", task_id, task["name"], run_id)
     status, error = "succeeded", None
     try:
-        orchestrator.handle(
+        result = orchestrator.handle(
             task["user_id"],
             None,
             trigger=task["name"],
@@ -180,6 +189,10 @@ def run_task(task_id: int) -> int | None:
             "UPDATE task_runs SET status = ?, error = ?, finished_at = datetime('now') WHERE id = ?",
             (status, error, run_id),
         )
+    if status == "succeeded":
+        reply = " ".join(result["reply"].split())
+        notifications.add(task["user_id"], "task", f"{task['name'].replace('-', ' ').capitalize()} is ready",
+                          reply[:280] + ("…" if len(reply) > 280 else ""), f"conversation:{conversation_id}")
     _refresh_next_run(task)
     return run_id
 

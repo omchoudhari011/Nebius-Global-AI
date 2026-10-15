@@ -19,7 +19,7 @@ from pathlib import Path
 from .config import BACKEND_DIR, get_settings
 
 SCHEMA_PATH = BACKEND_DIR / "schema.sql"
-SCHEMA_VERSION = 6  # must match the PRAGMA user_version at the end of schema.sql
+SCHEMA_VERSION = 7  # must match the PRAGMA user_version at the end of schema.sql
 
 # Upgrades for databases made by an older schema.sql: {from version: script}. Each script
 # runs in one transaction and ends by setting user_version to the next version, so a failed
@@ -94,6 +94,65 @@ MIGRATIONS = {
         );
         CREATE INDEX sessions_by_user ON sessions(user_id);
         PRAGMA user_version = 6;
+        COMMIT;
+    """,
+    6: """
+        BEGIN;
+        ALTER TABLE messages ADD COLUMN trace BLOB;
+        -- Things Custodian tells you without being asked: reminders coming due, a scheduled task's
+        -- result (app/notifications.py). Shown in the app's inbox; optionally pushed to a phone.
+        CREATE TABLE notifications (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL CHECK (kind IN ('reminder', 'task', 'system')),
+          title BLOB NOT NULL,                   -- Fernet
+          body BLOB,                             -- Fernet
+          ref TEXT,                              -- what it points at, e.g. 'reminder:12', 'conversation:40'
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          read_at TEXT
+        );
+        CREATE INDEX notifications_by_user ON notifications(user_id, read_at, id);
+
+        -- Your verdict on a reply (app/feedback.py). With share = 1 it may become fine-tuning data
+        -- (backend/finetune/from_feedback.py), built from the stored prompt in messages.trace.
+        CREATE TABLE message_feedback (
+          message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+          rating INTEGER NOT NULL CHECK (rating IN (-1, 1)),
+          correction BLOB,                       -- Fernet: what the reply should have said
+          share INTEGER NOT NULL DEFAULT 0 CHECK (share IN (0, 1)),
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        -- Connected accounts (app/integrations/google.py). Tokens are Fernet-encrypted and never
+        -- reach a tool: the gate hands a tool only a short-lived access token.
+        CREATE TABLE integrations (
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          provider TEXT NOT NULL CHECK (provider IN ('google')),
+          account TEXT,                          -- the connected address, for display
+          scopes TEXT NOT NULL,
+          refresh_token BLOB NOT NULL,           -- Fernet
+          access_token BLOB,                     -- Fernet
+          expires_at TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (user_id, provider)
+        );
+        INSERT INTO tools (name) VALUES
+          ('reminders'),                         -- app/tools/reminders_tool.py
+          ('documents'),                         -- app/tools/documents_tool.py (files you upload)
+          ('gcal'),                              -- app/tools/google_tools.py: Google Calendar
+          ('gmail'),                             -- app/tools/google_tools.py: Gmail (read only)
+          ('gdrive');                            -- app/tools/google_tools.py: Google Drive (read only)
+
+        INSERT INTO tool_scopes (tool_id, scope, description) VALUES
+          ((SELECT id FROM tools WHERE name = 'reminders'), 'read',  'list_reminders'),
+          ((SELECT id FROM tools WHERE name = 'reminders'), 'write', 'create_reminder'),
+          ((SELECT id FROM tools WHERE name = 'documents'), 'read',  'search_documents, read_document'),
+          ((SELECT id FROM tools WHERE name = 'gcal'),      'read',  'list_events'),
+          ((SELECT id FROM tools WHERE name = 'gcal'),      'write', 'create_event'),
+          ((SELECT id FROM tools WHERE name = 'gmail'),     'read',  'search_messages, read_message'),
+          ((SELECT id FROM tools WHERE name = 'gdrive'),    'read',  'search_files, read_file');
+        PRAGMA user_version = 7;
         COMMIT;
     """,
 }
