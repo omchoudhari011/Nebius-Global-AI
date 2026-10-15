@@ -1,37 +1,32 @@
-// Root layout. Expo Router wraps every screen in app/ with this file.
-// Tabs adds a bottom tab bar, so you can move between the chat (app/index.tsx)
-// and the Tools & Data screen (app/tools-data.tsx). Without this file nothing
-// linked the two screens.
+// Root layout: safe areas, light/dark navigation theme, and the session provider.
+// app/(tabs)/_layout.tsx sends signed-out users to app/sign-in.tsx.
 
-import { Tabs } from "expo-router";
-import Ionicons from "@expo/vector-icons/Ionicons";
-import { tokens } from "../lib/tokens";
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { useMemo } from "react";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+
+import { AuthProvider } from "../lib/auth";
+import { useTokens } from "../lib/tokens";
 
 export default function RootLayout() {
+  const t = useTokens();
+  const navTheme = useMemo(() => {
+    const base = t.scheme === "dark" ? DarkTheme : DefaultTheme;
+    return {
+      ...base,
+      colors: { ...base.colors, primary: t.accentText, background: t.bg, card: t.surface, text: t.ink, border: t.border },
+    };
+  }, [t]);
+
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: tokens.accent,
-        tabBarInactiveTintColor: tokens.inkSoft,
-        tabBarStyle: { backgroundColor: tokens.surface, borderTopColor: tokens.border },
-        headerStyle: { backgroundColor: tokens.surface },
-        headerTintColor: tokens.ink,
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Chat",
-          tabBarIcon: ({ color, size }) => <Ionicons name="chatbubble-ellipses-outline" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="tools-data"
-        options={{
-          title: "Tools & Data",
-          tabBarIcon: ({ color, size }) => <Ionicons name="shield-checkmark-outline" size={size} color={color} />,
-        }}
-      />
-    </Tabs>
+    <SafeAreaProvider>
+      <ThemeProvider value={navTheme}>
+        <AuthProvider>
+          <StatusBar style={t.scheme === "dark" ? "light" : "dark"} />
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }} />
+        </AuthProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }

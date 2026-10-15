@@ -1,0 +1,17 @@
+.git
+.github
+**/node_modules
+**/.expo
+mobile/dist
+mobile/web-build
+backend/.venv
+backend/data
+backend/web
+backend/.env
+backend/**/__pycache__
+backend/.pytest_cache
+**/*.db
+**/*.db-wal
+**/*.db-shm
+*.html
+deploy

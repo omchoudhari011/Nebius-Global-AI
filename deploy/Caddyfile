@@ -1,0 +1,10 @@
+# HTTPS in front of Custodian. Caddy gets and renews a Let's Encrypt certificate for
+# $DOMAIN automatically; point the domain's DNS at this machine and open ports 80 and 443.
+{$DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	reverse_proxy custodian:8000
+}

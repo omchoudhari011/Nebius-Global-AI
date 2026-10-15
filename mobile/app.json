@@ -3,7 +3,42 @@
     "name": "Custodian",
     "slug": "custodian",
     "scheme": "custodian",
-    "platforms": ["ios", "android", "web"],
-    "web": { "bundler": "metro" }
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "ios": {
+      "bundleIdentifier": "com.custodian.app",
+      "supportsTablet": true,
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.custodian.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#5b4fc4"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "name": "Custodian",
+      "shortName": "Custodian",
+      "themeColor": "#5b4fc4",
+      "backgroundColor": "#eef0f3",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "expo-secure-store"
+    ]
   }
 }

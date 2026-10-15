@@ -1,5 +1,6 @@
--- Custodian schema v2 — see docs/PLAN.md (Step 1: structure, Step 2: finalized alongside encryption).
--- Design notes and the ER diagram: SCHEMA.md.
+-- Custodian schema v5. Design notes and the ER diagram: SCHEMA.md.
+-- Tool data (calendar events, notes) is not here: each tool keeps its own database under
+-- DATA_DIR/tools/<tool>/ so the sandboxed tool process never needs this file.
 --
 -- Conventions:
 --   * Timestamps are UTC TEXT from datetime('now'), so they sort and compare as strings.
@@ -7,7 +8,7 @@
 --   * app/db.py turns on PRAGMA foreign_keys for every connection. SQLite ignores every
 --     REFERENCES / ON DELETE below without it.
 --   * app/db.init_db() runs this once on an empty database; user_version records which
---     schema the file holds.
+--     schema the file holds, and db.MIGRATIONS upgrades an older file in place.
 
 PRAGMA journal_mode = WAL;               -- API requests and scheduler jobs write concurrently
 
@@ -19,6 +20,17 @@ CREATE TABLE users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   email TEXT NOT NULL UNIQUE,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Privacy choices and the activated license, one row per user (app/privacy.py, app/plans.py).
+-- A missing row means the defaults: keep chats until deleted, withhold secrets from the
+-- model when it runs on the internet, no license.
+CREATE TABLE user_settings (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  retention_days INTEGER CHECK (retention_days IS NULL OR retention_days BETWEEN 1 AND 3650),  -- NULL = keep chats
+  redact_secrets TEXT NOT NULL DEFAULT 'auto' CHECK (redact_secrets IN ('auto', 'on', 'off')),
+  license_key TEXT,                      -- signed by the vendor; verified offline by app/licensing.py
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Tools and permissions ---------------------------------------------------------------
@@ -48,7 +60,7 @@ CREATE TABLE permissions (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   tool_id INTEGER NOT NULL,
   scope TEXT NOT NULL,
-  granted INTEGER NOT NULL DEFAULT 0 CHECK (granted IN (0, 1)),  -- default-deny; see app/permissions.py (Step 3)
+  granted INTEGER NOT NULL DEFAULT 0 CHECK (granted IN (0, 1)),  -- default-deny; see app/permissions.py
   UNIQUE (user_id, tool_id, scope),
   FOREIGN KEY (tool_id, scope) REFERENCES tool_scopes(tool_id, scope)
 );
@@ -111,6 +123,9 @@ CREATE TABLE conversations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   channel TEXT NOT NULL DEFAULT 'chat' CHECK (channel IN ('chat', 'task')),  -- 'task' = opened by a task_run
+  -- Off the record: never recalled in other chats, never embedded, never saved to memory,
+  -- and deleted a day after its last message (app/privacy.py).
+  private INTEGER NOT NULL DEFAULT 0 CHECK (private IN (0, 1)),
   started_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX conversations_by_user ON conversations(user_id, started_at);
@@ -126,6 +141,7 @@ CREATE TABLE messages (
   tool_call_id INTEGER REFERENCES tool_calls(id) ON DELETE CASCADE,   -- the call a role='tool' row answers
   model TEXT,                            -- model backend id, assistant turns only
   latency_ms INTEGER,                    -- model time, assistant turns only; read by eval/latency_eval.py
+  checks BLOB,                           -- Fernet JSON: accuracy and privacy checks on a final reply (app/grounding.py)
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   CHECK ((role = 'tool') = (tool_call_id IS NOT NULL))
 );
@@ -163,7 +179,7 @@ CREATE TABLE memories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   type TEXT NOT NULL DEFAULT 'episodic' CHECK (type IN ('episodic', 'semantic', 'preference')),
-  content BLOB NOT NULL,                 -- Fernet ciphertext, see app/crypto.py (Step 2)
+  content BLOB NOT NULL,                 -- Fernet ciphertext, see app/crypto.py
   source_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,  -- message it came from; NULL if seeded
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -179,7 +195,7 @@ BEGIN
 END;
 
 -- Keyword recall index. Holds a plaintext copy of memory text for FTS5 MATCH queries —
--- a disclosed tradeoff, see the Step 2 notes in docs/PLAN.md.
+-- a disclosed tradeoff, see app/memory.py.
 -- rowid = memories.id: memory.write() inserts both rows in one transaction and must replace
 -- the FTS row when content changes (only it has the plaintext). recall() joins back on
 -- rowid to filter by user_id and skip expired rows. Deletes, including cascades from users,
@@ -191,13 +207,47 @@ BEGIN
   DELETE FROM memories_fts WHERE rowid = old.id;
 END;
 
--- Memories recalled into the context of an assistant turn: the "memories" part of `used`.
+-- Memories in the context of an assistant turn: the "memories" part of `used`. Every memory
+-- that fits the prompt budget goes in; matched = 1 marks the ones picked for this message
+-- (keyword matches and standing preferences), 0 the rest of the lifetime memory.
 CREATE TABLE message_memories (
   message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
   memory_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  matched INTEGER NOT NULL DEFAULT 1 CHECK (matched IN (0, 1)),
   PRIMARY KEY (message_id, memory_id)
 );
 CREATE INDEX message_memories_by_memory ON message_memories(memory_id);
+
+-- Earlier user messages, from any conversation, found by app/history_search.py and put in
+-- the context of an assistant turn: the "earlier" part of `used`. Deleting a conversation
+-- removes its rows here too, so a reply never points at text that is gone.
+CREATE TABLE message_recalls (
+  message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,   -- the assistant turn
+  recalled_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,  -- the earlier user message
+  PRIMARY KEY (message_id, recalled_id)
+);
+CREATE INDEX message_recalls_by_recalled ON message_recalls(recalled_id);
+
+-- Embeddings for semantic search (app/vectors.py), one row per item and embedding model.
+-- Fernet-encrypted like the text they come from, since a vector can be partly turned back
+-- into it. vector IS NULL marks an item deliberately never embedded: it looks like a secret
+-- (so it was never sent to the embedding endpoint), or it's a question or small talk, which
+-- are never recalled (app/statements.py). The AUTOINCREMENT id only grows, which is how each
+-- process picks up rows added by others.
+CREATE TABLE memory_vectors (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  memory_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  model TEXT NOT NULL,
+  vector BLOB,                           -- Fernet ciphertext of float32 values, or NULL (see above)
+  UNIQUE (memory_id, model)
+);
+CREATE TABLE message_vectors (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,  -- user messages only
+  model TEXT NOT NULL,
+  vector BLOB,                           -- Fernet ciphertext of float32 values, or NULL (see above)
+  UNIQUE (message_id, model)
+);
 
 -- Scheduled tasks ---------------------------------------------------------------------
 
@@ -238,6 +288,23 @@ CREATE INDEX task_runs_by_conversation ON task_runs(conversation_id);
 -- 'running' rows as 'failed' (they belong to a process that crashed).
 CREATE UNIQUE INDEX task_runs_one_running ON task_runs(task_id) WHERE status = 'running';
 
+-- Usage ---------------------------------------------------------------------------------
+
+-- Counters per user and UTC day (app/usage.py): what the Plan & usage screen shows and what
+-- a plan's monthly token allowance is checked against. Only counts, never content, and kept
+-- when chats are deleted, so deleting a chat doesn't reset an allowance.
+CREATE TABLE usage_daily (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,                     -- 'YYYY-MM-DD', UTC
+  chat_turns INTEGER NOT NULL DEFAULT 0,
+  task_runs INTEGER NOT NULL DEFAULT 0,
+  model_calls INTEGER NOT NULL DEFAULT 0,
+  estimated_calls INTEGER NOT NULL DEFAULT 0,  -- calls whose backend reported no token counts (estimated from length)
+  prompt_tokens INTEGER NOT NULL DEFAULT 0,
+  completion_tokens INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, day)
+);
+
 -- Seed data: the tools that exist in app/tools/ -----------------------------------------
 
 INSERT INTO tools (name) VALUES
@@ -250,6 +317,6 @@ INSERT INTO tool_scopes (tool_id, scope, description) VALUES
   ((SELECT id FROM tools WHERE name = 'notes'),    'read',  'read_notes'),
   ((SELECT id FROM tools WHERE name = 'notes'),    'write', 'create_note');
 
-PRAGMA user_version = 2;                 -- keep in sync with SCHEMA_VERSION in app/db.py
+PRAGMA user_version = 5;                 -- keep in sync with SCHEMA_VERSION in app/db.py
 
 COMMIT;

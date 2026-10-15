@@ -1,24 +1,45 @@
-// Built in Step 3 — see docs/PLAN.md.
-// Switch's onValueChange calls setPermission(toolId, granted) from lib/api.ts,
-// then re-fetches getPermissions() to reconcile UI state with the server.
+// One switch: a tool scope (e.g. Calendar · read) and whether Custodian may use it.
 
-import { View, Text, Switch, StyleSheet } from "react-native";
-import { tokens } from "../lib/tokens";
+import { Text, View } from "react-native";
 
-export type Permission = { tool_id: string; tool_name: string; scope: string; granted: boolean };
+import { space, useTokens } from "../lib/tokens";
+import type { Permission } from "../lib/types";
+import { ToggleSwitch } from "./ui";
 
-export function PermissionRow({ permission }: { permission: Permission }) {
+export type { Permission };
+
+const SCOPE_TEXT: Record<string, string> = {
+  read: "Read",
+  write: "Add & change",
+};
+
+export function PermissionRow({
+  permission,
+  busy,
+  onToggle,
+}: {
+  permission: Permission;
+  busy?: boolean;
+  onToggle: (granted: boolean) => void;
+}) {
+  const t = useTokens();
+  const label = `${SCOPE_TEXT[permission.scope] ?? permission.scope}`;
   return (
-    <View style={styles.row}>
-      <Text style={styles.name}>{permission.tool_name}</Text>
-      <Switch value={permission.granted} onValueChange={() => {
-        throw new Error("Step 3: wire this to setPermission() in lib/api.ts");
-      }} />
+    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.md, paddingVertical: space.xs }}>
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: t.ink, fontSize: 15, fontWeight: "600" }}>{label}</Text>
+        <Text style={{ color: t.inkSoft, fontSize: 13 }}>
+          {permission.scope}
+          {permission.description ? ` · ${permission.description}` : ""}
+          {!permission.enabled ? " · switched off on the server" : ""}
+        </Text>
+      </View>
+      <ToggleSwitch
+        accessibilityLabel={`${permission.tool_name} ${permission.scope}`}
+        value={permission.granted}
+        disabled={busy || !permission.enabled}
+        onValueChange={onToggle}
+      />
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 10, backgroundColor: tokens.surface, borderRadius: 8, marginVertical: 4 },
-  name: { color: tokens.ink },
-});

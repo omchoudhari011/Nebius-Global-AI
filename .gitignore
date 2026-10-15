@@ -26,3 +26,6 @@ venv/
 Thumbs.db
 .vscode/
 .idea/
+
+# Python test / tool caches
+.pytest_cache/

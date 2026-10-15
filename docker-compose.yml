@@ -1,0 +1,58 @@
+# Custodian with persistent data.
+#
+#   cp backend/.env.example backend/.env    # or: python -m app.cli init-env --production
+#   docker compose up -d --build                         # http://localhost:8000
+#   DOMAIN=custodian.example.com docker compose --profile tls up -d --build
+#                                                         # HTTPS via Caddy + Let's Encrypt
+services:
+  custodian:
+    build: .
+    image: custodian:latest
+    restart: unless-stopped
+    env_file: backend/.env
+    environment:
+      CUSTODIAN_ENV: production
+      DATA_DIR: /data
+      # Only Caddy (fixed address below) may set X-Forwarded-For; see the Dockerfile CMD.
+      FORWARDED_ALLOW_IPS: 172.28.0.10
+    networks: [custodian-net]
+    volumes:
+      - custodian-data:/data
+    ports:
+      # With the tls profile, set CUSTODIAN_BIND=127.0.0.1 so plain HTTP on port 8000
+      # isn't reachable from outside and every client goes through Caddy's HTTPS.
+      - "${CUSTODIAN_BIND:-0.0.0.0}:${CUSTODIAN_PORT:-8000}:8000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  caddy:
+    profiles: [tls]
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [custodian]
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN to your hostname}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      custodian-net:
+        ipv4_address: 172.28.0.10
+
+networks:
+  custodian-net:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+volumes:
+  custodian-data:
+  caddy-data:
+  caddy-config:
