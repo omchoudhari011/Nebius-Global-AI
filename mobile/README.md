@@ -9,7 +9,7 @@ light and dark mode.
 | `/` | `app/(tabs)/index.tsx` | Chat, with a provenance line (and accuracy check) under each reply, the Active Context panel, and off-the-record chats |
 | `/scheduled` | `app/(tabs)/scheduled.tsx` | Scheduled tasks: run now, pause, output, new task |
 | `/tools-data` | `app/(tabs)/tools-data.tsx` | Permission switches, memories, audit log |
-| `/account` | `app/(tabs)/account.tsx` | Plan and usage, license key, where data goes, retention, export and erase, sign out |
+| `/account` | `app/(tabs)/account.tsx` | Plan and usage, license key, where data goes, retention, export and erase, signed-in devices, sign out |
 
 `lib/api.ts` is the typed API client, `lib/auth.tsx` the session state, `lib/tokens.ts` the
 light/dark colour tokens, and `components/` the shared pieces.
@@ -51,5 +51,5 @@ npx eas build --profile preview      # installable test builds (Android APK)
 npx eas build --profile production
 ```
 
-Change `ios.bundleIdentifier` and `android.package` in `app.json` to identifiers you own
-first. Release builds should use an HTTPS server.
+The app id (`ios.bundleIdentifier`, `android.package`) is `io.github.omchoudhari011.custodian`;
+a fork should change it to one it owns. Release builds should use an HTTPS server.

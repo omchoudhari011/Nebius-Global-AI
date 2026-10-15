@@ -13,14 +13,14 @@
       "web"
     ],
     "ios": {
-      "bundleIdentifier": "com.custodian.app",
+      "bundleIdentifier": "io.github.omchoudhari011.custodian",
       "supportsTablet": true,
       "config": {
         "usesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.custodian.app",
+      "package": "io.github.omchoudhari011.custodian",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#5b4fc4"

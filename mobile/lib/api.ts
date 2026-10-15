@@ -23,6 +23,7 @@ import type {
   PermissionEvent,
   PrivacySummary,
   RedactMode,
+  Session,
   Skill,
   Task,
   TaskInput,
@@ -135,6 +136,9 @@ export const login = (passcode: string) =>
   });
 export const logout = () => request<void>("/auth/logout", { method: "POST" });
 export const me = () => request<AuthResponse>("/auth/me");
+export const getSessions = () => request<Session[]>("/auth/sessions");
+export const revokeSession = (id: number) => request<void>(`/auth/sessions/${id}`, { method: "DELETE" });
+export const revokeOtherSessions = () => request<{ signed_out: number }>("/auth/sessions", { method: "DELETE" });
 
 // Chat --------------------------------------------------------------------------------
 

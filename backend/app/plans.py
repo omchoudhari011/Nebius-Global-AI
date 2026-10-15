@@ -19,12 +19,14 @@ Which plan applies - current():
      while you build)
   3. otherwise Free
 
-Prices are what the app shows; change them here, and set PURCHASE_URL to your store.
+Prices are what the app shows; change them here. CUSTODIAN_PURCHASE_URL is where "Get a
+license" sends people (your store, see store/README.md); unset hides the link.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 import threading
 import time
@@ -36,7 +38,9 @@ from .config import get_settings
 
 log = logging.getLogger(__name__)
 
-PURCHASE_URL = ""  # where "Upgrade" sends people; empty hides the link
+def purchase_url() -> str | None:
+    """Where "Get a license" sends people (CUSTODIAN_PURCHASE_URL), or None to hide the link."""
+    return os.getenv("CUSTODIAN_PURCHASE_URL", "").strip() or None
 
 
 @dataclass(frozen=True)

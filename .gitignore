@@ -29,3 +29,5 @@ Thumbs.db
 
 # Python test / tool caches
 .pytest_cache/
+store.db
+cloud/

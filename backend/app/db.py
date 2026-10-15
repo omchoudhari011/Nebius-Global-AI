@@ -19,7 +19,7 @@ from pathlib import Path
 from .config import BACKEND_DIR, get_settings
 
 SCHEMA_PATH = BACKEND_DIR / "schema.sql"
-SCHEMA_VERSION = 5  # must match the PRAGMA user_version at the end of schema.sql
+SCHEMA_VERSION = 6  # must match the PRAGMA user_version at the end of schema.sql
 
 # Upgrades for databases made by an older schema.sql: {from version: script}. Each script
 # runs in one transaction and ends by setting user_version to the next version, so a failed
@@ -79,6 +79,21 @@ MIGRATIONS = {
           PRIMARY KEY (user_id, day)
         );
         PRAGMA user_version = 5;
+        COMMIT;
+    """,
+    5: """
+        BEGIN;
+        CREATE TABLE sessions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          token_hash TEXT NOT NULL UNIQUE,
+          client TEXT NOT NULL CHECK (client IN ('web', 'native')),
+          device TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX sessions_by_user ON sessions(user_id);
+        PRAGMA user_version = 6;
         COMMIT;
     """,
 }

@@ -34,7 +34,7 @@ def billing_summary(user_id: int) -> dict:
         },
         "usage": usage.summary(user_id),
         "plans": [p.to_dict() for p in plans.PLANS.values()],
-        "purchase_url": plans.PURCHASE_URL or None,
+        "purchase_url": plans.purchase_url(),
     }
 
 

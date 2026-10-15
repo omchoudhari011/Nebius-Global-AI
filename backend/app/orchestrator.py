@@ -124,6 +124,22 @@ _NOT_NAME = frozenset(
     very really just also good fine ok okay doing going
     """.split()
 )
+# "Hi, I'm Om": "I'm" is usually followed by a state ("I'm tired"), so this counts only when a
+# greeting opens the message and the name - one to three words, none of them a common state -
+# ends it. Anything longer or less certain is left to the model's `remember` call.
+_GREETING_IM = re.compile(
+    rf"^\W*(?:{_GREETING}\b[\s,!.]*){{1,2}}(?:i\s+am|i'?m)\s+({_NAME_WORD}(?:\s+{_NAME_WORD}){{0,2}})\s*[.!]*\s*$",
+    re.IGNORECASE,
+)
+_STATES = frozenset(
+    """
+    tired sleepy sick ill unwell hungry thirsty bored busy free stuck lost confused sad happy glad excited nervous
+    worried scared afraid angry upset stressed anxious lonely sorry great alright well better worse new home out in
+    up down done ready late early here there back sure curious interested trying looking working studying waiting
+    awake alive cold hot sad fed exhausted fantastic amazing awesome cool chilling bad terrible okk dead broke single
+    married pregnant vegan vegetarian student teacher developer engineer doctor coder fan human bot
+    """.split()
+)
 # "What's my name?" shares no word with "my self Om" (or a memory phrased "Is called Om"), and
 # "who am I?" has no searchable word at all; these extra search terms bridge the gap.
 _ASKS_NAME = re.compile(
@@ -144,7 +160,10 @@ NAME_PREFIX = "Their name is "
 def _name_from(message: str) -> str | None:
     match = _NAME.search(message.strip())
     if not match:
-        return None
+        match = _GREETING_IM.search(message.strip())
+        said = match.group(1).lower().split() if match else []
+        if not said or any(w.strip(".'") in _STATES | _NOT_NAME or w.endswith("ing") for w in said):
+            return None
     words: list[str] = []
     for word in match.group(1).split():
         if word.lower().strip(".'") in _NOT_NAME:

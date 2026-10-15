@@ -24,6 +24,10 @@ jobs:
       - name: Evals (recall, latency, permission-block rate, security)
         run: python eval/run_all.py
       - run: cat eval/results.md
+      - name: Store (Stripe webhooks, license delivery, Cloud provisioning)
+        run: python -m pytest -c ../store/pytest.ini --rootdir ../store ../store/tests
+      - name: Fine-tuning dataset still passes the accuracy checks
+        run: python finetune/make_dataset.py --per-kind 6 --out "$RUNNER_TEMP/dataset"
 
   mobile:
     runs-on: ubuntu-latest

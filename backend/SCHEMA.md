@@ -1,4 +1,4 @@
-# Custodian schema (v5)
+# Custodian schema (v6)
 
 The DDL is in [schema.sql](schema.sql). This page has the diagram and the reasons behind the
 design. The diagram is Mermaid: GitHub renders it, and you can paste it into
@@ -11,6 +11,7 @@ erDiagram
   users ||--o{ conversations : has
   users ||--o{ tasks : schedules
   users ||--o| user_settings : chooses
+  users ||--o{ sessions : "signs in as"
   users ||--o{ usage_daily : uses
 
   tools ||--|{ tool_scopes : defines
@@ -42,6 +43,15 @@ erDiagram
     int id PK
     text email UK
     text created_at
+  }
+  sessions {
+    int id PK
+    int user_id FK
+    text token_hash UK "SHA-256 of the id in the token"
+    text client "web | native"
+    text device "Chrome on Windows"
+    text created_at
+    text last_seen_at
   }
   user_settings {
     int user_id PK, FK
@@ -189,6 +199,15 @@ erDiagram
   }
 ```
 
+## What v6 adds: signed-in devices
+
+| Need | v6 |
+|---|---|
+| Signing out must stop a token copied off a lost phone, not just clear the cookie | `sessions`: one row per sign-in. The signed token carries a random id and only its SHA-256 is stored; `require_session()` needs the row to exist, so deleting it ends that token at once. |
+| See and sign out devices from the app | The Account tab lists `sessions` (device described from the User-Agent, last used, refreshed at most every 5 minutes) and deletes one row or every row but the current one. |
+| Expired sessions don't pile up | The hourly job deletes rows older than `SESSION_MAX_AGE_DAYS`. |
+| Existing v5 databases | `db.MIGRATIONS[5]` creates the table. Tokens issued before it don't name a row, so every device signs in once more. |
+
 ## What v5 adds: accuracy checks, privacy controls and plans
 
 | Need | v5 |
@@ -246,7 +265,7 @@ prompt, plus what they said in earlier conversations that matches the message.
 | `embedding_ref` in the diagram, but the code uses FTS5 | Removed. If vectors are added later, also store the embedding model so you know what to re-embed. |
 | Foreign keys never enforced | `app/db.py` runs `PRAGMA foreign_keys = ON` for every connection (SQLite's default is off). |
 | No enums, `ON DELETE` rules or indexes | `CHECK` constraints on every enum-like column; deleting a user cascades everywhere; indexes for the scheduler, recall and conversation queries. |
-| No schema versioning | `PRAGMA user_version` (now 5); `init_db()` upgrades a v2, v3 or v4 file in place with `db.MIGRATIONS` and refuses a v1 or unknown database instead of half-applying the schema. |
+| No schema versioning | `PRAGMA user_version` (now 6); `init_db()` upgrades a v2, v3, v4 or v5 file in place with `db.MIGRATIONS` and refuses a v1 or unknown database instead of half-applying the schema. |
 
 ## Deliberately not added
 

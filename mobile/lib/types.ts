@@ -13,6 +13,16 @@ export type ServerInfo = {
   scheduler: boolean;
 };
 
+/** One signed-in device (backend/app/auth.py). */
+export type Session = {
+  id: number;
+  client: "web" | "native";
+  device: string | null;
+  created_at: string;
+  last_seen_at: string;
+  current: boolean;
+};
+
 export type AuthResponse = { user: User; server: ServerInfo; token?: string; expires_in?: number };
 
 /** `matched` (memories in a reply's context only): picked for that message by keyword or as a

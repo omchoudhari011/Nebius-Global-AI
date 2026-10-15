@@ -30,6 +30,8 @@ and `/auth/login` still requires the passcode.
 | `app/privacy.py` | Where data goes, secret withholding for an online model, retention, off-the-record chats, export and erase |
 | `app/plans.py`, `app/licensing.py` | Plans and their limits; offline Ed25519 license keys |
 | `app/usage.py` | Per-day counters of turns, model calls and tokens; cost estimates and the Cloud allowance |
+| `finetune/` | Fine-tuning dataset from the agent loop, LoRA training, GGUF export, Ollama install, before/after comparison ([README](finetune/README.md)) |
+| `../store/` | Stripe store: issues license keys, provisions Cloud tenants ([README](../store/README.md)) |
 | `app/tools/sandbox.py` | The tool gate and the subprocess executor |
 | `app/tools/runner.py` | The locked-down process a tool runs in (stdlib only) |
 | `app/tools/registry.py`, `schemas.py` | Tool functions the model can call and their argument models |

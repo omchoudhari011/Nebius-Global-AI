@@ -137,6 +137,10 @@ def test_task_with_rolled_back_skill_fails(user_id):
         ("hello there, myself Om Choudhari", "Om Choudhari"),
         ("good morning my self om choudhari", "Om Choudhari"),
         ("Namaste! Myself Priya Sharma", "Priya Sharma"),
+        ("Hi, I'm Om", "Om"),
+        ("hi im om choudhari", "Om Choudhari"),
+        ("hello! I am Priya Sharma.", "Priya Sharma"),
+        ("good morning, I'm Kavya!", "Kavya"),
     ],
 )
 def test_name_is_read_from_the_message(message, name):
@@ -153,6 +157,14 @@ def test_name_is_read_from_the_message(message, name):
         "hyy how are you",
         "hey myself is fine",
         "hi there, I did it myself",
+        "hi I'm tired",
+        "hey I'm back",
+        "hi I'm looking for help",
+        "hello I'm new here",
+        "hi I'm a student",
+        "hi I'm from Pune",
+        "I'm Om",  # no greeting: too easily "I'm done"; left to the model
+        "hello I'm Om, what can you do?",
     ],
 )
 def test_ordinary_messages_have_no_name(message):

@@ -1,4 +1,5 @@
-"""POST /auth/login, POST /auth/logout, GET /auth/me."""
+"""POST /auth/login, POST /auth/logout, GET /auth/me, and the signed-in devices:
+GET /auth/sessions, DELETE /auth/sessions/{id}, DELETE /auth/sessions (all but this one)."""
 
 from __future__ import annotations
 
@@ -56,7 +57,7 @@ def login(body: LoginRequest, request: Request, response: Response) -> dict:
 
     settings = get_settings()
     user_id = auth.owner_id()
-    token = auth.issue_token(user_id)
+    token = auth.issue_token(user_id, client=body.client, user_agent=request.headers.get("User-Agent", ""))
     response.set_cookie(
         auth.COOKIE_NAME,
         token,
@@ -73,7 +74,9 @@ def login(body: LoginRequest, request: Request, response: Response) -> dict:
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(response: Response) -> Response:
+def logout(request: Request, response: Response) -> Response:
+    """End this device's session on the server, so its token stops working, and clear the cookie."""
+    auth.end_session(auth.token_from(request))
     settings = get_settings()
     response.delete_cookie(
         auth.COOKIE_NAME, path="/", secure=settings.cookie_secure, httponly=True, samesite=settings.cookie_samesite
@@ -85,3 +88,22 @@ def logout(response: Response) -> Response:
 @router.get("/me")
 def me(user_id: int = Depends(auth.require_session)) -> dict:
     return {"user": auth.get_user(user_id), "server": _server_info()}
+
+
+@router.get("/sessions")
+def sessions(request: Request, user_id: int = Depends(auth.require_session)) -> list[dict]:
+    """Every device signed in to this account, most recently used first."""
+    return auth.list_sessions(user_id, getattr(request.state, "session_id", None))
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_session(session_id: int, user_id: int = Depends(auth.require_session)) -> Response:
+    if not auth.revoke_session(user_id, session_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="That device isn't signed in")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/sessions")
+def revoke_other_sessions(request: Request, user_id: int = Depends(auth.require_session)) -> dict:
+    """Sign out every other device; this one stays signed in."""
+    return {"signed_out": auth.revoke_other_sessions(user_id, getattr(request.state, "session_id", None))}

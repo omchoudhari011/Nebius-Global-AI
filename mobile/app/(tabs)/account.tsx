@@ -8,9 +8,9 @@ import { ActivityIndicator, Linking, Platform, RefreshControl, ScrollView, Share
 import { Button, Card, Chip, Field, Notice, ScreenHeader, SectionTitle, Segmented } from "../../components/ui";
 import * as api from "../../lib/api";
 import { useAuth } from "../../lib/auth";
-import { confirmAction, formatDateTime } from "../../lib/format";
+import { confirmAction, formatDateTime, formatWhen } from "../../lib/format";
 import { radius, space, themed, useTokens } from "../../lib/tokens";
-import type { Billing, DataService, Limit, Plan, PrivacySummary, RedactMode, ServiceLocation } from "../../lib/types";
+import type { Billing, DataService, Limit, Plan, PrivacySummary, RedactMode, ServiceLocation, Session } from "../../lib/types";
 
 const RETENTION = [
   { value: "keep", label: "Until I delete them" },
@@ -82,6 +82,11 @@ function Meter({ label, limit }: { label: string; limit: Limit }) {
   );
 }
 
+/** "chat turn" or "chat turns" for a count. */
+function plural(n: number, one: string, many = `${one}s`): string {
+  return n === 1 ? one : many;
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   const s = useStyles();
   return (
@@ -149,6 +154,7 @@ export default function AccountScreen() {
   const { user, server, signOut } = useAuth();
 
   const [billing, setBilling] = useState<Billing | null>(null);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [privacy, setPrivacy] = useState<PrivacySummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -159,9 +165,10 @@ export default function AccountScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [b, p] = await Promise.all([api.getBilling(), api.getPrivacy()]);
+      const [b, p, d] = await Promise.all([api.getBilling(), api.getPrivacy(), api.getSessions()]);
       setBilling(b);
       setPrivacy(p);
+      setSessions(d);
       setError(null);
     } catch (err) {
       setError(api.errorMessage(err));
@@ -232,6 +239,25 @@ export default function AccountScreen() {
     });
   };
 
+  const signOutDevice = async (session: Session) => {
+    const ok = await confirmAction("Sign out this device?", `${session.device ?? "That device"} will need the passcode to sign in again.`, "Sign out");
+    if (!ok) return;
+    await run(`session-${session.id}`, async () => {
+      await api.revokeSession(session.id);
+      setSessions(await api.getSessions());
+    });
+  };
+
+  const signOutOthers = async () => {
+    const ok = await confirmAction("Sign out every other device?", "Only this device stays signed in. Use this if a phone or computer was lost.", "Sign out others");
+    if (!ok) return;
+    await run("sessions", async () => {
+      const { signed_out } = await api.revokeOtherSessions();
+      setSessions(await api.getSessions());
+      setNotice(`Signed out ${signed_out} other ${plural(signed_out, "device")}.`);
+    });
+  };
+
   async function confirmSignOut() {
     if (await confirmAction("Sign out?", "You'll need the passcode to sign in again.", "Sign out")) await signOut();
   }
@@ -279,14 +305,15 @@ export default function AccountScreen() {
             <Card>
               <Text style={s.label}>This month</Text>
               <View style={s.stats}>
-                <Stat label="chat turns" value={amount(usage.month.chat_turns)} />
-                <Stat label="task runs" value={amount(usage.month.task_runs)} />
-                <Stat label="model calls" value={amount(usage.month.model_calls)} />
+                <Stat label={plural(usage.month.chat_turns, "chat turn")} value={amount(usage.month.chat_turns)} />
+                <Stat label={plural(usage.month.task_runs, "task run")} value={amount(usage.month.task_runs)} />
+                <Stat label={plural(usage.month.model_calls, "model call")} value={amount(usage.month.model_calls)} />
                 <Stat label={usage.estimated ? "tokens (estimated)" : "tokens"} value={`${usage.estimated ? "≈" : ""}${amount(usage.month.tokens)}`} />
                 {usage.month.cost_usd != null ? <Stat label="model cost (estimate)" value={`$${usage.month.cost_usd.toFixed(2)}`} /> : null}
               </View>
               <Text style={s.meta}>
-                Today: {usage.today.chat_turns} chat turns, {usage.today.model_calls} model calls.
+                Today: {usage.today.chat_turns} {plural(usage.today.chat_turns, "chat turn")}, {usage.today.model_calls}{" "}
+                {plural(usage.today.model_calls, "model call")}.
                 {usage.prices_set ? "" : " Set MODEL_PRICE_INPUT_PER_M and MODEL_PRICE_OUTPUT_PER_M on the server to see costs."}
               </Text>
             </Card>
@@ -350,11 +377,11 @@ export default function AccountScreen() {
             <Card>
               <Text style={s.label}>Stored on this server</Text>
               <View style={s.stats}>
-                <Stat label="chats" value={amount(privacy.stored.conversations)} />
-                <Stat label="messages" value={amount(privacy.stored.messages)} />
-                <Stat label="memories" value={amount(privacy.stored.memories)} />
-                <Stat label="notes" value={amount(privacy.stored.notes)} />
-                <Stat label="calendar events" value={amount(privacy.stored.calendar_events)} />
+                <Stat label={plural(privacy.stored.conversations, "chat")} value={amount(privacy.stored.conversations)} />
+                <Stat label={plural(privacy.stored.messages, "message")} value={amount(privacy.stored.messages)} />
+                <Stat label={plural(privacy.stored.memories, "memory", "memories")} value={amount(privacy.stored.memories)} />
+                <Stat label={plural(privacy.stored.notes, "note")} value={amount(privacy.stored.notes)} />
+                <Stat label={plural(privacy.stored.calendar_events, "calendar event")} value={amount(privacy.stored.calendar_events)} />
               </View>
               <Text style={s.meta}>
                 Encrypted: {privacy.encrypted.join(", ")}. Not encrypted: {privacy.plaintext.join("; ")}.
@@ -377,6 +404,42 @@ export default function AccountScreen() {
           ) : null}
           <Button label="Sign out" variant="danger" icon="log-out-outline" onPress={() => void confirmSignOut()} />
         </Card>
+
+        {sessions.length ? (
+          <Card>
+            <Text style={s.label}>Signed-in devices</Text>
+            {sessions.map((session) => (
+              <View key={session.id} style={s.rowBetween}>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={s.body}>{session.device ?? (session.client === "native" ? "Custodian app" : "A browser")}</Text>
+                  <Text style={s.meta}>
+                    Signed in {formatDateTime(session.created_at)} · last used {formatWhen(session.last_seen_at)}
+                  </Text>
+                </View>
+                {session.current ? (
+                  <Chip label="This device" tone="accent" />
+                ) : (
+                  <Button
+                    compact
+                    variant="secondary"
+                    label="Sign out"
+                    onPress={() => void signOutDevice(session)}
+                    loading={busy === `session-${session.id}`}
+                  />
+                )}
+              </View>
+            ))}
+            {sessions.some((session) => !session.current) ? (
+              <Button
+                label="Sign out every other device"
+                variant="secondary"
+                icon="phone-portrait-outline"
+                onPress={() => void signOutOthers()}
+                loading={busy === "sessions"}
+              />
+            ) : null}
+          </Card>
+        ) : null}
       </ScrollView>
     </View>
   );

@@ -22,6 +22,19 @@ CREATE TABLE users (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- One row per signed-in device (app/auth.py). The signed session token names its row by
+-- token_hash; signing out deletes the row, so the token stops working everywhere at once.
+CREATE TABLE sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,         -- SHA-256 of the random id inside the token
+  client TEXT NOT NULL CHECK (client IN ('web', 'native')),
+  device TEXT,                             -- "Chrome on Windows", from the User-Agent
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX sessions_by_user ON sessions(user_id);
+
 -- Privacy choices and the activated license, one row per user (app/privacy.py, app/plans.py).
 -- A missing row means the defaults: keep chats until deleted, withhold secrets from the
 -- model when it runs on the internet, no license.
@@ -317,6 +330,6 @@ INSERT INTO tool_scopes (tool_id, scope, description) VALUES
   ((SELECT id FROM tools WHERE name = 'notes'),    'read',  'read_notes'),
   ((SELECT id FROM tools WHERE name = 'notes'),    'write', 'create_note');
 
-PRAGMA user_version = 5;                 -- keep in sync with SCHEMA_VERSION in app/db.py
+PRAGMA user_version = 6;                 -- keep in sync with SCHEMA_VERSION in app/db.py
 
 COMMIT;

@@ -221,16 +221,17 @@ def test_a_v2_database_is_upgraded_in_place(user_id):
         conn.execute("DROP TABLE message_vectors")
         conn.execute("DROP TABLE user_settings")
         conn.execute("DROP TABLE usage_daily")
+        conn.execute("DROP TABLE sessions")
         conn.execute("ALTER TABLE conversations DROP COLUMN private")
         conn.execute("ALTER TABLE messages DROP COLUMN checks")
         conn.execute("PRAGMA user_version = 2")
 
-    db.init_db()  # v2 -> v3 -> v4 -> v5
+    db.init_db()  # v2 -> v3 -> v4 -> v5 -> v6
 
     with db.connect() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 5
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 6
         tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        assert {"message_recalls", "memory_vectors", "message_vectors", "user_settings", "usage_daily"} <= tables
+        assert {"message_recalls", "memory_vectors", "message_vectors", "user_settings", "usage_daily", "sessions"} <= tables
         assert conn.execute("SELECT private FROM conversations").fetchone()["private"] == 0
         links = conn.execute("SELECT memory_id, matched FROM message_memories").fetchall()
     assert [(r["memory_id"], r["matched"]) for r in links] == [(kept, 1)]  # old links count as matched

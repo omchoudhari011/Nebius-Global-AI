@@ -30,9 +30,12 @@ Nebius-Global-AI-main/
 │   ├── eval/           memory, lifetime-chat and paraphrase recall, latency, permission-block,
 │   │                   hallucination-guard and security evals -> results.md
 │   ├── tests/          pytest suite
-│   └── schema.sql      20 tables, triggers, FTS5 index (design notes: SCHEMA.md)
+│   ├── finetune/       dataset builder and LoRA training for a Custodian-tuned model
+│   └── schema.sql      21 tables, triggers, FTS5 index (design notes: SCHEMA.md)
 ├── mobile/             Expo app: Chat, Scheduled, Tools & Data, Account, sign-in
+├── store/              sells Pro and Cloud through Stripe; issues keys, hosts Cloud tenants
 ├── deploy/Caddyfile    HTTPS reverse proxy for the `tls` compose profile
+├── run-local.ps1       Windows: start the API and web app together on one port
 ├── Dockerfile          builds the web app, then the Python runtime
 └── docker-compose.yml
 ```
@@ -40,6 +43,10 @@ Nebius-Global-AI-main/
 ## Run it locally
 
 You need Python 3.11+ and Node 20+.
+
+**Quickest on Windows**, once the backend's `.venv` exists (step 1): `.\run-local.ps1` builds
+the web app if needed and serves it with the API at http://localhost:8000 (`-Port 8001` if
+8000 is taken, `-Rebuild` after changing `mobile/`).
 
 **1. Backend** (from `backend/`):
 
@@ -133,7 +140,7 @@ be decrypted. To rotate it: set `APP_SECRET_KEY=new_key,old_key`, restart, run
 `rotate-keys`, then remove `old_key`.
 
 **Native apps**: `cd mobile && npx eas build --profile production` (needs an Expo account;
-change `ios.bundleIdentifier` and `android.package` in `app.json` to your own first). Release
+the app id is `io.github.omchoudhari011.custodian` in `app.json`; a fork should use its own). Release
 builds should talk to an HTTPS server; enter its address on the sign-in screen.
 
 ## Plans and licensing
@@ -169,9 +176,16 @@ python -m app.cli license-keygen     # writes ~/.custodian/license-signing-key.p
 python -m app.cli license-issue --plan pro --to "Customer Name" --days 365   # prints the key to send them
 ```
 
-Keep the signing key off customer servers and out of the repository. Until a public key is in
-`VENDOR_PUBLIC_KEYS`, no license can be checked and production servers run Free. Set
-`PURCHASE_URL` in `app/plans.py` to your store to show a **Get a license** button.
+Keep the signing key off customer servers and out of the repository. This build already
+trusts one public key (October 2026), whose private half is in
+`~/.custodian/license-signing-key.pem` on the machine that created it: **back that file up**,
+since without it no new license can be issued.
+
+**Selling automatically**: [store/](store/README.md) takes payment through Stripe, issues
+the key on the buyer's order page, and for Cloud also starts the buyer's own Custodian
+container on its own subdomain (one isolated instance per customer, since Custodian is
+single-user). Set `CUSTODIAN_PURCHASE_URL` to the store's address to show a **Get a license**
+button in the Account tab.
 
 **Usage metering** (`app/usage.py`): every model call is counted per day, with the token counts
 the model service reports (estimated from text length when it reports none, and labelled as an
@@ -179,6 +193,20 @@ estimate). The Account tab shows this month and today; with `MODEL_PRICE_INPUT_P
 `MODEL_PRICE_OUTPUT_PER_M` set (USD per million tokens) it also estimates the cost. Without
 them no cost is shown rather than a guessed one. On Cloud, chats and task runs stop with a
 clear message when the monthly allowance is used up.
+
+## Fine-tuning the model
+
+Small local models skip saving what you tell them and describe things they never checked.
+`backend/finetune/` trains a LoRA adapter for the local Nemotron model on synthetic
+conversations built from Custodian's own prompts and tools, kept only when the app's accuracy
+checks pass them, then installs the result in Ollama as `custodian-nemotron`:
+
+```powershell
+cd backend; .inetuneun_finetune.ps1    # needs an NVIDIA GPU (8 GB+) and Docker Desktop
+```
+
+`finetune/compare.py` measures the base and tuned models on held-out conversations and the
+app's evals. Details: [backend/finetune/README.md](backend/finetune/README.md).
 
 ## Configuration
 
@@ -207,6 +235,7 @@ Set in `backend/.env` (see `backend/.env.example` for every option).
 | `SESSION_MAX_AGE_DAYS` | `30` | How long a sign-in lasts |
 | `CUSTODIAN_LICENSE_KEY` | | A Pro or Cloud license key (wins over one pasted into Account) |
 | `CUSTODIAN_PLAN` | `pro` in development | Development only: preview `free`, `pro` or `cloud` without a license |
+| `CUSTODIAN_PURCHASE_URL` | (unset) | Where **Get a license** goes (your store); unset hides it |
 | `MODEL_PRICE_INPUT_PER_M` / `MODEL_PRICE_OUTPUT_PER_M` | (unset) | USD per million prompt / completion tokens, for cost estimates |
 
 ## How it works
@@ -328,9 +357,11 @@ Everything here is in every plan, on the **Account** tab (`app/privacy.py`):
   runs unprivileged and read-only.
 - **Sign-in**: one passcode, constant-time comparison, 5 attempts per 15 minutes per client
   and 50 from all clients together (counted before the passcode is checked, so parallel
-  requests can't slip past). Sessions are signed, expiring tokens: an httpOnly `SameSite`
-  cookie on the web, the device keychain on phones. Changing `CUSTODIAN_PASSCODE` or
-  `SESSION_SECRET` signs out every device.
+  requests can't slip past). Every sign-in is a server-side session (an httpOnly `SameSite`
+  cookie on the web, the device keychain on phones): signing out ends it on the server, so a
+  token copied off a lost phone stops working at once, and Account lists every signed-in
+  device with a sign-out button for each. Changing `CUSTODIAN_PASSCODE` or `SESSION_SECRET`
+  signs out every device.
 - **HTTP hardening**: explicit CORS origins (never `*`); cookie-authenticated writes from
   another site's pages are refused (`Origin` / `Sec-Fetch-Site` check, on top of `SameSite`);
   request bodies over 256 KB are refused; API responses are `Cache-Control: no-store`; a
@@ -348,6 +379,7 @@ All routes except `/health` and `/auth/login` need a session (cookie or `Authori
 |---|---|
 | `GET /health` | Liveness and database check |
 | `POST /auth/login` · `POST /auth/logout` · `GET /auth/me` | Session |
+| `GET /auth/sessions` · `DELETE /auth/sessions/{id}` · `DELETE /auth/sessions` | Signed-in devices; sign one out, or every other one |
 | `POST /chat` | `{message, conversation_id?, private?}` → `{reply, used, conversation_id, message_id, private}` |
 | `GET /conversations` · `GET/DELETE /conversations/{id}` | History, with `used` per reply |
 | `GET /permissions` · `POST /permissions/{tool_id}` | Switches; body `{scope, granted}` |

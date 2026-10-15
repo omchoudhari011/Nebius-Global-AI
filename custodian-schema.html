@@ -668,6 +668,11 @@
 </style>
 </head>
 <body>
+<p role="note" style="margin:0;padding:10px 16px;border-bottom:1px solid #8a5a00;background:#fbf0d9;color:#4a3000;font:14px/1.45 system-ui,sans-serif">
+  <strong>Design snapshot (schema v4).</strong> The database is now at v6. It adds signed-in device sessions,
+  privacy settings and license keys, daily usage counters, off-the-record chats and stored accuracy checks.
+  The current diagram and the reasons behind each change are in <code>backend/SCHEMA.md</code>.
+</p>
 <div class="wrap">
   <header class="top">
     <p class="eyebrow">Custodian backend · SQLite · schema v2</p>
@@ -680,7 +685,7 @@
       <li><b>5</b> groups</li>
       <li><b>4</b> encrypted columns</li>
     </ul>
-    <p class="note">Most backend modules are still stubs (see <code>docs/PLAN.md</code>), so “saved by” names the module each write is assigned to in the plan.</p>
+    <p class="note">“Saved by” names the module that writes each table.</p>
   </header>
 
   <section class="read" id="read" aria-labelledby="read-h">

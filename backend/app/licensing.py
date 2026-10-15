@@ -29,7 +29,9 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 PREFIX = "CL1"
 # Public keys (raw 32 bytes, base64url) whose signatures this build accepts. Add the line
 # `license-keygen` prints; keep a retired key here while licenses signed with it are valid.
-VENDOR_PUBLIC_KEYS: tuple[str, ...] = ()
+VENDOR_PUBLIC_KEYS: tuple[str, ...] = (
+    "1of9kk-i6agKvqn8nUhuk5-J3PggVR5NwTlmQPfFE0w",  # 2026-10 signing key
+)
 GRACE_DAYS = 7  # a paid plan keeps working this long after its license expires
 
 

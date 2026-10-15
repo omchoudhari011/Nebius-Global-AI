@@ -325,6 +325,11 @@
 </style>
 </head>
 <body>
+<p role="note" style="margin:0;padding:10px 16px;border-bottom:1px solid #8a5a00;background:#fbf0d9;color:#4a3000;font:14px/1.45 system-ui,sans-serif">
+  <strong>Build-plan snapshot (Step 1).</strong> Every step below is now built. The app also has an Account tab
+  with plan and usage, privacy controls and signed-in devices, plus off-the-record chats and an accuracy check
+  under each reply. The current screens are listed in <code>mobile/README.md</code>.
+</p>
 <div class="wrap">
   <header class="top">
     <p class="eyebrow">Custodian · mobile app architecture</p>
@@ -356,7 +361,7 @@
 
   <section class="block" aria-labelledby="build-h">
     <h2 id="build-h">What each build step adds to the app</h2>
-    <p class="intro">From the step notes in the code. The plan itself (<code>docs/PLAN.md</code>) isn't in the zip.</p>
+    <p class="intro">From the step notes in the code at the time.</p>
     <ol class="timeline"><li class="now"><span class="stepn">Step 1</span><h3>In the code now</h3><p>Chat screen, <code>ChatThread</code>, <code>StatusPill</code>, <code>lib/api.ts</code>, base colour tokens, a placeholder Tools &amp; Data screen, and a tab bar joining the two. The backend's <code>/chat</code> echoes the message.</p></li><li class=""><span class="stepn">Step 2</span><h3>Provenance</h3><p><code>ChatThread</code> gets a tag line such as “used: Memory #12”. The backend's <code>/chat</code> calls <code>orchestrator.handle()</code>, which returns <code>used</code> as <code>{memories, tools, skill}</code>.</p></li><li class=""><span class="stepn">Step 3</span><h3>Tools &amp; Data</h3><p>The Tools &amp; Data screen is built for real: <code>Banner</code>, and a <code>PermissionRow</code> per switch that calls <code>setPermission()</code> and then re-fetches <code>getPermissions()</code>. The backend gets its permission gate and sandbox.</p></li><li class=""><span class="stepn">Step 4</span><h3>Sign-in and CORS</h3><p>The backend checks a signed session cookie on every route except <code>/health</code> (401 otherwise) and allows only the Expo web origin. The Nebius model backend is added.</p></li><li class=""><span class="stepn">Step 5</span><h3>Active Context</h3><p><code>ContextRail</code> shows the last reply's <code>used</code>: below the chat on screens under 700 px wide, beside it on wider ones. The backend gets the scheduler, skills and the notes tool.</p></li><li class=""><span class="stepn">Step 6</span><h3>Dark mode</h3><p><code>lib/tokens.ts</code> is filled in completely, including the dark variant.</p></li></ol>
   </section>
 

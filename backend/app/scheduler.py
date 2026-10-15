@@ -29,7 +29,7 @@ from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from . import db, memory, orchestrator, plans, privacy, tasks, usage
+from . import auth, db, memory, orchestrator, plans, privacy, tasks, usage
 
 log = logging.getLogger(__name__)
 
@@ -64,11 +64,13 @@ def recover_stale_runs() -> int:
 
 
 def _purge() -> None:
-    """Hourly: expired memories, off-the-record chats a day old, chats past their retention."""
+    """Hourly: expired memories, off-the-record chats a day old, chats past their retention, and
+    sign-ins whose token has expired."""
     removed = memory.purge_expired()
     if removed:
         log.info("deleted %d expired memories", removed)
     privacy.purge_old_chats()
+    auth.purge_expired_sessions()
 
 
 def start() -> None:
