@@ -18,7 +18,9 @@ keys that are checked offline ([Plans and licensing](#plans-and-licensing)).
 Day to day it sets reminders that notify you, answers questions about files you give it
 (PDFs, photos), takes voice messages, works with your Google Calendar, Gmail and Drive when
 you allow it, can hand hard questions to a bigger model, and learns from the replies you rate
-([Everyday features](#everyday-features)).
+([Everyday features](#everyday-features)). It looks things up on the web with sources, and,
+with the desktop app, controls your Windows PC by voice - "Hey Jarvis, open Spotify and turn
+the volume down" - and speaks its replies ([Jarvis: your PC and the web](#jarvis-your-pc-and-the-web)).
 
 - **Backend** (`backend/`): FastAPI, SQLite with FTS5, NumPy for vector search, APScheduler.
   Message text, tool arguments and results, memories and their embeddings are encrypted with
@@ -39,7 +41,9 @@ Nebius-Global-AI-main/
 │   └── schema.sql      21 tables, triggers, FTS5 index (design notes: SCHEMA.md)
 ├── mobile/             Expo app: Chat, Scheduled, Tools & Data, Account, sign-in
 ├── store/              sells Pro and Cloud through Stripe; issues keys, hosts Cloud tenants
+├── desktop/            Windows tray app: PC control, wake word, spoken replies
 ├── deploy/Caddyfile    HTTPS reverse proxy for the `tls` compose profile
+├── deploy/searxng/     settings for the SearXNG web search (`web` compose profile)
 ├── run-local.ps1       Windows: start the API and web app together on one port
 ├── Dockerfile          builds the web app, then the Python runtime
 └── docker-compose.yml
@@ -208,6 +212,53 @@ you run `backend\finetune\run_finetune.ps1` (`finetune/from_feedback.py` collect
 counts three times). Off-the-record chats and anything that looks like a secret are never
 used, and nothing is sent anywhere.
 
+## Jarvis: your PC and the web
+
+**Web knowledge** (switch: **Web · read**). Questions about the world - news, weather, prices,
+people, how-to - are answered from a web search, with the sources listed under the answer.
+Search goes through [SearXNG](https://docs.searxng.org) on your own machine, which asks
+public search engines without your identity:
+
+```bash
+cp deploy/searxng/settings.yml backend/data/searxng-settings.yml   # set secret_key to a long random string
+docker run -d --name searxng --restart unless-stopped -p 127.0.0.1:8888:8080 \
+  -v "$PWD/backend/data/searxng-settings.yml:/etc/searxng/settings.yml:ro" searxng/searxng:2026.10.16-ff8f5ddcc
+# backend/.env (this is the default): SEARXNG_URL=http://127.0.0.1:8888
+```
+
+(With Docker Compose: `SEARXNG_SECRET=... docker compose --profile web up -d` and
+`SEARXNG_URL=http://searxng:8080`.) `web_search` may reach only SearXNG; `web_read_page`, which
+reads one result, may reach only public internet addresses - never this machine or your home
+network - and page text is treated as information, never as instructions. With
+`LARGE_MODEL_ID` set, questions about the world go to the larger model, which knows far more;
+questions about you ("my", "me") and off-the-record chats stay on the local model.
+
+**The desktop app** (`desktop/`, switches: **PC · read** and **PC · write**) is a tray app for
+Windows that lets Custodian act on your PC: open apps, websites, files and folders; play,
+pause, skip, mute and set the volume; list, focus and close windows; type, press keys and
+click; find, read, write, move and delete files (to the Recycle Bin); use the clipboard; take
+a screenshot it can describe; and lock the screen. It has no open port: it asks the server
+for the next action (`/desktop/next`) and sends the result back. Anything risky - typing,
+keys, clicks, closing a window, reading or changing a file, the clipboard, screenshots -
+shows a dialog on the PC first and is cancelled unless you click **Allow once** within a
+minute. `C:\Windows`, `C:\Program Files` and `C:\ProgramData` are never changed, and every
+allow or decline is logged in `%APPDATA%\Custodian\desktop.log`.
+
+It is also the voice assistant: say **"Hey Jarvis"** (or press **Ctrl+Alt+Space**), speak, and
+the reply is spoken back. The wake word is detected on the PC by
+[openWakeWord](https://github.com/dscripka/openWakeWord); nothing is recorded or sent before
+it. Speech goes to your Whisper server (see Voice above), and replies are spoken by a
+[Piper](https://github.com/rhasspy/piper) voice on the PC, or Windows' own voice.
+
+```powershell
+desktop\run-desktop.ps1             # first run: makes desktop\.venv, downloads the voice, asks you to sign in
+desktop\run-desktop.ps1 -Install    # start it when you sign in to Windows (-Uninstall to undo)
+```
+
+Settings are in `%APPDATA%\Custodian\desktop.json` (server, wake word on or off and its
+threshold, hotkey, speaking replies, voice, microphone, protected folders); the sign-in is kept
+in Windows Credential Manager. See [desktop/README.md](desktop/README.md).
+
 ## Plans and licensing
 
 Custodian is open core. Everything about privacy and safety is in every plan; what you pay
@@ -305,7 +356,8 @@ Set in `backend/.env` (see `backend/.env.example` for every option).
 | `WHISPER_URL` / `WHISPER_API_KEY` | (unset) | OpenAI-compatible speech-to-text server for voice messages |
 | `VISION_MODEL` / `VISION_BASE_URL` / `VISION_API_KEY` | (unset) / `NEBIUS_BASE_URL` | Vision model that reads uploaded photos, e.g. `llava` |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` | (unset) | Your Google OAuth client, for Calendar, Gmail and Drive |
-| `LARGE_MODEL_ID` / `LARGE_MODEL_BASE_URL` / `LARGE_MODEL_API_KEY` | (unset) / Token Factory / `NEBIUS_API_KEY` | The larger model for **Think harder** and escalation |
+| `LARGE_MODEL_ID` / `LARGE_MODEL_BASE_URL` / `LARGE_MODEL_API_KEY` | (unset) / Token Factory / `NEBIUS_API_KEY` | The larger model for **Think harder**, questions about the world, and escalation |
+| `SEARXNG_URL` | `http://127.0.0.1:8888` | The SearXNG server for web search |
 | `MODEL_PRICE_INPUT_PER_M` / `MODEL_PRICE_OUTPUT_PER_M` | (unset) | USD per million prompt / completion tokens, for cost estimates |
 
 ## How it works
@@ -359,8 +411,10 @@ prompt (`app/grounding.py`):
   which tool calls succeeded, which were blocked or failed, what was saved, which memories
   existed. Claiming an event or note that wasn't created, promising a reminder (Custodian can't
   send any), answering as if a blocked tool had worked, describing the calendar without reading
-  it, "remembering" a secret or an off-the-record chat, or citing a memory number that doesn't
-  exist all fail the check.
+  it, "remembering" a secret or an off-the-record chat, citing a memory number that doesn't
+  exist, or claiming something was done on your PC that no PC action did, all fail the check.
+- **Sources must be real.** A "Source:" link that no web search or page read returned in that
+  turn (and that you didn't give) is removed from the reply before you see it.
 - **One repair round, then a visible note.** A failing draft is never shown or kept in the
   chat history. The model gets one more turn, with its tools, so it can do a step it skipped
   or say plainly what didn't happen. If the rewrite still fails, the reply ends with a
@@ -425,6 +479,14 @@ Everything here is in every plan, on the **Account** tab (`app/privacy.py`):
   `DATA_DIR/tools/<tool>/` and never open the main database. This hardens our own tool code
   against hostile arguments; it is not an OS-level sandbox, which is why the container also
   runs unprivileged and read-only.
+- **The web and your PC.** A tool reaches the network only if it is declared to: Google
+  tools reach Google's API hosts, `web_search` reaches SearXNG, and `web_read_page` reaches
+  public internet addresses only (DNS answers for loopback, private and link-local addresses
+  are refused, so a web page can't be used to reach your router or this server). PC actions
+  run in the desktop app, not on the server, and only for the signed-in owner. Risky actions
+  need **Allow once** on the PC. There is no "run any command" tool. Web pages, files and
+  emails are information, never instructions, and the accuracy check flags a reply that
+  claims a PC action no tool carried out.
 - **Sign-in**: one passcode, constant-time comparison, 5 attempts per 15 minutes per client
   and 50 from all clients together (counted before the passcode is checked, so parallel
   requests can't slip past). Every sign-in is a server-side session (an httpOnly `SameSite`
@@ -459,7 +521,8 @@ All routes except `/health` and `/auth/login` need a session (cookie or `Authori
 | `GET /skills` | Active skill versions |
 | `GET/POST /tasks` · `GET/PATCH/DELETE /tasks/{id}` | Scheduled tasks |
 | `POST /tasks/{id}/run` · `GET /tasks/{id}/runs` | Run now; run history |
-| `GET /features` | What this server has set up (voice, photos, larger model, Google, phone push), unread count |
+| `GET /features` | What this server has set up (voice, photos, larger model, Google, phone push, desktop app), unread count |
+| `GET /desktop/next` · `POST /desktop/results/{id}` · `GET /desktop/status` | The desktop app: wait for the next PC action, report its result; is it connected |
 | `GET /notifications` · `POST /notifications/{id}/read` · `POST /notifications/read-all` | The inbox |
 | `GET /reminders` · `DELETE /reminders/{id}` | Upcoming reminders; cancel one |
 | `GET/POST /documents` · `DELETE /documents/{id}` | Files: upload `{name, content_type, data}` (base64, up to 10 MB) |
@@ -483,6 +546,9 @@ python scripts/demo_walkthrough.py   # the whole story in the terminal
 
 cd ../mobile
 npx tsc --noEmit && npx expo export --platform web
+
+cd ../desktop                        # Windows
+.venv\Scripts\python -m pytest       # actions, confirmations, recording (nothing is clicked or typed)
 ```
 
 Current results are in [backend/eval/results.md](backend/eval/results.md). CI

@@ -40,6 +40,9 @@ from .tools import registry, sandbox
 
 log = logging.getLogger(__name__)
 
+LARGE_MODEL_SKILLS = {"web"}  # skills answered by the larger model whenever LARGE_MODEL_ID is set
+# ...unless the question is about the user ("my rent", "remind me"): those stay on the local model.
+PERSONAL = re.compile(r"\b(i|i'm|im|me|my|mine|myself|we|our|us)\b", re.IGNORECASE)
 MAX_TOOL_ROUNDS = 4  # model turns that may call tools before it must answer
 MAX_MEMORY_WRITES = 3  # memories the model may save in one reply; the rest are rejected
 HISTORY_LIMIT = 20  # earlier user/assistant messages of this conversation sent as context
@@ -422,6 +425,9 @@ def handle(
             )
     else:
         skill = skills.load_skill(skills.pick_skill_name(message or "")) or skills.load_skill(skills.DEFAULT_SKILL)
+    if (large is not None and not escalated and not private and skill is not None and skill.name in LARGE_MODEL_SKILLS
+            and not PERSONAL.search(message or "")):
+        escalated, backend = True, large  # questions about the world: the larger model knows far more
 
     # 3. Lifetime memory: every saved memory that fits (matches and preferences first), and
     #    for chat, what they said in earlier conversations that matches. "Matches" is hybrid:
@@ -525,6 +531,10 @@ def handle(
         usage.record_model_call(user_id, response, outbound, offer)
         calls = response.tool_calls if offer else []
         content = response.content
+        if not calls:
+            # A "Source:" link no tool returned is made up: drop it rather than ask for a rewrite,
+            # which tends to invent a search that never ran.
+            content = grounding.drop_invented_sources(content, evidence)
         if not calls and not content.strip():
             content = EMPTY_REPLY
         final_id = _save_message(

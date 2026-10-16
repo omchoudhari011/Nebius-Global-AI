@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from . import db, embeddings, google_account, history_search, memory, notifications, permissions, plans, sensitive, tasks, vectors
+from . import db, desktop, embeddings, google_account, history_search, memory, notifications, permissions, plans, sensitive, tasks, vectors
 from .config import get_settings
 from .model_backends import large_base_url
 from .crypto import decrypt, decrypt_json
@@ -222,8 +222,22 @@ def _other_services(user_id: int) -> list[dict]:
             os.environ["VISION_MODEL"], "each photo you upload")
     large_id = os.getenv("LARGE_MODEL_ID", "").strip()
     if large_id:
-        add("Think harder", large_base_url(), large_id, "the whole conversation, when you ask it to think harder "
+        add("Think harder", large_base_url(), large_id, "the whole conversation, when you ask it to think harder, "
+            "ask a question about the world (news, weather, prices - not ones about you or in an off-the-record chat), "
             "or the everyday model's reply fails its checks twice (secrets withheld if it's on the internet)")
+    with db.connect() as conn:
+        web = conn.execute("SELECT id FROM tools WHERE name = 'web'").fetchone()
+        web_on = web is not None and permissions.check(user_id, web["id"], "read", conn=conn)
+    if web_on:
+        add("Web search", os.getenv("SEARXNG_URL", "").strip() or "http://127.0.0.1:8888", "SearXNG",
+            "the search words; it passes them on to public search engines without your identity")
+        out.append({"name": "Web pages", "host": "the page's own site", "location": "internet", "purpose": "Reading a web page",
+                    "sends": "a request for that one page, when Custodian reads a search result"})
+    connected = desktop.status(user_id)
+    if connected["connected"]:
+        out.append({"name": connected["device"] or "Custodian desktop", "host": "your PC", "location": "this network",
+                    "purpose": "PC control", "sends": "the PC actions you ask for (PC · read and PC · write); "
+                    "risky ones wait for you to allow them on the PC"})
     ntfy = os.getenv("NTFY_URL", "").strip()
     if ntfy:
         show = os.getenv("NTFY_SHOW_TEXT", "").strip().lower() in ("1", "true", "yes")

@@ -11,7 +11,10 @@ libraries through ctypes, and opening or changing files outside the tool's data
 directory; reading Python's own files stays allowed so lazy imports work. A tool that needs
 an outside service (Google) gets `allow_hosts` from the gate: it may resolve exactly those
 names and connect only to the addresses they resolved to, over TCP, and read the system's CA
-certificates for TLS. Every other name, address and socket stays blocked. On POSIX it
+certificates for TLS. Every other name, address and socket stays blocked. `allow_hosts`
+containing "*" (the web reader) allows any host whose addresses are all public internet
+addresses: never loopback, the local network or link-local, so a web page can't steer the
+tool at this machine, the router or other services on the network. On POSIX it
 also caps CPU time, memory and file size. This hardens our own tool code against bad
 arguments; it is not an OS-level sandbox, so the container should still run unprivileged.
 
@@ -112,11 +115,12 @@ def _ca_paths() -> set[str]:
 
 def install_guard(data_dir: str, allow_hosts: tuple[str, ...] = ()) -> None:
     data_root = _norm(data_dir)
-    hosts = frozenset(h.lower() for h in allow_hosts)
+    hosts = frozenset(h.lower() for h in allow_hosts if h != "*")
+    public = "*" in allow_hosts  # any public internet host (web pages), but no private address
     read_roots = tuple(
         {_norm(p) for p in (sys.prefix, sys.base_prefix, sys.exec_prefix, sys.base_exec_prefix) if p}
         | {_norm(os.path.join(BACKEND_DIR, "app"))}
-        | (_ca_paths() if hosts else set())
+        | (_ca_paths() if allow_hosts else set())
     )
     resolved: set[str] = set()  # addresses the allowed names resolved to
     resolving: list[bool] = []  # set while the hook itself resolves a name (its call re-enters the hook)
@@ -136,24 +140,30 @@ def install_guard(data_dir: str, allow_hosts: tuple[str, ...] = ()) -> None:
             if resolving:
                 return
             host = args[0].decode() if isinstance(args[0], bytes) else str(args[0])
-            if host.lower() not in hosts and host not in resolved:
+            listed = host.lower() in hosts
+            if not (listed or public or host in resolved):
                 deny(f"looking up {host}")
-            if host.lower() in hosts:
+            if listed or public:
+                import ipaddress
                 import socket
 
                 resolving.append(True)
                 try:
-                    for info in socket.getaddrinfo(host, None):
-                        resolved.add(info[4][0])
+                    found = {info[4][0] for info in socket.getaddrinfo(host, None)}
                 finally:
                     resolving.pop()
+                if not listed:  # "*": only public addresses - never this machine or the local network
+                    found = {ip for ip in found if ipaddress.ip_address(ip.split("%")[0]).is_global}
+                    if not found:
+                        deny(f"reaching {host}, which isn't a public internet address")
+                resolved.update(found)
         elif event == "socket.connect":
             address = args[1] if len(args) > 1 else None
             if not (isinstance(address, tuple) and address and address[0] in resolved):
                 deny(f"connecting to {address!r}")
 
     def hook(event: str, args: tuple) -> None:
-        if hosts and event in NETWORK_EVENTS:
+        if (hosts or public) and event in NETWORK_EVENTS:
             network(event, args)
         elif event in BLOCKED_EVENTS:
             deny(event)

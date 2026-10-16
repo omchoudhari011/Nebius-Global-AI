@@ -58,6 +58,7 @@ UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 MAX_BODY_BYTES = 256 * 1024
 # Uploads: a 10 MB file is ~13.4 MB in base64; a voice message is sent as raw audio.
 LARGE_BODY_PATHS = {"/documents": 15 * 1024 * 1024, "/voice/transcribe": 11 * 1024 * 1024}
+LARGE_BODY_PREFIXES = {"/desktop/results/": 12 * 1024 * 1024}  # screenshots come back as images
 
 
 class BodySizeLimit:
@@ -71,7 +72,10 @@ class BodySizeLimit:
     async def __call__(self, scope, receive, send):  # type: ignore[no-untyped-def]
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
-        limit = LARGE_BODY_PATHS.get(scope.get("path", ""), self.max_bytes)
+        path = scope.get("path", "")
+        limit = LARGE_BODY_PATHS.get(path) or next(
+            (size for prefix, size in LARGE_BODY_PREFIXES.items() if path.startswith(prefix)), self.max_bytes
+        )
         for name, value in scope["headers"]:
             if name == b"content-length":
                 if not value.isdigit() or int(value) > limit:

@@ -242,3 +242,17 @@ def test_every_outside_service_is_listed(user_id, client, monkeypatch):
     assert services["Phone notifications"]["location"] == "internet"
     assert services["Phone notifications"]["sends"] == 'only "Reminder from Custodian"'
     assert services["Think harder"]["location"] == "internet"
+    assert "Web search" not in services and "PC control" not in services  # both off until switched on
+
+    from app import db, desktop, permissions
+
+    with db.connect() as conn:
+        web = conn.execute("SELECT id FROM tools WHERE name = 'web'").fetchone()["id"]
+    permissions.grant(user_id, web, "read")
+    desktop.touch(user_id, "Custodian desktop on HOME-PC")
+    try:
+        services = {s["purpose"]: s for s in client.get("/privacy").json()["other_services"]}
+    finally:
+        desktop.reset()
+    assert services["Web search"]["location"] == "this device" and services["Reading a web page"]["location"] == "internet"
+    assert services["PC control"]["name"] == "Custodian desktop on HOME-PC"

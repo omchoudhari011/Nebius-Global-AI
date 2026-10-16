@@ -25,6 +25,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from pydantic import ValidationError
 
@@ -96,6 +97,43 @@ def _scrubbed_env() -> dict[str, str]:
             env[name] = os.environ[name]
     return env
 
+
+class DesktopExecutor(ToolExecutor):
+    """Runs a PC action through the Custodian desktop app (app/desktop.py). A screenshot comes
+    back as an image and is turned into a description by the vision model, when one is set."""
+
+    def run(self, request: ToolRequest, timeout: float) -> Any:
+        from .. import desktop
+
+        ctx = request.context
+        try:
+            result = desktop.run(ctx["user_id"], request.function, request.args,
+                                 confirm=bool(ctx.get("confirm")), description=str(ctx.get("description", "")))
+        except desktop.DesktopUnavailable as exc:
+            raise ToolFailure(str(exc)) from None
+        except TimeoutError as exc:
+            raise ToolTimeout(str(exc)) from None
+        except RuntimeError as exc:
+            raise ToolFailure(str(exc)) from None
+        if isinstance(result, dict) and result.get("image_b64"):
+            result = _describe_screenshot(result)
+        return result
+
+
+def _describe_screenshot(result: dict) -> dict:
+    from .. import documents
+
+    image = result.pop("image_b64")
+    try:
+        import base64
+
+        result["description"] = documents._image_text(base64.b64decode(image), "image/png")
+    except Exception as exc:  # noqa: BLE001 - no vision model, or it failed: say so
+        result["description"] = f"(The screen couldn't be described: {exc})"
+    return result
+
+
+DESKTOP = DesktopExecutor()
 
 EXECUTORS: dict[str, ToolExecutor] = {
     "sandbox": SubprocessSandbox(),
@@ -234,8 +272,16 @@ def execute(
             return outcome
         context["allow_hosts"] = list(fn.hosts)
         timeout = max(timeout, NETWORK_TIMEOUT_SECONDS)
+    elif fn.hosts:  # the web tools: the local SearXNG, or any public page
+        searx = os.getenv("SEARXNG_URL", "").strip() or "http://127.0.0.1:8888"
+        context["searx_url"] = searx
+        context["allow_hosts"] = [urlsplit(searx).hostname if h == "searxng" else h for h in fn.hosts]
+        timeout = max(timeout, NETWORK_TIMEOUT_SECONDS)
+    if fn.runs_on == "desktop":
+        context["confirm"] = fn.confirm
+        context["description"] = fn.description
     request = ToolRequest(module=fn.module, function=fn.function, args=validated.model_dump(mode="json"), context=context)
-    executor = EXECUTORS.get(tool["executor"]) or UnavailableExecutor(tool["executor"])
+    executor = DESKTOP if fn.runs_on == "desktop" else EXECUTORS.get(tool["executor"]) or UnavailableExecutor(tool["executor"])
     started = time.perf_counter()
     try:
         outcome.result = executor.run(request, timeout)

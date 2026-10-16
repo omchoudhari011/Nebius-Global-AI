@@ -205,6 +205,7 @@ export const removeLicense = () => request<Billing>("/billing/license", { method
 // Day-to-day features -------------------------------------------------------------------------
 
 export const getFeatures = () => request<Features>("/features");
+export const getDesktopStatus = () => request<{ connected: boolean; device: string | null }>("/desktop/status");
 
 export const getNotifications = (unread = false) => request<AppNotification[]>(`/notifications${unread ? "?unread=true" : ""}`);
 export const markNotificationRead = (id: number) => request<void>(`/notifications/${id}/read`, { method: "POST" });

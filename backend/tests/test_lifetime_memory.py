@@ -227,21 +227,21 @@ def test_a_v2_database_is_upgraded_in_place(user_id):
         conn.execute("ALTER TABLE messages DROP COLUMN trace")
         for table in ("notifications", "message_feedback", "integrations"):
             conn.execute(f"DROP TABLE {table}")
-        new_tools = "SELECT id FROM tools WHERE name IN ('reminders', 'documents', 'gcal', 'gmail', 'gdrive')"
+        new_tools = "SELECT id FROM tools WHERE name IN ('reminders', 'documents', 'gcal', 'gmail', 'gdrive', 'web', 'pc')"
         conn.execute(f"DELETE FROM skill_tools WHERE tool_id IN ({new_tools})")
         conn.execute(f"DELETE FROM permissions WHERE tool_id IN ({new_tools})")
         conn.execute(new_tools.replace("SELECT id FROM", "DELETE FROM", 1))
         conn.execute("PRAGMA user_version = 2")
 
-    db.init_db()  # v2 -> v3 -> v4 -> v5 -> v6 -> v7
+    db.init_db()  # v2 -> v3 -> ... -> v8
 
     with db.connect() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 7
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 8
         tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert {"message_recalls", "memory_vectors", "message_vectors", "user_settings", "usage_daily", "sessions",
                 "notifications", "message_feedback", "integrations"} <= tables
         tools = {r["name"] for r in conn.execute("SELECT name FROM tools")}
-        assert {"reminders", "documents", "gcal", "gmail", "gdrive"} <= tools
+        assert {"reminders", "documents", "gcal", "gmail", "gdrive", "web", "pc"} <= tools
         assert conn.execute("SELECT private FROM conversations").fetchone()["private"] == 0
         links = conn.execute("SELECT memory_id, matched FROM message_memories").fetchall()
     assert [(r["memory_id"], r["matched"]) for r in links] == [(kept, 1)]  # old links count as matched

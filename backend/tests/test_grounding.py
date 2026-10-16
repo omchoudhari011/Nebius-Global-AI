@@ -250,6 +250,37 @@ def test_claim_detection(reply, outcomes, flagged):
     assert bool(grounding.review(reply, evidence)) is flagged
 
 
+CANBERRA = "https://en.wikipedia.org/wiki/Canberra"
+
+
+BRITANNICA = "https://www.britannica.com/place/Canberra"
+FOUND = [{"results": [{"url": CANBERRA}]}]
+
+
+@pytest.mark.parametrize(
+    "reply, results, message, expected",
+    [
+        (f"Canberra.\nSource: {CANBERRA}", [], "capital of Australia?", "Canberra."),  # no search ran: made up
+        (f"Canberra.\nSource: {CANBERRA}", FOUND, "capital of Australia?", f"Canberra.\nSource: {CANBERRA}"),
+        (f"Canberra.\nSource: {CANBERRA}\nSource: {BRITANNICA}", FOUND, "capital?", f"Canberra.\nSource: {CANBERRA}"),
+        (f"Canberra.\nSources: {CANBERRA}, {BRITANNICA}", FOUND, "capital?", f"Canberra.\nSources: {CANBERRA}"),
+        (f"It says Canberra.\nSource: {CANBERRA}.", [], f"what does {CANBERRA} say?", None),  # the user gave it
+        (f"Try {CANBERRA} for more.", [], "capital of Australia?", None),  # a link, not a citation
+        ("Source: your lease (lease.txt)", [], "pets?", None),
+    ],
+)
+def test_a_cited_source_no_tool_returned_is_dropped(reply, results, message, expected):
+    outcomes = [SimpleNamespace(tool="web", function="search", status="succeeded", error=None, result=r) for r in results]
+    cleaned = grounding.drop_invented_sources(reply, grounding.Evidence(message=message, outcomes=outcomes))
+    assert cleaned == (reply if expected is None else expected)
+
+
+def test_an_invented_source_never_reaches_the_reply(user_id):
+    set_backend(Script(say(f"The capital of Australia is Canberra.\nSource: {BRITANNICA}")))
+    out = orchestrator.handle(user_id, "what's the capital of Australia?")
+    assert out["reply"] == "The capital of Australia is Canberra." and out["used"]["checks"]["status"] == "passed"
+
+
 def test_a_reminder_with_a_time_is_not_mistaken_for_a_calendar_event(user_id, grant):
     grant("reminders", "write")
     set_backend(Script(call("reminders_create_reminder", {"text": "Stretch", "at": "2099-01-01T23:35"}),

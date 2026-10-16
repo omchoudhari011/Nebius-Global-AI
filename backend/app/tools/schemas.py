@@ -127,3 +127,85 @@ class SearchDriveArgs(ToolArgs):
 
 class ReadDriveArgs(ToolArgs):
     id: SafeLine = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$", description="The file id, from search_files.")
+
+
+# The web ------------------------------------------------------------------------------------
+
+class WebSearchArgs(ToolArgs):
+    query: SafeLine = Field(min_length=1, max_length=300, description="What to search the web for.")
+    limit: int = Field(default=5, ge=1, le=8)
+
+
+class ReadPageArgs(ToolArgs):
+    url: SafeLine = Field(min_length=8, max_length=2000, pattern=r"^https?://", description="The page's full http(s) address.")
+
+
+# The PC (run by the Custodian desktop app) ----------------------------------------------------
+
+PcPath = Annotated[str, AfterValidator(_plain_text)]
+
+
+class NoArgs(ToolArgs):
+    pass
+
+
+class PcListFilesArgs(ToolArgs):
+    path: PcPath = Field(default="~", max_length=500, description="Folder, e.g. '~/Downloads' or 'D:/Projects'. '~' is the home folder.")
+    pattern: SafeLine = Field(default="*", max_length=100, description="Name filter such as '*.pdf'.")
+
+
+class PcFindFilesArgs(ToolArgs):
+    query: SafeLine = Field(min_length=1, max_length=200, description="Part of the file name to look for.")
+    folder: PcPath = Field(default="~", max_length=500, description="Where to look (searched recursively).")
+
+
+class PcPathArgs(ToolArgs):
+    path: PcPath = Field(min_length=1, max_length=500, description="The file's path.")
+
+
+class PcOpenArgs(ToolArgs):
+    target: PcPath = Field(min_length=1, max_length=2000,
+                           description="An app name ('notepad', 'chrome', 'spotify'), a web address, or a file or folder path.")
+
+
+class PcMediaArgs(ToolArgs):
+    action: Literal["play_pause", "next", "previous", "mute", "volume_up", "volume_down"]
+    steps: int = Field(default=1, ge=1, le=20, description="For volume_up/volume_down: how many 2% steps.")
+
+
+class PcVolumeArgs(ToolArgs):
+    level: int = Field(ge=0, le=100, description="Volume in percent.")
+
+
+class PcWindowArgs(ToolArgs):
+    title: SafeLine = Field(min_length=1, max_length=200, description="Part of the window's title.")
+
+
+class PcTypeArgs(ToolArgs):
+    text: PlainText = Field(min_length=1, max_length=5000, description="Text to type into the active window.")
+
+
+class PcKeysArgs(ToolArgs):
+    keys: SafeLine = Field(min_length=1, max_length=60, pattern=r"^[A-Za-z0-9+ _-]+$",
+                           description="A key or combination, e.g. 'enter', 'ctrl+s', 'alt+tab', 'win+d'.")
+
+
+class PcClickArgs(ToolArgs):
+    x: int = Field(ge=0, le=20000)
+    y: int = Field(ge=0, le=20000)
+    button: Literal["left", "right", "double"] = "left"
+
+
+class PcWriteFileArgs(ToolArgs):
+    path: PcPath = Field(min_length=1, max_length=500)
+    content: PlainText = Field(max_length=200_000)
+    overwrite: bool = Field(default=False, description="Replace the file if it already exists.")
+
+
+class PcMoveArgs(ToolArgs):
+    source: PcPath = Field(min_length=1, max_length=500)
+    destination: PcPath = Field(min_length=1, max_length=500)
+
+
+class PcClipboardArgs(ToolArgs):
+    text: PlainText = Field(max_length=20_000)

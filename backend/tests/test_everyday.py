@@ -412,6 +412,16 @@ def test_a_reply_that_fails_twice_goes_to_the_larger_model(user_id):
     assert len(small.requests) == 2 and len(large.requests) == 1
 
 
+def test_questions_about_the_world_go_to_the_larger_model_but_personal_ones_stay(user_id):
+    small, large = Script(say("small"), say("small"), say("small")), Script(say("large"), model_id="big-1")
+    set_backend(small)
+    set_large_backend(large)
+    assert orchestrator.handle(user_id, "what's the weather in Pune today?")["reply"] == "large"
+    assert orchestrator.handle(user_id, "what's the latest news about my rent case?")["reply"] == "small"
+    assert orchestrator.handle(user_id, "what's the weather in Pune today?", private=True)["reply"] == "small"
+    assert len(large.requests) == 1
+
+
 def test_secrets_are_withheld_from_a_larger_model_on_the_internet(user_id, monkeypatch):
     monkeypatch.setenv("LARGE_MODEL_BASE_URL", "https://api.tokenfactory.nebius.com/v1")
     large = Script(say("OK."), model_id="big-1")

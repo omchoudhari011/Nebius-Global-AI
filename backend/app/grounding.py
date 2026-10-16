@@ -25,6 +25,7 @@ miss an unusual phrasing than flag a true statement.
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 from dataclasses import dataclass, field
@@ -247,6 +248,16 @@ _REMINDER_CLAIM = re.compile(
     re.I,
 )
 # Custodian can notify you (reminders) but can't send messages, emails or calls.
+# Something done on the PC: true only when a pc tool call succeeded this turn.
+_PC_CLAIM = re.compile(
+    r"\b(?:i(?:'ve| have)?|done[\s,!-]*i(?:'ve)?)\s+(?:just\s+|now\s+)?(?:opened|launched|started|closed|locked|muted|unmuted|paused"
+    r"|resumed|played|skipped|typed|pressed|clicked|turned (?:up|down)"
+    r"|set the volume|raised the volume|lowered the volume|taken a screenshot|took a screenshot"
+    r"|(?:deleted|moved|renamed|copied|created) (?:the |your |that |a |this )?(?:file|folder))\b"
+    r"|\b(?:volume|the music|playback|your (?:pc|computer|screen)|spotify|chrome|notepad)\s+(?:is|has been)\s+(?:now\s+)?"
+    r"(?:set|muted|unmuted|paused|playing|locked|open|opened|closed)\b",
+    re.I,
+)
 _CONTACT_CLAIM = re.compile(
     r"\b(?:i'?ll|i will|i'm going to|i am going to)\s+(?:also\s+)?(?:message|text|email|e-mail|call|phone|whatsapp)\s+you\b",
     re.I,
@@ -364,6 +375,33 @@ def _why_not(evidence: Evidence, tool: str, function: str) -> str:
     return f"the {tool} tool failed" + (f" ({last.error[:120]})" if last.error else "")
 
 
+# "Source: https://..." - a citation must be something a tool returned (or the user gave).
+_SOURCE_LINE = re.compile(r"(?im)^\W*(?:sources?|references?|via)\s*:?\s*(.+)$")
+_URL = re.compile(r"https?://[^\s)\]>,;\"'`]+")
+
+
+def drop_invented_sources(reply: str, evidence: Evidence) -> str:
+    """`reply` without the cited links that no tool returned this turn (and the user didn't
+    give): a source line keeps its real links and goes if none are left."""
+    seen = (evidence.message or "") + json.dumps([getattr(o, "result", None) for o in evidence.outcomes],
+                                                 ensure_ascii=False, default=str)
+
+    def keep(match: re.Match) -> str:
+        line = match.group(0)
+        urls = _URL.findall(match.group(1))
+        invented = [u for u in urls if u.rstrip(".") not in seen]
+        if not invented:
+            return line
+        if len(invented) == len(urls):
+            return ""
+        for url in invented:
+            line = re.sub(r"[,\s]*" + re.escape(url), "", line, count=1)
+        return line
+
+    cleaned = _SOURCE_LINE.sub(keep, reply)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip() if cleaned != reply else reply
+
+
 def review(reply: str, evidence: Evidence) -> list[Finding]:
     """The claims in `reply` that this turn's evidence doesn't support (empty = none found)."""
     findings: list[Finding] = []
@@ -393,6 +431,18 @@ def review(reply: str, evidence: Evidence) -> list[Finding]:
                 f"You promised a reminder, but no reminders create_reminder call succeeded in this turn ({why}). "
                 "Call it if you can, or say plainly that no reminder was set.",
                 f"No reminder was set: {why}.",
+            )
+        )
+    pc_done = any(o.tool == "pc" and o.status == "succeeded" for o in evidence.outcomes)
+    if not pc_done and _says(reply, _PC_CLAIM):
+        tried = [o for o in evidence.outcomes if o.tool == "pc"]
+        why = _why_not(evidence, "pc", tried[-1].function) if tried else "no PC action was actually carried out"
+        findings.append(
+            Finding(
+                "unverified_pc_action",
+                f"You said you did something on their PC, but no pc action succeeded in this turn ({why}). Call the "
+                "pc tool if you can, or say plainly what didn't happen.",
+                f"Nothing was done on your PC: {why}.",
             )
         )
     if _says(reply, _CONTACT_CLAIM):

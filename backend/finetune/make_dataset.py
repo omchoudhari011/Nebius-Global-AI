@@ -342,8 +342,12 @@ class World:
                 "LOG_LEVEL": "ERROR",
             }
         )
-        for name in ("DATABASE_PATH", "APP_SECRET_KEY", "SESSION_SECRET", "CUSTODIAN_PASSCODE", "NEBIUS_BASE_URL"):
+        for name in ("DATABASE_PATH", "APP_SECRET_KEY", "SESSION_SECRET", "CUSTODIAN_PASSCODE", "NEBIUS_BASE_URL",
+                     "LARGE_MODEL_ID"):
             os.environ.pop(name, None)
+        from pc_web_scenarios import start_fake_searx
+
+        os.environ["SEARXNG_URL"] = start_fake_searx()
 
         from app import auth, db, skills
         from app.config import get_settings, reset_settings
@@ -357,6 +361,9 @@ class World:
         self.teacher = Teacher()
         set_backend(self.teacher)
         self.rng = random.Random(seed)
+        from pc_web_scenarios import FakeDesktop
+
+        self.fake_desktop = FakeDesktop(self.user_id)
         with db.connect() as conn:
             self.tool_ids = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM tools")}
             self.scopes = [(r["name"], r["tool_id"], r["scope"]) for r in conn.execute(
@@ -748,6 +755,10 @@ def scenarios(world: World, per_kind: int) -> list[Scenario]:
             setup=lambda w, c=count: (w.add_events(c) if c else None, w.add_notes(),
                                       w.add_reminder("Pay rent", 6) if c else None),
         ))
+
+    import pc_web_scenarios
+
+    out += pc_web_scenarios.scenarios(world, per_kind, Scenario, Plan, pick)
     return out
 
 

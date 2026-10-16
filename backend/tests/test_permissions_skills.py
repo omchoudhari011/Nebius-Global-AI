@@ -9,7 +9,7 @@ from app import db, permissions, skills
 def test_default_deny(user_id, tool_ids):
     assert permissions.check(user_id, tool_ids["calendar"], "read") is False
     rows = permissions.list_for_user(user_id)
-    assert len(rows) == 11 and not any(r["granted"] for r in rows)  # every switch starts off
+    assert len(rows) == 14 and not any(r["granted"] for r in rows)  # every switch starts off
 
 
 def test_grant_revoke_and_history(user_id, tool_ids):
@@ -31,7 +31,7 @@ def test_unknown_scope(user_id, tool_ids):
 
 def test_skills_are_synced_once(user_id):
     names = {s["name"]: s for s in skills.list_skills()}
-    assert set(names) == {"general", "calendar", "notes", "daily-summary", "reminders", "files", "email"}
+    assert set(names) == {"general", "calendar", "notes", "daily-summary", "reminders", "files", "email", "web", "pc"}
     assert all(s["version"] == 1 for s in names.values())
     assert "calendar:read" in names["daily-summary"]["tools"]
     assert "calendar:write" not in names["daily-summary"]["tools"]

@@ -8,6 +8,7 @@ Google connection, and which of these this server has set up.
     POST /voice/transcribe                 raw audio body (Content-Type: audio/...)
     POST /messages/{id}/feedback · DELETE /messages/{id}/feedback
     GET  /integrations · GET /integrations/google/start · DELETE /integrations/google
+    GET  /desktop/next · POST /desktop/results/{id} · GET /desktop/status   the desktop app's bridge
     GET  /integrations/google/callback     Google's redirect after consent (no session: the
                                            signed `state` names the account)
 """
@@ -19,10 +20,10 @@ import os
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from .. import documents, feedback, google_account, notifications, voice
+from .. import desktop, documents, feedback, google_account, notifications, voice
 from ..auth import require_session
 from ..model_backends import get_large_backend
 
@@ -39,6 +40,7 @@ def features(user_id: int = Depends(require_session)) -> dict:
         "larger_model": large.model_id if large else None,
         "google": google_account.configured(),
         "phone_push": bool(os.getenv("NTFY_URL", "").strip()),
+        "desktop": desktop.status(user_id)["connected"],
         "unread": notifications.unread_count(user_id),
         "feedback": feedback.counts(user_id),
     }
@@ -184,3 +186,32 @@ def google_callback(code: str = "", state: str = "", error: str = "") -> HTMLRes
 def google_disconnect(user_id: int = Depends(require_session)) -> Response:
     google_account.disconnect(user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# The desktop app ----------------------------------------------------------------------------
+
+class DesktopResult(BaseModel):
+    ok: bool
+    result: object = None
+    error: str | None = Field(default=None, max_length=2000)
+
+
+@router.get("/desktop/next")
+def desktop_next(request: Request, user_id: int = Depends(require_session)) -> Response:
+    """The desktop app's long-poll for its next PC action (204 when there is none yet)."""
+    action = desktop.next_action(user_id, request.headers.get("X-Custodian-Device", "")[:80] or None)
+    if action is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return JSONResponse(action)
+
+
+@router.post("/desktop/results/{action_id}", status_code=status.HTTP_204_NO_CONTENT)
+def desktop_result(action_id: int, body: DesktopResult, user_id: int = Depends(require_session)) -> Response:
+    if not desktop.finish(user_id, action_id, body.ok, body.result, body.error):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="That action is no longer waiting")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/desktop/status")
+def desktop_status(user_id: int = Depends(require_session)) -> dict:
+    return desktop.status(user_id)

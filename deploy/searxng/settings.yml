@@ -1,0 +1,16 @@
+# SearXNG for Custodian's web_search tool: a private meta-search engine on this machine.
+# Searches go to the engines below; nothing about you does. The JSON format is what
+# Custodian reads; the limiter is off because only Custodian, on this machine, uses it.
+use_default_settings: true
+general:
+  instance_name: "Custodian search"
+search:
+  safe_search: 1
+  formats: [html, json]
+server:
+  secret_key: "change-me-on-first-run"
+  limiter: false
+  image_proxy: false
+  bind_address: "0.0.0.0"
+ui:
+  static_use_hash: true

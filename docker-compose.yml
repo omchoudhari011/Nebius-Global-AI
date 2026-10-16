@@ -28,6 +28,20 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
 
+  # Web search for Custodian (profile "web"): set SEARXNG_URL=http://searxng:8080 in backend/.env and
+  #   SEARXNG_SECRET=$(openssl rand -hex 32) docker compose --profile web up -d
+  searxng:
+    profiles: [web]
+    image: searxng/searxng:2026.10.16-ff8f5ddcc
+    restart: unless-stopped
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?set SEARXNG_SECRET to a long random string}
+    volumes:
+      - ./deploy/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    networks: [custodian-net]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
   caddy:
     profiles: [tls]
     image: caddy:2

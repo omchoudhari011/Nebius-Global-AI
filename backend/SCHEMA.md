@@ -1,4 +1,4 @@
-# Custodian schema (v7)
+# Custodian schema (v8)
 
 The DDL is in [schema.sql](schema.sql). This page has the diagram and the reasons behind the
 design. The diagram is Mermaid: GitHub renders it, and you can paste it into
@@ -230,6 +230,14 @@ erDiagram
   }
 ```
 
+## What v8 adds: the web and your PC
+
+| Need | v8 |
+|---|---|
+| Answer questions about the world | A `tools` row for `web` with one scope, `read` (search, and reading a public web page). Nothing is stored: results go to the model and the encrypted tool-call log. |
+| Control the user's PC | A `tools` row for `pc` with `read` (system info, files, windows, clipboard, screenshots) and `write` (open apps, media, volume, lock, typing, clicks, file changes). Pending actions wait in memory for the desktop app (`app/desktop.py`), not in the database; every call is in `tool_calls` like any other tool. |
+| Existing v7 databases | `db.MIGRATIONS[7]` adds the two tools and their scopes; every switch starts off. |
+
 ## What v7 adds: reminders, files, Google, feedback
 
 | Need | v7 |
@@ -307,7 +315,7 @@ prompt, plus what they said in earlier conversations that matches the message.
 | `embedding_ref` in the diagram, but the code uses FTS5 | Removed. If vectors are added later, also store the embedding model so you know what to re-embed. |
 | Foreign keys never enforced | `app/db.py` runs `PRAGMA foreign_keys = ON` for every connection (SQLite's default is off). |
 | No enums, `ON DELETE` rules or indexes | `CHECK` constraints on every enum-like column; deleting a user cascades everywhere; indexes for the scheduler, recall and conversation queries. |
-| No schema versioning | `PRAGMA user_version` (now 7); `init_db()` upgrades a v2, v3, v4, v5 or v6 file in place with `db.MIGRATIONS` and refuses a v1 or unknown database instead of half-applying the schema. |
+| No schema versioning | `PRAGMA user_version` (now 8); `init_db()` upgrades a v2, v3, v4, v5, v6 or v7 file in place with `db.MIGRATIONS` and refuses a v1 or unknown database instead of half-applying the schema. |
 
 ## Deliberately not added
 

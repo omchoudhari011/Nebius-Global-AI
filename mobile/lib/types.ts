@@ -292,6 +292,7 @@ export type Features = {
   larger_model: string | null;
   google: boolean;
   phone_push: boolean;
+  desktop: boolean;
   unread: number;
   feedback: { good: number; bad: number; shared: number };
 };

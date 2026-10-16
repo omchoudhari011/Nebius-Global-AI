@@ -386,6 +386,15 @@ INSERT INTO tool_scopes (tool_id, scope, description) VALUES
   ((SELECT id FROM tools WHERE name = 'gmail'),     'read',  'search_messages, read_message'),
   ((SELECT id FROM tools WHERE name = 'gdrive'),    'read',  'search_files, read_file');
 
-PRAGMA user_version = 7;                 -- keep in sync with SCHEMA_VERSION in app/db.py
+INSERT INTO tools (name) VALUES
+  ('web'),                               -- app/tools/web_tools.py: search and read pages
+  ('pc');                                -- the Custodian desktop app (desktop/): your PC
+
+INSERT INTO tool_scopes (tool_id, scope, description) VALUES
+  ((SELECT id FROM tools WHERE name = 'web'), 'read',  'search, read_page'),
+  ((SELECT id FROM tools WHERE name = 'pc'),  'read',  'system info, files, windows, clipboard, screenshot'),
+  ((SELECT id FROM tools WHERE name = 'pc'),  'write', 'open apps, media, volume, lock, type, click, files');
+
+PRAGMA user_version = 8;                 -- keep in sync with SCHEMA_VERSION in app/db.py
 
 COMMIT;

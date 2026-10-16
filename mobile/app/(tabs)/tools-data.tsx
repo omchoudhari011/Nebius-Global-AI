@@ -53,12 +53,13 @@ export default function ToolsDataScreen() {
   const [google, setGoogle] = useState<Integration | null>(null);
   const [files, setFiles] = useState<DocumentFile[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [pc, setPc] = useState<{ connected: boolean; device: string | null } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [p, m, a, e, g, d, r] = await Promise.all([
+      const [p, m, a, e, g, d, r, desk] = await Promise.all([
         api.getPermissions(),
         api.getMemories(),
         api.getToolCalls(25),
@@ -66,7 +67,9 @@ export default function ToolsDataScreen() {
         api.getIntegrations(),
         api.getDocuments(),
         api.getReminders(),
+        api.getDesktopStatus().catch(() => null),
       ]);
+      setPc(desk);
       setGoogle(g.find((i) => i.provider === "google") ?? null);
       setFiles(d);
       setReminders(r);
@@ -230,6 +233,15 @@ export default function ToolsDataScreen() {
             </>
           ) : (
             <Text style={s.meta}>Not set up on this server: it needs a Google OAuth client (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET; see the README).</Text>
+          )}
+        </Card>
+
+        <SectionTitle title="Your PC" hint="The Custodian desktop app lets Custodian open apps, control media and volume, and work with files on your Windows PC - only with PC · read and PC · write on, and anything risky asks you on the PC first." />
+        <Card>
+          {pc?.connected ? (
+            <Text style={s.toolName}>Connected: {pc.device ?? "your PC"}</Text>
+          ) : (
+            <Text style={s.meta}>Not connected. On your PC, run desktop\run-desktop.ps1 and sign in; say “Hey Jarvis” or press Ctrl+Alt+Space to talk.</Text>
           )}
         </Card>
 

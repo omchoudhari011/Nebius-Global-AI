@@ -38,7 +38,7 @@ GOOGLE = {
 
 
 def test_every_registered_function_is_checked():
-    assert {f.exposed_name for f in registry.FUNCTIONS} == {name for name, _, _ in LOCAL} | set(GOOGLE)
+    assert {f.exposed_name for f in registry.FUNCTIONS} == {name for name, _, _ in LOCAL} | set(GOOGLE) | set(PC) | WEB
 
 
 @pytest.fixture
@@ -68,3 +68,105 @@ def test_google_tools_are_blocked_without_a_connected_account(user_id, tool_ids,
     permissions.set_granted(user_id, tool_ids[fn.tool], fn.scope, True)  # switch on, but no account
     out = sandbox.execute(user_id, name, GOOGLE[name], message_id=message_id, allowed=None)
     assert out.status == "denied" and "Google isn't connected" in out.error
+
+
+# The web --------------------------------------------------------------------------------------
+
+import json  # noqa: E402
+import threading  # noqa: E402
+from http.server import BaseHTTPRequestHandler, HTTPServer  # noqa: E402
+
+from app import desktop  # noqa: E402
+
+
+class _FakeSearx(BaseHTTPRequestHandler):
+    def do_GET(self):  # noqa: N802
+        body = json.dumps({"results": [{"title": "Canberra - Wikipedia", "url": "https://en.wikipedia.org/wiki/Canberra",
+                                        "content": "Canberra is the capital city of Australia."}]}).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+
+@pytest.fixture
+def searx(monkeypatch):
+    server = HTTPServer(("127.0.0.1", 0), _FakeSearx)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    monkeypatch.setenv("SEARXNG_URL", f"http://127.0.0.1:{server.server_port}")
+    yield f"http://127.0.0.1:{server.server_port}"
+    server.shutdown()
+
+
+def test_web_search_reaches_only_the_search_engine_and_pages_only_the_public_internet(user_id, tool_ids, message_id, searx):
+    assert sandbox.execute(user_id, "web_search", {"query": "capital of australia"}, message_id=message_id, allowed=None).status == "denied"
+    permissions.set_granted(user_id, tool_ids["web"], "read", True)
+    found = sandbox.execute(user_id, "web_search", {"query": "capital of australia"}, message_id=message_id, allowed=None)
+    assert found.status == "succeeded", found.error
+    assert found.result["results"][0]["url"] == "https://en.wikipedia.org/wiki/Canberra"
+    local = sandbox.execute(user_id, "web_read_page", {"url": searx + "/"}, message_id=message_id, allowed=None)
+    assert local.status == "failed" and "public internet" in local.error  # never this machine or the local network
+
+
+# The PC, through the desktop app ----------------------------------------------------------------
+
+PC = {
+    "pc_system_info": {}, "pc_list_files": {"path": "~/Downloads"}, "pc_find_files": {"query": "invoice"},
+    "pc_read_file": {"path": "~/notes.txt"}, "pc_list_windows": {}, "pc_get_clipboard": {}, "pc_screenshot": {},
+    "pc_open": {"target": "notepad"}, "pc_media": {"action": "play_pause"}, "pc_set_volume": {"level": 30},
+    "pc_lock_screen": {}, "pc_focus_window": {"title": "Chrome"}, "pc_close_window": {"title": "Notepad"},
+    "pc_type_text": {"text": "hello"}, "pc_press_keys": {"keys": "ctrl+s"}, "pc_click": {"x": 10, "y": 20},
+    "pc_write_file": {"path": "~/a.txt", "content": "hi"}, "pc_move_file": {"source": "~/a.txt", "destination": "~/b.txt"},
+    "pc_delete_file": {"path": "~/b.txt"}, "pc_set_clipboard": {"text": "hi"},
+}
+WEB = {"web_search", "web_read_page"}
+
+
+@pytest.fixture
+def fake_desktop(user_id):
+    """Plays the desktop app: answers every action, and records what it was asked."""
+    desktop.reset()
+    seen: list[dict] = []
+    stop = threading.Event()
+
+    def loop():
+        while not stop.is_set():
+            action = desktop.next_action(user_id, "Test PC", wait=0.5)
+            if action:
+                seen.append(action)
+                if action["function"] == "screenshot":
+                    desktop.finish(user_id, action["id"], True, {"path": "~/Pictures/shot.png", "image_b64": "aGk="})
+                else:
+                    desktop.finish(user_id, action["id"], True, {"done": action["function"]})
+
+    thread = threading.Thread(target=loop, daemon=True)
+    thread.start()
+    desktop.touch(user_id, "Test PC")
+    yield seen
+    stop.set()
+    thread.join(timeout=2)
+    desktop.reset()
+
+
+def test_every_pc_action_goes_through_the_gate_to_the_desktop_app(user_id, tool_ids, message_id, fake_desktop):
+    for name, args in PC.items():
+        fn = registry.find(name)
+        permissions.set_granted(user_id, tool_ids["pc"], fn.scope, False)
+        assert sandbox.execute(user_id, name, args, message_id=message_id, allowed=None).status == "denied", name
+        permissions.set_granted(user_id, tool_ids["pc"], fn.scope, True)
+        out = sandbox.execute(user_id, name, args, message_id=message_id, allowed=None)
+        assert out.status == "succeeded", (name, out.error)
+    asked = {a["function"]: a for a in fake_desktop}
+    assert set(asked) == {name.removeprefix("pc_") for name in PC}
+    assert asked["type_text"]["confirm"] is True and asked["open"]["confirm"] is False
+    assert asked["delete_file"]["args"] == {"path": "~/b.txt"}
+
+
+def test_pc_actions_say_so_when_the_desktop_app_isnt_running(user_id, tool_ids, message_id):
+    desktop.reset()
+    permissions.set_granted(user_id, tool_ids["pc"], "write", True)
+    out = sandbox.execute(user_id, "pc_open", {"target": "notepad"}, message_id=message_id, allowed=None)
+    assert out.status == "failed" and "desktop app isn't running" in out.error

@@ -19,7 +19,7 @@ from pathlib import Path
 from .config import BACKEND_DIR, get_settings
 
 SCHEMA_PATH = BACKEND_DIR / "schema.sql"
-SCHEMA_VERSION = 7  # must match the PRAGMA user_version at the end of schema.sql
+SCHEMA_VERSION = 8  # must match the PRAGMA user_version at the end of schema.sql
 
 # Upgrades for databases made by an older schema.sql: {from version: script}. Each script
 # runs in one transaction and ends by setting user_version to the next version, so a failed
@@ -153,6 +153,16 @@ MIGRATIONS = {
           ((SELECT id FROM tools WHERE name = 'gmail'),     'read',  'search_messages, read_message'),
           ((SELECT id FROM tools WHERE name = 'gdrive'),    'read',  'search_files, read_file');
         PRAGMA user_version = 7;
+        COMMIT;
+    """,
+    7: """
+        BEGIN;
+        INSERT INTO tools (name) VALUES ('web'), ('pc');
+        INSERT INTO tool_scopes (tool_id, scope, description) VALUES
+          ((SELECT id FROM tools WHERE name = 'web'), 'read',  'search, read_page'),
+          ((SELECT id FROM tools WHERE name = 'pc'),  'read',  'system info, files, windows, clipboard, screenshot'),
+          ((SELECT id FROM tools WHERE name = 'pc'),  'write', 'open apps, media, volume, lock, type, click, files');
+        PRAGMA user_version = 8;
         COMMIT;
     """,
 }
