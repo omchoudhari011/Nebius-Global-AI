@@ -354,9 +354,16 @@ model with yours (`finetune/compare.py`: held-out conversations, the accuracy an
 evals; `eval/agent_eval.py`: 1000 everyday requests) and prints the command to switch if it's
 better. Details: [backend/finetune/README.md](backend/finetune/README.md).
 
-The model in use is `custodian-nemotron` (v4). Later rounds trained so far: v5 was better at
-multi-step tasks, the screen and WhatsApp but saved memories less reliably, so v4 stayed; the
-rebalanced v6 dataset is ready in `finetune/data` for the next overnight run.
+The model in use is `custodian-nemotron` (v4). Later rounds, each compared before switching:
+
+| | Everyday (1000) | Held-out | Memory / new-chat recall | Kept? |
+|---|---|---|---|---|
+| v4 | 94.4% | 116/133 | 10/10 · 10/10 | **yes** |
+| v5 (PC and web at half the data) | 89.2%* | 87/111 | 10/10 · 10/10, but saved memories less often | no |
+| v6 (rebalanced) | 95.4% | 114/133 | 10/10 · 10/10 | no: questions about uploaded files fell from 4/6 to 1/6 (it checked the calendar instead) |
+
+\\* before the fast path and the routing fixes. v6 stays installed as `custodian-nemotron-v6`;
+try it with `ollama cp custodian-nemotron custodian-nemotron-previous; ollama cp custodian-nemotron-v6 custodian-nemotron`.
 
 ## Configuration
 
