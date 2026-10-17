@@ -103,6 +103,16 @@ PC_SIMPLE = [  # (request, function, args, reply)
 ]
 
 
+SITE_URLS = {"youtube": "https://www.youtube.com", "gmail": "https://mail.google.com", "whatsapp web": "https://web.whatsapp.com",
+             "netflix": "https://www.netflix.com", "github": "https://github.com", "instagram": "https://www.instagram.com",
+             "amazon": "https://www.amazon.in", "chatgpt": "https://chatgpt.com"}
+VIDEO_TITLES = {"kalyani": "KALYANI (with Shreya Ghoshal) ARJN | KDS | FIFTY4 | RONN", "lofi music": "lofi hip hop radio - beats to relax/study to",
+                "believer": "Imagine Dragons - Believer (Official Music Video)", "kesariya": "Kesariya - Brahmastra | Arijit Singh",
+                "tum hi ho": "Tum Hi Ho - Aashiqui 2 | Arijit Singh", "python tutorial": "Python Tutorial for Beginners - Full Course"}
+SPOTIFY_TITLES = {"shape of you": "Ed Sheeran - Shape of You", "kesariya": "Arijit Singh - Kesariya",
+                  "my liked songs": "Coldplay - Viva La Vida", "lofi beats": "Lofi Fruits - Snowman"}
+
+
 class FakeDesktop:
     """Plays the desktop app for one user: mode 'ok', 'decline' (confirmed actions are
     declined) or 'offline' (not connected)."""
@@ -148,6 +158,44 @@ class FakeDesktop:
             "list_windows": {"windows": ["Inbox - Gmail - Google Chrome", "notes.txt - Notepad", "Spotify Premium"], "active": "Spotify Premium"},
             "screenshot": {"path": "C:\\Users\\you\\Pictures\\Custodian\\screenshot.png",
                            "description": "A code editor with a Python file open and a terminal below it."},
+            "open": {"opened": SITE_URLS.get(str(args.get("target", "")).lower(), args.get("target")),
+                     "kind": "web page" if str(args.get("target", "")).lower() in SITE_URLS or "://" in str(args.get("target"))
+                     else "file" if "\\" in str(args.get("target")) else "app"},
+            "go_to": {"opened": "https://duckduckgo.com/?q=%5C" + str(args.get("query", "")).replace(" ", "%20"),
+                      "for": args.get("query"), "kind": "web page"},
+            "search_site": {"opened": f"https://www.{args.get('site')}.com/search?q=" + str(args.get("query", "")).replace(" ", "+"),
+                            "searched": args.get("site"), "for": args.get("query")},
+            "play": ({"service": "youtube", "playing": VIDEO_TITLES.get(str(args.get("query")).lower(), str(args.get("query")).title()),
+                      "url": "https://www.youtube.com/watch?v=z5y8Clp_TdE", "started": True}
+                     if args.get("service", "youtube") == "youtube" else
+                     {"service": "spotify", "searched": args.get("query"), "started": True,
+                      "now_playing": [{"app": "Spotify", "title": SPOTIFY_TITLES.get(str(args.get("query")).lower(), str(args.get("query")).title())}]}),
+            "now_playing": {"now_playing": [{"app": "Spotify", "title": "Arijit Singh - Kesariya"}]},
+            "media": {"done": args.get("action"), **({"now_playing": [{"app": "Spotify", "title": "Arijit Singh - Kesariya"}]}
+                                                      if args.get("action") in ("next", "previous") else {})},
+            "set_brightness": {"brightness": args.get("level")},
+            "set_theme": {"theme": args.get("mode")},
+            "open_settings": {"opened": f"Settings: {args.get('page')}"},
+            "timer": {"timer": args.get("label", "Timer"), "rings_at": "18:30:00", "seconds": args.get("seconds")},
+            "list_apps": {"apps": [{"app": "chrome", "windows": 2, "memory_mb": 850}, {"app": "Spotify", "windows": 1, "memory_mb": 310},
+                                   {"app": "Code", "windows": 1, "memory_mb": 290}, {"app": "WhatsApp.Root", "windows": 1, "memory_mb": 140}]},
+            "close_app": {"closed": str(args.get("name", "")).lower(), "windows_closed": 2, "still_open": None, "running": False},
+            "copy_file": {"copied": args.get("source"), "to": args.get("destination")},
+            "move_file": {"moved": args.get("source"), "to": args.get("destination")},
+            "create_folder": {"folder": args.get("path"), "already_existed": False},
+            "organize_folder": {"folder": args.get("path"), "moved": {"Images": 12, "Documents": 7, "Installers": 3},
+                                "files_moved": 22},
+            "write_in_app": {"app": args.get("app", "notepad"), "window": "Untitled - Notepad" if args.get("app", "notepad") == "notepad"
+                             else "Document1 - Word", "characters": len(str(args.get("text", "")))},
+            "read_screen": {"window": "WhatsApp", "controls": [{"name": "Search or start a new chat", "type": "Edit"},
+                            {"name": "Type a message", "type": "Edit"}, {"name": "Send", "type": "Button"},
+                            {"name": "Attach", "type": "Button"}, {"name": "Voice call", "type": "Button"}],
+                            "text": ["Mum", "Dinner at 8?"]},
+            "click_element": {"clicked": args.get("name"), "type": "Button", "window": args.get("window") or "WhatsApp"},
+            "send_message": {"sent_to": str(args.get("contact", "")).title(), "app": "WhatsApp",
+                             "characters": len(str(args.get("text", "")))},
+            "fill_field": {"filled": args.get("name"), "type": "Edit", "characters": len(str(args.get("text", ""))),
+                           "window": args.get("window") or "WhatsApp"},
         }.get(function, {"done": function, **args})
 
 
@@ -172,6 +220,290 @@ def start_fake_searx() -> str:
     server = HTTPServer(("127.0.0.1", 0), _Searx)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return f"http://127.0.0.1:{server.server_port}"
+
+
+SITES_ASKED = [("open youtube", "youtube", "YouTube"), ("open gmail", "gmail", "Gmail"), ("open whatsapp web", "whatsapp web", "WhatsApp Web"),
+               ("open netflix", "netflix", "Netflix"), ("open github", "github", "GitHub"), ("go to youtube", "youtube", "YouTube"),
+               ("open chatgpt", "chatgpt", "ChatGPT"), ("open instagram", "instagram", "Instagram")]
+GO_TO = [("take me to the wikipedia of jagermister", "Jägermeister Wikipedia", "the Jägermeister Wikipedia page"),
+         ("take me to the IRCTC login page", "IRCTC login", "the IRCTC login page"),
+         ("show me the wikipedia page for Virat Kohli", "Virat Kohli Wikipedia", "Virat Kohli's Wikipedia page"),
+         ("take me to the official python docs", "Python documentation", "the Python documentation"),
+         ("go to the Pune weather page", "Pune weather", "the Pune weather page"),
+         ("open the website of Tata Motors", "Tata Motors official website", "Tata Motors' website"),
+         ("take me to the jagermeister website", "Jägermeister official website", "the Jägermeister website")]
+SEARCH_SITE = [("search amazon for wireless earbuds", "amazon", "wireless earbuds", "Amazon"),
+               ("search youtube for python tutorials", "youtube", "python tutorials", "YouTube"),
+               ("find cheap running shoes on flipkart", "flipkart", "cheap running shoes", "Flipkart"),
+               ("search google for best biryani near me", "google", "best biryani near me", "Google"),
+               ("look up Kalyani on wikipedia", "wikipedia", "Kalyani", "Wikipedia"),
+               ("show me pictures of the Taj Mahal", "images", "Taj Mahal", "Google Images"),
+               ("search maps for coffee shops near me", "maps", "coffee shops near me", "Google Maps")]
+PLAY = [("play kalyani from youtube", "kalyani", "youtube"), ("play kalyani on youtube", "kalyani", "youtube"),
+        ("play kalyani now", "kalyani", "youtube"), ("play some lofi music", "lofi music", "youtube"),
+        ("play believer by imagine dragons", "believer", "youtube"), ("play tum hi ho", "tum hi ho", "youtube"),
+        ("play a python tutorial video", "python tutorial", "youtube"), ("play shape of you on spotify", "shape of you", "spotify"),
+        ("play kesariya on spotify", "kesariya", "spotify"), ("play lofi beats on spotify", "lofi beats", "spotify")]
+SYSTEM = [("set brightness to 50", "pc_set_brightness", {"level": 50}, "Set the brightness to 50%."),
+          ("dim the screen", "pc_set_brightness", {"level": 30}, "Dimmed the screen to 30%."),
+          ("make the screen brighter", "pc_set_brightness", {"level": 90}, "Turned the brightness up to 90%."),
+          ("turn on dark mode", "pc_set_theme", {"mode": "dark"}, "Switched Windows to dark mode."),
+          ("switch to light mode", "pc_set_theme", {"mode": "light"}, "Switched Windows to light mode."),
+          ("open bluetooth settings", "pc_open_settings", {"page": "bluetooth"}, "Opened the Bluetooth settings."),
+          ("i want to connect to a wifi network", "pc_open_settings", {"page": "wifi"}, "Opened the Wi-Fi settings - pick the network there."),
+          ("open display settings", "pc_open_settings", {"page": "display"}, "Opened the display settings."),
+          ("set a timer for 10 minutes", "pc_timer", {"seconds": 600, "label": "Timer"}, "Timer set for 10 minutes - it rings at 18:30."),
+          ("start a 5 minute timer for the tea", "pc_timer", {"seconds": 300, "label": "Tea"}, "Started a 5-minute tea timer."),
+          ("set a 30 second timer", "pc_timer", {"seconds": 30, "label": "Timer"}, "Timer set for 30 seconds.")]
+WRITE_IN_APP = [
+    ("write a leave letter for tomorrow in notepad", "notepad",
+     "Dear Sir/Madam,\n\nI am writing to request leave for tomorrow due to personal reasons. I will make sure my work is covered "
+     "and will be available on my phone if needed.\n\nThank you for your understanding.\n\nYours sincerely,\nOm Choudhari",
+     "I wrote the leave letter in Notepad - check it and add the date before you send it."),
+    ("open notepad and write a shopping list: milk, eggs, bread", "notepad", "Shopping list\n- Milk\n- Eggs\n- Bread",
+     "Wrote your shopping list in Notepad."),
+    ("write a short poem about rain in word", "word",
+     "Rain\n\nSoft rain taps on the window pane,\nwashing the dust from the sleepy lane;\nthe world grows quiet, the air turns new,\n"
+     "and every leaf holds a drop of blue.", "Wrote a short poem about rain in a new Word document."),
+    ("type a note in notepad saying call the plumber at 5", "notepad", "Call the plumber at 5.", "Done - it's in Notepad."),
+]
+
+
+def jarvis_scenarios(world, per_kind: int, Scenario, Plan, pick, denied, mode) -> list:  # noqa: ANN001, N803, C901
+    """Everyday "do it for me" requests, including the ones that tripped up v4, and multi-step tasks."""
+    out = []
+    PCW = {"pc": ("read", "write")}
+    BOTH = {"pc": ("read", "write"), "web": ("read",)}
+
+    def simple(text: str) -> Callable:
+        return lambda results: denied(results) or text
+
+    def declined_or(done: str, declined: str) -> Callable:
+        def reply(results: list[dict]) -> str:
+            last = results[-1]
+            if last["status"] != "succeeded" and "declined" in (last.get("error") or ""):
+                return declined
+            return denied(results) or done
+        return reply
+
+    for _ in range(per_kind // 2):
+        request, target, label = pick(SITES_ASKED)
+        out.append(Scenario("pc_site", request, Plan([("pc_open", {"target": target})], simple(f"Opened {label}.")),
+                            grants=PCW, setup=mode("ok"), expect_status={"open": "succeeded"}))
+    for _ in range(per_kind // 2):
+        request, query, label = pick(GO_TO)
+        out.append(Scenario("pc_go_to", request, Plan([("pc_go_to", {"query": query})], simple(f"Opened {label} in your browser.")),
+                            grants=PCW, setup=mode("ok"), expect_status={"go_to": "succeeded"}))
+    for _ in range(per_kind // 2):
+        request, site, query, label = pick(SEARCH_SITE)
+        out.append(Scenario("pc_search_site", request,
+                            Plan([("pc_search_site", {"site": site, "query": query})], simple(f"Here are the {label} results for “{query}”.")),
+                            grants=PCW, setup=mode("ok"), expect_status={"search_site": "succeeded"}))
+
+    def play_reply(results: list[dict]) -> str:
+        early = denied(results)
+        if early:
+            return early
+        r = results[0]["result"]
+        if r["service"] == "spotify":
+            playing = (r.get("now_playing") or [{}])[0].get("title")
+            return f"Playing {playing} on Spotify." if r.get("started") and playing else (
+                f"I opened Spotify's search for “{r['searched']}” but couldn't start it - pick a result to play.")
+        return f"Playing “{r['playing']}” on YouTube." if r.get("started") else "I couldn't find that video; I opened the search results instead."
+
+    for _ in range(per_kind):
+        request, query, service = pick(PLAY)
+        args = {"query": query} if service == "youtube" else {"query": query, "service": "spotify"}
+        out.append(Scenario("pc_play", request, Plan([("pc_play", args)], play_reply), grants=PCW, setup=mode("ok"),
+                            expect_status={"play": "succeeded"}))
+
+    def playing_reply(results: list[dict]) -> str:
+        playing = results[0]["result"].get("now_playing")
+        return denied(results) or (f"You're listening to {playing[0]['title']} on {playing[0]['app']}." if playing else "Nothing is playing right now.")
+
+    for _ in range(per_kind // 4):
+        request = pick(["what's playing?", "what song is this?", "which song is playing right now?", "what music is playing?"])
+        out.append(Scenario("pc_now_playing", request, Plan([("pc_now_playing", {})], playing_reply), grants=PCW,
+                            setup=mode("ok"), expect_status={"now_playing": "succeeded"}))
+    for _ in range(per_kind):
+        request, function, args, text = pick(SYSTEM)
+        out.append(Scenario("pc_system", request, Plan([(function, args)], simple(text)), grants=PCW, setup=mode("ok"),
+                            expect_status={function.removeprefix("pc_"): "succeeded"}))
+
+    def apps_reply(results: list[dict]) -> str:
+        return denied(results) or "Running now:\n" + "\n".join(
+            f"• {a['app'].removesuffix('.Root')} ({a['memory_mb']} MB)" for a in results[0]["result"]["apps"])
+
+    for _ in range(per_kind // 4):
+        request = pick(["what apps are running?", "which apps are open right now?", "show me the running apps"])
+        out.append(Scenario("pc_apps", request, Plan([("pc_list_apps", {})], apps_reply), grants=PCW, setup=mode("ok"),
+                            expect_status={"list_apps": "succeeded"}))
+    for _ in range(per_kind // 3):
+        request, name, label = pick([("close chrome", "chrome", "Chrome"), ("quit spotify", "spotify", "Spotify"),
+                                     ("close whatsapp", "whatsapp", "WhatsApp"), ("kill vs code", "vs code", "VS Code")])
+        decline = world.rng.random() < 0.3
+        out.append(Scenario("pc_close_app", request,
+                            Plan([("pc_close_app", {"name": name})],
+                                 declined_or(f"Closed {label}.", f"You declined on the PC, so {label} is still open.")),
+                            grants=PCW, setup=mode("decline" if decline else "ok"),
+                            expect_status={"close_app": "failed" if decline else "succeeded"}))
+    for _ in range(per_kind // 3):
+        request, path, label = pick([("organize my downloads folder", "~/Downloads", "Downloads"),
+                                     ("clean up my desktop", "~/Desktop", "desktop"), ("sort the files in my downloads", "~/Downloads", "Downloads")])
+        decline = world.rng.random() < 0.3
+        out.append(Scenario("pc_organize", request,
+                            Plan([("pc_organize_folder", {"path": path})],
+                                 declined_or(f"Sorted 22 files in your {label}: 12 into Images, 7 into Documents and 3 into Installers.",
+                                             f"You declined on the PC, so your {label} is unchanged.")),
+                            grants=PCW, setup=mode("decline" if decline else "ok"),
+                            expect_status={"organize_folder": "failed" if decline else "succeeded"}))
+    for _ in range(per_kind // 4):
+        request, path, label = pick([("make a folder called Trips on my desktop", "~/Desktop/Trips", "Trips"),
+                                     ("create a new folder named Projects in documents", "~/Documents/Projects", "Projects")])
+        out.append(Scenario("pc_folder", request, Plan([("pc_create_folder", {"path": path})], simple(f"Created the {label} folder.")),
+                            grants=PCW, setup=mode("ok"), expect_status={"create_folder": "succeeded"}))
+    for _ in range(per_kind // 2):
+        request, app, text, done = pick(WRITE_IN_APP)
+        decline = world.rng.random() < 0.2
+        out.append(Scenario("pc_write_in_app", request,
+                            Plan([("pc_write_in_app", {"app": app, "text": text})],
+                                 declined_or(done, "You declined on the PC, so nothing was written.")),
+                            grants=PCW, setup=mode("decline" if decline else "ok"),
+                            expect_status={"write_in_app": "failed" if decline else "succeeded"}))
+
+    # Multi-step: each step uses what the one before returned. -------------------------------------
+    def first_match(results: list[dict]) -> list:
+        r = results[-1]
+        return [("pc_open", {"target": r["result"]["matches"][0]})] if r["status"] == "succeeded" and r["result"]["matches"] else []
+
+    for _ in range(per_kind // 2):
+        request, query = pick([("find my resume and open it", "resume"), ("open my invoice pdf", "invoice"),
+                               ("find the project report and open it", "report"), ("open my offer letter", "offer letter")])
+        out.append(Scenario(
+            "pc_multi_find_open", request,
+            Plan([("pc_find_files", {"query": query})],
+                 lambda results: denied(results[-1:]) or f"Opened {results[0]['result']['matches'][0].split(chr(92))[-1]}.",
+                 then=[first_match]),
+            grants=PCW, setup=mode("ok"), expect_status={"find_files": "succeeded", "open": "succeeded"}))
+
+    def first_link(results: list[dict]) -> list:
+        r = results[-1]
+        return [("pc_open", {"target": r["result"]["results"][0]["url"]})] if r["status"] == "succeeded" and r["result"]["results"] else []
+
+    for _ in range(per_kind // 3):
+        question, query, _results, answer = pick([f for f in WEB_FACTS if "news" in f[0] or "who" in f[0] or "weather" in f[0]])
+        request = pick([f"search {query} and open the first link", f"look up {query} and open the top result"])
+        out.append(Scenario(
+            "pc_multi_search_open", request,
+            Plan([("web_search", {"query": query})],
+                 lambda results, a=answer: f"{a}\nI opened the source in your browser.\nSource: {results[0]['result']['results'][0]['url']}",
+                 then=[first_link]),
+            grants=BOTH, setup=mode("ok"), expect_status={"search": "succeeded", "open": "succeeded"}))
+    for _ in range(per_kind // 3):
+        request, title = pick([("close all chrome windows and lock the pc", "chrome"), ("quit spotify and lock my computer", "spotify")])
+        out.append(Scenario(
+            "pc_multi_close_lock", request,
+            Plan([("pc_close_app", {"name": title})], declined_or(f"Closed {title.title()} and locked the PC.",
+                                                                  f"You declined closing {title.title()}, so I didn't lock the PC either."),
+                 then=[lambda results: [("pc_lock_screen", {})] if results[-1]["status"] == "succeeded" else []]),
+            grants=PCW, setup=mode("ok"), expect_status={"close_app": "succeeded", "lock_screen": "succeeded"}))
+    for _ in range(per_kind // 3):
+        request, query, level = pick([("play kalyani and set the volume to 30", "kalyani", 30),
+                                      ("put on some lofi music at 20 percent volume", "lofi music", 20)])
+        out.append(Scenario(
+            "pc_multi_play_volume", request,
+            Plan([("pc_play", {"query": query}), ("pc_set_volume", {"level": level})],
+                 lambda results, lv=level: f"Playing “{results[0]['result']['playing']}” on YouTube, volume at {lv}%."),
+            grants=PCW, setup=mode("ok"), expect_status={"play": "succeeded", "set_volume": "succeeded"}))
+
+    def click_send(results: list[dict]) -> list:
+        names = [c["name"] for c in results[-1]["result"]["controls"]] if results[-1]["status"] == "succeeded" else []
+        return [("pc_click_element", {"name": "Send", "window": "WhatsApp"})] if "Send" in names else []
+
+    for _ in range(per_kind // 3):
+        request = pick(["click the send button in whatsapp", "press send in whatsapp", "hit the Send button on WhatsApp"])
+        decline = world.rng.random() < 0.25
+        out.append(Scenario(
+            "pc_multi_screen", request,
+            Plan([("pc_read_screen", {"window": "WhatsApp"})],
+                 declined_or("Clicked Send in WhatsApp.", "You declined on the PC, so nothing was sent."), then=[click_send]),
+            grants=PCW, setup=mode("decline" if decline else "ok"),
+            expect_status={"read_screen": "succeeded", "click_element": "failed" if decline else "succeeded"}))
+
+    # WhatsApp: the exact chat and words; sent only after "Allow once" (declines and wrong chats happen).
+    people = ["Neha", "Arjun", "Riya", "Mom", "Vikram", "Ananya", "Rohit", "Simran", "Boss", "Kabir"]
+    words = ["I'm stuck in traffic, will be late", "see you at the station", "please call me back", "happy anniversary!",
+             "running 5 minutes late", "the report is ready", "can we meet tomorrow?", "I reached home safely",
+             "don't forget the tickets", "thank you so much"]
+    phrasings = ["send a whatsapp to {p} saying {w}", "whatsapp {p} {w}", "message {p} on whatsapp: {w}", "text {p} on whatsapp that {w}",
+                 "send {p} a whatsapp message - {w}", "on whatsapp tell {p} {w}", "whatsapp {p}: {w}", "send a message to {p} on whatsapp saying {w}"]
+
+    def whatsapp_reply(results: list[dict]) -> str:
+        r = results[-1]
+        error = r.get("error") or ""
+        if r["status"] == "succeeded":
+            return f"Sent to {r['result']['sent_to']} on WhatsApp."
+        if "declined" in error:
+            return "You declined on the PC, so nothing was sent."
+        if "no WhatsApp chat called" in error:
+            return "I couldn't find that chat in WhatsApp, so nothing was sent. Check the name as it's saved in WhatsApp."
+        return denied(results) or "Nothing was sent."
+
+    for _ in range(per_kind):
+        person, text = pick(people), pick(words)
+        request = pick(phrasings).format(p=person, w=text)
+        outcome = world.rng.random()
+        setup = mode("decline") if outcome < 0.2 else mode("ok")
+        status = "failed" if outcome < 0.2 else "succeeded"
+        out.append(Scenario("pc_whatsapp", request, Plan([("pc_send_message", {"contact": person, "text": text})], whatsapp_reply),
+                            grants=PCW, setup=setup, expect_status={"send_message": status}))
+
+    # Everyday phrasings that don't name the action.
+    loose = [("put on {s}", "play"), ("i want to listen to {s}", "play"), ("can you play {s} for me", "play"), ("start {s} on youtube", "play")]
+    for _ in range(per_kind // 2):
+        template, _kind = pick(loose)
+        query = pick(["believer", "kesariya", "tum hi ho", "lofi music"])
+        out.append(Scenario("pc_play", template.format(s=query), Plan([("pc_play", {"query": query})], play_reply),
+                            grants=PCW, setup=mode("ok"), expect_status={"play": "succeeded"}))
+    for _ in range(per_kind // 3):
+        app, target, label = pick([("calculator", "calculator", "the Calculator"), ("the terminal", "terminal", "Terminal"),
+                                   ("paint", "paint", "Paint"), ("excel", "excel", "Excel"), ("word", "word", "Word")])
+        request = pick(["fire up {a}", "bring up {a}", "can you open {a} for me", "i need {a}"]).format(a=app)
+        out.append(Scenario("pc_open", request, Plan([("pc_open", {"target": target})], simple(f"Opened {label}.")),
+                            grants=PCW, setup=mode("ok"), expect_status={"open": "succeeded"}))
+    for _ in range(per_kind // 3):
+        site, label = pick([("linkedin", "LinkedIn"), ("netflix", "Netflix"), ("github", "GitHub"), ("instagram", "Instagram")])
+        request = pick(["i want to see {s}", "pull up {s}", "show me {s}"]).format(s=site)
+        out.append(Scenario("pc_site", request, Plan([("pc_open", {"target": site})], simple(f"Opened {label}.")),
+                            grants=PCW, setup=mode("ok"), expect_status={"open": "succeeded"}))
+
+    def found_reply(results: list[dict]) -> str:
+        pc_hit = next((r for r in results if r.get("function") == "find_files" and r["status"] == "succeeded"), None)
+        if pc_hit and pc_hit["result"]["matches"]:
+            return "On your PC:\n" + "\n".join(f"• {m}" for m in pc_hit["result"]["matches"][:10])
+        return "I couldn't find it on your PC or in the files you've uploaded."
+
+    for _ in range(per_kind // 3):  # "find my X" with no place: both the PC and the uploads, in one step
+        thing = pick(["seminar ppt", "electricity bill", "passport scan", "salary slip"])
+        out.append(Scenario(
+            "files_find_both", pick(["find my {t}", "where's my {t}", "look for my {t} file"]).format(t=thing),
+            Plan([("pc_find_files", {"query": thing.split()[-1]}), ("documents_search_documents", {"query": thing})], found_reply),
+            grants={"pc": ("read", "write"), "documents": ("read",)}, setup=mode("ok"),
+            expect_status={"find_files": "succeeded"}))
+
+    def battery_then(results: list[dict]) -> list:
+        r = results[-1]
+        return [("pc_set_brightness", {"level": 40})] if r["status"] == "succeeded" and r["result"]["battery"]["percent"] < 80 else []
+
+    for _ in range(per_kind // 4):
+        out.append(Scenario(
+            "pc_multi_battery", pick(["check my battery and if it's below 80 dim the screen to save power",
+                                      "if my battery is under 80 percent, lower the brightness"]),
+            Plan([("pc_system_info", {})],
+                 lambda results: f"Your battery is at {results[0]['result']['battery']['percent']}%, so I dimmed the screen to 40% to save power.",
+                 then=[battery_then]),
+            grants=PCW, setup=mode("ok"), expect_status={"system_info": "succeeded", "set_brightness": "succeeded"}))
+    return out
 
 
 def scenarios(world, per_kind: int, Scenario, Plan, pick) -> list:  # noqa: ANN001, N803 - make_dataset's types
@@ -217,9 +549,18 @@ def scenarios(world, per_kind: int, Scenario, Plan, pick) -> list:  # noqa: ANN0
         request, target, label = pick(PC_OPEN)
         out.append(Scenario("pc_open", request, Plan([("pc_open", {"target": target})], simple(f"Opened {label}.")),
                             grants=PCW, setup=mode("ok"), expect_status={"open": "succeeded"}))
+    def media_reply(text: str) -> Callable:
+        def reply(results: list[dict]) -> str:
+            early = denied(results)
+            if early:
+                return early
+            playing = (results[0].get("result") or {}).get("now_playing")
+            return f"{text.rstrip('.')} - now playing {playing[0]['title']}." if playing else text
+        return reply
+
     for _ in range(per_kind // 2):
         request, action, steps, text = pick(PC_MEDIA)
-        out.append(Scenario("pc_media", request, Plan([("pc_media", {"action": action, "steps": steps})], simple(text)),
+        out.append(Scenario("pc_media", request, Plan([("pc_media", {"action": action, "steps": steps})], media_reply(text)),
                             grants=PCW, setup=mode("ok"), expect_status={"media": "succeeded"}))
     for _ in range(per_kind // 3):
         request, level = pick(PC_VOLUME)
@@ -272,6 +613,8 @@ def scenarios(world, per_kind: int, Scenario, Plan, pick) -> list:  # noqa: ANN0
         out.append(Scenario("pc_unavailable", request, Plan([("pc_open", {"target": target})], simple("")),
                             grants=PCW if offline else {}, setup=mode("offline" if offline else "ok"),
                             expect_status={"open": "failed" if offline else "denied"}))
+
+    out += jarvis_scenarios(world, per_kind, Scenario, Plan, pick, denied, mode)
 
     def web_reply(answer: str) -> Callable:
         def reply(results: list[dict]) -> str:

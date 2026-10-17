@@ -9,6 +9,7 @@ Google connection, and which of these this server has set up.
     POST /messages/{id}/feedback · DELETE /messages/{id}/feedback
     GET  /integrations · GET /integrations/google/start · DELETE /integrations/google
     GET  /desktop/next · POST /desktop/results/{id} · GET /desktop/status   the desktop app's bridge
+    POST /warm                             load the local model now ("Hey Jarvis" was heard)
     GET  /integrations/google/callback     Google's redirect after consent (no session: the
                                            signed `state` names the account)
 """
@@ -23,11 +24,19 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from .. import desktop, documents, feedback, google_account, notifications, voice
+from .. import desktop, documents, feedback, google_account, notifications, voice, warmup
 from ..auth import require_session
 from ..model_backends import get_large_backend
 
 router = APIRouter(tags=["everyday"])
+
+
+@router.post("/warm", status_code=status.HTTP_204_NO_CONTENT)
+def warm(user_id: int = Depends(require_session)) -> Response:
+    """Start loading the local model (if it isn't loaded) without waiting for it: the desktop app
+    calls this when it hears the wake word, so the load overlaps with you talking."""
+    warmup.warm_soon()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/features")

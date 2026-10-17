@@ -5,14 +5,16 @@
 
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { ActivityIndicator, FlatList, Pressable, View } from "react-native";
+import { Text } from "./Typography";
 
 import { toolLabel } from "../lib/format";
 import { stopSpeech, toggleSpeech } from "../lib/media";
-import { radius, space, themed, useTokens } from "../lib/tokens";
+import { fonts, radius, space, themed, useTokens } from "../lib/tokens";
 import type { Feedback, Used } from "../lib/types";
 import { FeedbackSheet } from "./FeedbackSheet";
-import { Chip, statusTone } from "./ui";
+import { Chip, Crest, GoldRule, statusTone } from "./ui";
 
 export type ChatItem = {
   key: string;
@@ -42,21 +44,24 @@ const useStyles = themed((t) => ({
   row: { maxWidth: "86%", gap: 6 },
   rowUser: { alignSelf: "flex-end", alignItems: "flex-end" },
   rowAssistant: { alignSelf: "flex-start" },
-  bubble: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: radius.lg },
-  bubbleUser: { backgroundColor: t.accent, borderBottomRightRadius: radius.sm },
-  bubbleAssistant: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderBottomLeftRadius: radius.sm },
-  textUser: { color: t.onAccent, fontSize: 16, lineHeight: 22 },
-  textAssistant: { color: t.ink, fontSize: 16, lineHeight: 22 },
+  bubble: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: radius.lg },
+  bubbleUser: { borderBottomRightRadius: radius.sm, borderWidth: 1, borderColor: t.scheme === "dark" ? "#e6c97f" : t.accent },
+  bubbleAssistant: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.hairline, borderBottomLeftRadius: radius.sm,
+    shadowColor: "#000", shadowOpacity: t.scheme === "dark" ? 0.3 : 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
+  textUser: { color: t.onAccent, fontSize: 16, lineHeight: 23 },
+  textAssistant: { color: t.ink, fontSize: 16, lineHeight: 23 },
+  assistantLine: { flexDirection: "row", alignItems: "flex-end", gap: space.sm },
   failed: { color: t.danger, fontSize: 13 },
   retry: { color: t.danger, fontSize: 13, fontWeight: "700", textDecorationLine: "underline" },
   provenance: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
   thinking: { flexDirection: "row", alignItems: "center", gap: space.sm, alignSelf: "flex-start", paddingVertical: space.sm },
   thinkingText: { color: t.inkSoft, fontSize: 14 },
   empty: { flex: 1, justifyContent: "center", alignItems: "center", gap: space.md, paddingVertical: space.xl },
-  emptyTitle: { color: t.ink, fontSize: 18, fontWeight: "700", textAlign: "center" },
-  emptyText: { color: t.inkSoft, fontSize: 14, textAlign: "center", maxWidth: 360 },
+  emptyTitle: { fontFamily: fonts.display, color: t.ink, fontSize: 38, lineHeight: 44, textAlign: "center", letterSpacing: 0.4 },
+  emptyKicker: { fontFamily: fonts.displayItalic, color: t.scheme === "dark" ? t.gold : t.accent2, fontSize: 19, textAlign: "center" },
+  emptyText: { color: t.inkSoft, fontSize: 14, lineHeight: 21, textAlign: "center", maxWidth: 380 },
   suggestions: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: space.sm, maxWidth: 520 },
-  suggestion: { borderWidth: 1, borderColor: t.border, backgroundColor: t.surface, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 8 },
+  suggestion: { borderWidth: 1, borderColor: t.hairline, backgroundColor: t.surface, borderRadius: radius.pill, paddingHorizontal: 16, paddingVertical: 9 },
   suggestionText: { color: t.ink, fontSize: 14 },
   actions: { flexDirection: "row", gap: 2, marginLeft: -6 },
   action: { width: 34, height: 30, alignItems: "center", justifyContent: "center", borderRadius: radius.sm },
@@ -138,9 +143,13 @@ export function ChatThread({
       ListEmptyComponent={
         pending ? null : (
           <View style={s.empty}>
-            <Text style={s.emptyTitle}>What can I help with?</Text>
+            <Crest size={72} />
+            <Text style={s.emptyKicker}>At your service</Text>
+            <Text style={s.emptyTitle}>How may I help?</Text>
+            <GoldRule style={{ width: 180 }} />
             <Text style={s.emptyText}>
-              I remember what you tell me and only use your calendar and notes when you switch them on in Tools & Data.
+              I remember what you tell me, look things up, and run your PC when you ask. I use your calendar, notes and PC only
+              when you switch them on in Tools & Data.
             </Text>
             {onSuggestion ? (
               <View style={s.suggestions}>
@@ -166,11 +175,27 @@ export function ChatThread({
         const mine = item.role === "user";
         return (
           <View style={[s.row, mine ? s.rowUser : s.rowAssistant]}>
-            <View style={[s.bubble, mine ? s.bubbleUser : s.bubbleAssistant]}>
-              <Text selectable style={mine ? s.textUser : s.textAssistant}>
-                {item.content}
-              </Text>
-            </View>
+            {mine ? (
+              <LinearGradient
+                colors={t.scheme === "dark" ? ["#e3c47b", "#b8892f"] : ["#2b3a86", "#1a2357"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[s.bubble, s.bubbleUser]}
+              >
+                <Text selectable style={s.textUser}>
+                  {item.content}
+                </Text>
+              </LinearGradient>
+            ) : (
+              <View style={s.assistantLine}>
+                <Crest size={26} />
+                <View style={[s.bubble, s.bubbleAssistant, { flexShrink: 1 }]}>
+                  <Text selectable style={s.textAssistant}>
+                    {item.content}
+                  </Text>
+                </View>
+              </View>
+            )}
             {item.failed ? (
               <Text style={s.failed} accessibilityRole="alert">
                 {item.error ?? "Not sent."}{" "}

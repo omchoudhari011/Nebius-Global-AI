@@ -211,6 +211,23 @@ def list_skills(*, conn: sqlite3.Connection | None = None) -> list[dict]:
         return result
 
 
+# Words that make a request about your Custodian records rather than the PC.
+PERSONAL_DATA = ("calendar", "meeting", "meetings", "event", "events", "appointment", "appointments", "schedule", "agenda",
+                 "note", "notes", "reminder", "reminders", "email", "emails", "mail", "inbox", "message from", "uploaded",
+                 "upload", "my day", "my week", "voice note")
+# Requests that start like an order for the PC count one extra towards the PC skill.
+PC_COMMAND_STARTS = tuple(f" {w} " for w in (
+    "open", "launch", "play", "fire up", "start up", "take me", "go to", "bring up", "pull up", "close", "quit", "kill",
+    "whatsapp", "text", "message", "send a whatsapp", "send a message", "mute", "unmute", "pause", "resume", "skip",
+    "lock", "put on", "switch to", "minimize", "turn up", "turn down", "dim", "brighten", "organize", "organise",
+    "i want to listen", "i want to watch", "i want to see", "show me", "click", "press", "type", "i need"))
+COMMAND_VERBS = {"open", "play", "launch", "start", "close", "quit", "take", "go", "show", "search", "set", "turn",
+                 "mute", "pause", "skip", "lock", "type", "write", "find", "organize", "organise", "click", "fill",
+                 "switch", "put", "make", "copy", "move", "delete", "save", "sort", "clean", "look", "check", "hit",
+                 "press", "dim", "create", "kill", "stop", "resume", "connect", "minimize", "draft", "whatsapp", "text",
+                 "message", "bring", "fire", "pull", "listen", "watch"}
+
+
 def pick_skill_name(message: str) -> str:
     """The skill whose keywords match the message best; DEFAULT_SKILL when none or a tie."""
     text = " " + " ".join(re.findall(r"\w+", message.lower())) + " "
@@ -219,8 +236,17 @@ def pick_skill_name(message: str) -> str:
         hits = sum(1 for k in d.keywords if f" {k} " in text)
         if hits:
             scores[d.name] = hits
+    personal = any(f" {w} " in text for w in PERSONAL_DATA)  # about Custodian's own records, not the PC
+    if text.startswith(PC_COMMAND_STARTS) and not personal:
+        scores["pc"] = scores.get("pc", 0) + 1  # "fire up calculator", "put on Heeriye": an order for the PC
     if not scores:
         return DEFAULT_SKILL
     best = max(scores.values())
     winners = [name for name, score in scores.items() if score == best]
+    if len(winners) > 1 and "pc" in winners:
+        others = [w for w in winners if w != "pc"]
+        if personal and len(others) == 1:
+            return others[0]  # "show me my calendar", "open the lease I uploaded"
+        if not personal and text.split()[0] in COMMAND_VERBS:
+            return "pc"  # "search amazon for earbuds", "whatsapp Sneha: call me when you're free"
     return winners[0] if len(winners) == 1 else DEFAULT_SKILL

@@ -23,6 +23,8 @@ log = logging.getLogger(__name__)
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _TOOL_CALL = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL | re.IGNORECASE)
 RETRY_STATUSES = {429, 500, 502, 503, 504}
+TOOL_FORMAT_NUDGE = ("Your last tool call couldn't be read: a <parameter> tag wasn't closed. Make the same tool call "
+                     "again, with each parameter written as <parameter=name>value</parameter>.")
 
 
 class NebiusNemotronBackend(ModelBackend):
@@ -80,6 +82,14 @@ class NebiusNemotronBackend(ModelBackend):
                 if resp.status_code not in RETRY_STATUSES:
                     raise ModelError(f"Nebius returned {resp.status_code}: {detail}")
                 last_error = f"Nebius returned {resp.status_code}: {detail}"
+                if "syntax error" in detail.lower() or "parse" in detail.lower():
+                    # The server couldn't parse the tool call the model wrote (a small model sometimes
+                    # drops a closing tag). The same request gives the same output, so remind it of the
+                    # format and vary the sampling, and ask again right away.
+                    messages = [*payload["messages"], {"role": "system", "content": TOOL_FORMAT_NUDGE}]
+                    payload = {**payload, "messages": messages, "seed": attempt + 1,
+                               "temperature": min(1.0, float(payload.get("temperature") or 0.3) + 0.2)}
+                    continue
                 retry_after = resp.headers.get("Retry-After", "")
                 if attempt < self.max_retries and retry_after.isdigit():
                     time.sleep(min(float(retry_after), 10.0))

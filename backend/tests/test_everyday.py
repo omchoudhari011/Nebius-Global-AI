@@ -412,6 +412,31 @@ def test_a_reply_that_fails_twice_goes_to_the_larger_model(user_id):
     assert len(small.requests) == 2 and len(large.requests) == 1
 
 
+def test_a_local_model_is_kept_loaded_and_warmed_on_request(client, monkeypatch):
+    from app import warmup
+
+    assert client.post("/warm").status_code == 204  # stub model: nothing to load, still fine
+    posts = []
+    monkeypatch.setattr(warmup.httpx, "post", lambda url, json, timeout: posts.append((url, json)))
+    monkeypatch.setenv("MODEL_BACKEND", "nebius")
+    monkeypatch.setenv("NEBIUS_BASE_URL", "http://127.0.0.1:11434/v1")
+    monkeypatch.setenv("NEBIUS_MODEL_ID", "custodian-nemotron")
+    monkeypatch.setenv("NEBIUS_API_KEY", "ollama")
+    monkeypatch.setenv("EMBEDDING_MODEL", "nomic-embed-text")
+    from app.config import reset_settings
+
+    reset_settings()
+    warmup.warm("6m")
+    assert posts == [("http://127.0.0.1:11434/api/generate", {"model": "custodian-nemotron", "keep_alive": "6m"}),
+                     ("http://127.0.0.1:11434/api/embed", {"model": "nomic-embed-text", "input": "", "keep_alive": "6m"})]
+    monkeypatch.setenv("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1")  # a cloud model: nothing to keep loaded
+    monkeypatch.setenv("EMBEDDING_MODEL", "")
+    reset_settings()
+    posts.clear()
+    warmup.warm()
+    assert posts == []
+
+
 def test_questions_about_the_world_go_to_the_larger_model_but_personal_ones_stay(user_id):
     small, large = Script(say("small"), say("small"), say("small")), Script(say("large"), model_id="big-1")
     set_backend(small)

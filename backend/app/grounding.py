@@ -255,8 +255,13 @@ _PC_CLAIM = re.compile(
     r"|set the volume|raised the volume|lowered the volume|taken a screenshot|took a screenshot"
     r"|(?:deleted|moved|renamed|copied|created) (?:the |your |that |a |this )?(?:file|folder))\b"
     r"|\b(?:volume|the music|playback|your (?:pc|computer|screen)|spotify|chrome|notepad)\s+(?:is|has been)\s+(?:now\s+)?"
-    r"(?:set|muted|unmuted|paused|playing|locked|open|opened|closed)\b",
-    re.I,
+    r"(?:set|muted|unmuted|paused|playing|locked|open|opened|closed)\b"
+    # The short form a reply starts with: "Opened YouTube.", "Playing “Kalyani” on YouTube."
+    r"|(?:^\W*|[.!?]\s+)(?:done[\s,!-]+)?(?:opened|launched|closed|quit|locked|muted|unmuted|paused|resumed|skipped|typed"
+    r"|pressed|clicked|dimmed|playing\s+\S.*\bon (?:youtube|spotify)|set the (?:volume|brightness)|switched windows"
+    r"|turned (?:the volume|the brightness|it) (?:up|down)|sorted \d+ files|created the \S.* folder|started an? \S.*timer"
+    r"|timer set|wrote (?:the |a |your )?\S.* in (?:notepad|word)|filled|moved (?:it|the file)|copied (?:it|the file))\b",
+    re.I | re.M,
 )
 _CONTACT_CLAIM = re.compile(
     r"\b(?:i'?ll|i will|i'm going to|i am going to)\s+(?:also\s+)?(?:message|text|email|e-mail|call|phone|whatsapp)\s+you\b",

@@ -1,6 +1,7 @@
 // One switch: a tool scope (e.g. Calendar · read) and whether Custodian may use it.
 
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "./Typography";
 
 import { space, useTokens } from "../lib/tokens";
 import type { Permission } from "../lib/types";

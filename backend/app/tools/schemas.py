@@ -209,3 +209,77 @@ class PcMoveArgs(ToolArgs):
 
 class PcClipboardArgs(ToolArgs):
     text: PlainText = Field(max_length=20_000)
+
+
+class PcGoToArgs(ToolArgs):
+    query: SafeLine = Field(min_length=1, max_length=300,
+                            description="What page to open, in words, e.g. 'Jägermeister Wikipedia' or 'Pune weather'.")
+
+
+SITES = Literal["google", "youtube", "amazon", "flipkart", "wikipedia", "github", "maps", "images", "news", "reddit",
+                "spotify", "gmail", "x"]
+
+
+class PcSearchSiteArgs(ToolArgs):
+    site: SITES = Field(description="Where to search.")
+    query: SafeLine = Field(min_length=1, max_length=300)
+
+
+class PcPlayArgs(ToolArgs):
+    query: SafeLine = Field(min_length=1, max_length=300, description="The song, video, artist or playlist.")
+    service: Literal["youtube", "spotify"] = Field(default="youtube", description="Where to play it.")
+
+
+class PcBrightnessArgs(ToolArgs):
+    level: int = Field(ge=0, le=100, description="Screen brightness in percent.")
+
+
+class PcThemeArgs(ToolArgs):
+    mode: Literal["dark", "light"]
+
+
+class PcSettingsArgs(ToolArgs):
+    page: Literal["wifi", "bluetooth", "display", "sound", "battery", "apps", "update", "notifications", "network",
+                  "personalization", "storage", "mouse", "keyboard", "time", "privacy", "home"]
+
+
+class PcTimerArgs(ToolArgs):
+    seconds: int = Field(ge=1, le=86_400, description="How long, in seconds (5 minutes = 300).")
+    label: SafeLine = Field(default="Timer", max_length=100)
+
+
+class PcAppArgs(ToolArgs):
+    name: SafeLine = Field(min_length=1, max_length=100, description="The app's name, e.g. 'chrome' or 'spotify'.")
+
+
+class PcCopyArgs(ToolArgs):
+    source: PcPath = Field(min_length=1, max_length=500)
+    destination: PcPath = Field(min_length=1, max_length=500, description="A folder, or the new file's path.")
+
+
+class PcFolderArgs(ToolArgs):
+    path: PcPath = Field(min_length=1, max_length=500, description="The folder, e.g. '~/Downloads'.")
+
+
+class PcWriteInAppArgs(ToolArgs):
+    app: Literal["notepad", "word", "wordpad"] = Field(default="notepad")
+    text: PlainText = Field(min_length=1, max_length=20_000, description="The whole text to write.")
+
+
+class PcScreenArgs(ToolArgs):
+    window: SafeLine = Field(default="", max_length=200, description="Part of the window's title; empty = the one in front.")
+
+
+class PcElementArgs(ToolArgs):
+    name: SafeLine = Field(min_length=1, max_length=200, description="The button, link or field's name, from pc_read_screen.")
+    window: SafeLine = Field(default="", max_length=200, description="Part of the window's title; empty = the one in front.")
+
+
+class PcFillArgs(PcElementArgs):
+    text: PlainText = Field(max_length=5000, description="What to put in the field.")
+
+
+class PcSendMessageArgs(ToolArgs):
+    contact: SafeLine = Field(min_length=1, max_length=100, description="The chat's name as saved in WhatsApp, e.g. 'Tanishka' or 'Mum'.")
+    text: PlainText = Field(min_length=1, max_length=4000, description="The exact message to send.")
+    app: Literal["whatsapp"] = "whatsapp"

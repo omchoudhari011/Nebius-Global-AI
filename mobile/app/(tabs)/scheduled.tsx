@@ -3,7 +3,8 @@
 
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { ActivityIndicator, RefreshControl, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, RefreshControl, ScrollView, View } from "react-native";
+import { Text } from "../../components/Typography";
 
 import { Button, Card, Chip, Field, Notice, ScreenHeader, SectionTitle, Segmented, ToggleSwitch, statusTone } from "../../components/ui";
 import * as api from "../../lib/api";
@@ -19,7 +20,7 @@ const PRESETS = [
 ];
 
 const useStyles = themed((t) => ({
-  screen: { flex: 1, backgroundColor: t.bg },
+  screen: { flex: 1, backgroundColor: "transparent" },
   content: { padding: space.lg, paddingTop: 0, gap: space.lg, width: "100%", maxWidth: 760, alignSelf: "center" },
   name: { fontSize: 17, fontWeight: "700", color: t.ink },
   body: { color: t.ink, fontSize: 15, lineHeight: 21 },

@@ -3,7 +3,8 @@
 // fine-tuning scripts there learn from it (backend/finetune/from_feedback.py).
 
 import { useEffect, useState } from "react";
-import { Modal, Pressable, Text, View } from "react-native";
+import { Modal, Pressable, View } from "react-native";
+import { Text } from "./Typography";
 
 import * as api from "../lib/api";
 import { radius, space, themed } from "../lib/tokens";

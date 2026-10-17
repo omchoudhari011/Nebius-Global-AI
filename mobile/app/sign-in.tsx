@@ -3,16 +3,17 @@
 
 import { Redirect, router } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { Text } from "../components/Typography";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Button, Field, Notice } from "../components/ui";
+import { Button, Crest, Field, GoldRule, Notice } from "../components/ui";
 import { errorMessage } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { radius, space, themed, useTokens } from "../lib/tokens";
+import { fonts, radius, space, themed, useTokens } from "../lib/tokens";
 
 const useStyles = themed((t) => ({
-  page: { flexGrow: 1, justifyContent: "center", padding: space.xl, backgroundColor: t.bg },
+  page: { flexGrow: 1, justifyContent: "center", padding: space.xl, backgroundColor: "transparent" },
   card: {
     width: "100%",
     maxWidth: 420,
@@ -20,13 +21,19 @@ const useStyles = themed((t) => ({
     backgroundColor: t.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: t.border,
+    borderColor: t.hairline,
     padding: space.xl,
+    paddingTop: 36,
     gap: space.lg,
+    shadowColor: "#000",
+    shadowOpacity: t.scheme === "dark" ? 0.45 : 0.1,
+    shadowRadius: 30,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 4,
   },
-  mark: { fontSize: 13, fontWeight: "800", letterSpacing: 1.2, color: t.accent2 },
-  title: { fontSize: 26, fontWeight: "700", color: t.ink },
-  text: { fontSize: 15, color: t.inkSoft, lineHeight: 21 },
+  mark: { fontSize: 12, fontWeight: "700", letterSpacing: 4, color: t.scheme === "dark" ? t.gold : t.accent2, textAlign: "center" },
+  title: { fontFamily: fonts.display, fontSize: 40, lineHeight: 46, color: t.ink, textAlign: "center" },
+  text: { fontSize: 15, color: t.inkSoft, lineHeight: 22, textAlign: "center" },
   hint: { fontSize: 13, color: t.inkSoft },
 }));
 
@@ -72,12 +79,14 @@ export default function SignIn() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={s.card}>
-          <View style={{ gap: space.sm }}>
+          <View style={{ gap: space.md, alignItems: "center" }}>
+            <Crest size={84} />
             <Text style={s.mark}>CUSTODIAN</Text>
             <Text accessibilityRole="header" style={s.title}>
-              Sign in
+              Welcome back
             </Text>
-            <Text style={s.text}>Your private assistant. It remembers what you tell it and uses your tools only with your permission.</Text>
+            <GoldRule style={{ alignSelf: "stretch" }} />
+            <Text style={s.text}>Your private steward. It remembers what you tell it, and uses your tools and your PC only with your permission.</Text>
           </View>
 
           {error || startupError ? <Notice message={error ?? startupError ?? ""} /> : null}

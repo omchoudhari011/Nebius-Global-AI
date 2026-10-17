@@ -8,18 +8,8 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  Text,
-  TextInput,
-  View,
-  useWindowDimensions,
-  type NativeSyntheticEvent,
-  type TextInputKeyPressEventData,
-} from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, View, useWindowDimensions, type NativeSyntheticEvent, type TextInputKeyPressEventData } from "react-native";
+import { Text, TextInput } from "../../components/Typography";
 
 import { ChatThread, type ChatItem } from "../../components/ChatThread";
 import { ContextRail } from "../../components/ContextRail";
@@ -36,7 +26,7 @@ import type { DocumentFile, Feedback, Used } from "../../lib/types";
 const MAX_LENGTH = 8000;
 
 const useStyles = themed((t) => ({
-  screen: { flex: 1, backgroundColor: t.bg },
+  screen: { flex: 1, backgroundColor: "transparent" },
   body: { flex: 1 },
   composer: {
     flexDirection: "row",
@@ -44,35 +34,39 @@ const useStyles = themed((t) => ({
     gap: space.sm,
     paddingHorizontal: space.lg,
     paddingVertical: space.md,
-    backgroundColor: t.bg,
+    backgroundColor: "transparent",
+    borderTopWidth: 1,
+    borderTopColor: t.hairline,
   },
   input: {
     flex: 1,
     minHeight: 44,
     maxHeight: 140,
     borderWidth: 1,
-    borderColor: t.border,
-    borderRadius: radius.lg,
-    paddingHorizontal: space.md,
+    borderColor: t.hairline,
+    borderRadius: 22,
+    paddingHorizontal: space.lg,
     paddingTop: 11,
     paddingBottom: 11,
     backgroundColor: t.surface,
     color: t.ink,
     fontSize: 16,
-    outlineColor: t.accent,
+    outlineColor: t.gold,
   },
-  send: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: t.accent },
+  send: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: t.accent,
+    borderWidth: 1, borderColor: t.scheme === "dark" ? "#e6c97f" : t.accent, shadowColor: t.gold, shadowOpacity: 0.35,
+    shadowRadius: 10, shadowOffset: { width: 0, height: 2 } },
   sendDisabled: { opacity: 0.4 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   notice: { paddingHorizontal: space.lg, paddingTop: space.sm },
   tool: { width: 40, height: 44, alignItems: "center", justifyContent: "center" },
   deep: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", marginLeft: space.lg,
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, borderWidth: 1, borderColor: t.border },
-  deepOn: { borderColor: t.accent, backgroundColor: t.surface2 },
+  deepOn: { borderColor: t.gold, backgroundColor: t.surface2 },
   deepText: { color: t.inkSoft, fontSize: 12, fontWeight: "600" },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.sm },
   chip: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 260, paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: radius.pill, borderWidth: 1, borderColor: t.accent, backgroundColor: t.surface2 },
+    borderRadius: radius.pill, borderWidth: 1, borderColor: t.gold, backgroundColor: t.surface2 },
   chipText: { color: t.ink, fontSize: 13, flexShrink: 1 },
 }));
 
@@ -226,6 +220,7 @@ export default function ChatScreen() {
   return (
     <View style={s.screen}>
       <ScreenHeader
+        crest
         title="Custodian"
         subtitle={<StatusPill />}
         right={
@@ -310,6 +305,7 @@ export default function ChatScreen() {
                 style={s.input}
                 value={input}
                 onChangeText={setInput}
+                onFocus={() => void api.warm().catch(() => undefined)}
                 placeholder="Message Custodian…"
                 placeholderTextColor={t.inkSoft}
                 multiline

@@ -121,6 +121,13 @@ PC = {
     "pc_type_text": {"text": "hello"}, "pc_press_keys": {"keys": "ctrl+s"}, "pc_click": {"x": 10, "y": 20},
     "pc_write_file": {"path": "~/a.txt", "content": "hi"}, "pc_move_file": {"source": "~/a.txt", "destination": "~/b.txt"},
     "pc_delete_file": {"path": "~/b.txt"}, "pc_set_clipboard": {"text": "hi"},
+    "pc_go_to": {"query": "Jägermeister Wikipedia"}, "pc_search_site": {"site": "amazon", "query": "earbuds"},
+    "pc_play": {"query": "Kalyani"}, "pc_now_playing": {}, "pc_set_brightness": {"level": 60},
+    "pc_set_theme": {"mode": "dark"}, "pc_open_settings": {"page": "bluetooth"}, "pc_timer": {"seconds": 300},
+    "pc_list_apps": {}, "pc_close_app": {"name": "chrome"}, "pc_copy_file": {"source": "~/a.txt", "destination": "~/Desktop"},
+    "pc_create_folder": {"path": "~/Desktop/Trips"}, "pc_organize_folder": {"path": "~/Downloads"},
+    "pc_write_in_app": {"text": "Dear Sir,"}, "pc_read_screen": {}, "pc_click_element": {"name": "Send"},
+    "pc_fill_field": {"name": "Search", "text": "hello"}, "pc_send_message": {"contact": "Tanishka", "text": "on my way"},
 }
 WEB = {"web_search", "web_read_page"}
 

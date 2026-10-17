@@ -5,7 +5,8 @@
 
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useState, type ReactNode } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
+import { Text } from "./Typography";
 
 import { formatWhen, toolLabel } from "../lib/format";
 import { space, themed, useTokens } from "../lib/tokens";

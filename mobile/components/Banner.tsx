@@ -2,7 +2,8 @@
 // not opacity on the container, so the text keeps full contrast.
 
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "./Typography";
 
 import { radius, space, useTokens } from "../lib/tokens";
 

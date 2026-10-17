@@ -24,16 +24,32 @@ MAX_TEXT = 8000
 USER_AGENT = "Mozilla/5.0 (compatible; Custodian personal assistant)"
 
 
+def _ascii_url(url: str) -> str:
+    """'https://de.wikipedia.org/wiki/Jägermeister' as HTTP needs it: an IDNA host, a
+    percent-encoded path and query (characters already encoded are left alone)."""
+    parts = urllib.parse.urlsplit(url.strip())
+    host = parts.hostname.encode("idna").decode("ascii") if parts.hostname else ""
+    netloc = host + (f":{parts.port}" if parts.port else "")
+    return urllib.parse.urlunsplit((parts.scheme, netloc, urllib.parse.quote(parts.path, safe="/%:@!$&'()*+,;="),
+                                    urllib.parse.quote(parts.query, safe="=&%+/:,;@!$'()*?"), ""))
+
+
 def _get(url: str, *, accept: str) -> tuple[bytes, str, str]:
-    """(body, content type, final URL) for an http(s) GET."""
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
+    """(body, content type, final URL) for an http(s) GET. Redirects are followed with the
+    cookies they set (sites that redirect until you have one would otherwise loop); every hop
+    is checked by the sandbox like the first."""
+    request = urllib.request.Request(_ascii_url(url), headers={"User-Agent": USER_AGENT, "Accept": accept,
+                                                               "Accept-Language": "en;q=0.9,*;q=0.5"})
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor())
     try:
-        with urllib.request.urlopen(request, timeout=12) as response:  # noqa: S310 - scheme checked by the caller
+        with opener.open(request, timeout=12) as response:
             return response.read(MAX_PAGE_BYTES), response.headers.get("Content-Type", ""), response.geturl()
     except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"the site answered {exc.code}") from None
+        raise RuntimeError(f"the site answered {exc.code}" + (" (a redirect loop)" if 300 <= exc.code < 400 else "")) from None
     except urllib.error.URLError as exc:
         raise RuntimeError(f"couldn't reach it ({exc.reason})") from None
+    except UnicodeError as exc:
+        raise RuntimeError(f"that link has characters it can't send ({exc})") from None
 
 
 def search(ctx: dict, query: str, limit: int = 5) -> dict:

@@ -67,6 +67,20 @@ def test_retries_rate_limits(monkeypatch):
     assert len(attempts) == 3
 
 
+def test_an_unparseable_tool_call_is_asked_again_with_other_sampling(monkeypatch):
+    monkeypatch.setattr("time.sleep", lambda s: pytest.fail("no waiting: the server is fine, the output wasn't"))
+    temperatures = []
+
+    def handler(request):
+        temperatures.append(json.loads(request.content)["temperature"])
+        if len(temperatures) == 1:
+            return httpx.Response(500, json={"error": {"message": "XML syntax error on line 3: unexpected EOF"}})
+        return reply({"content": "done"})
+
+    assert make(handler, temperature=0.3).generate([{"role": "user", "content": "x"}]).content == "done"
+    assert temperatures[0] == 0.3 and temperatures[1] > 0.3
+
+
 def test_auth_errors_are_not_retried():
     attempts = []
 

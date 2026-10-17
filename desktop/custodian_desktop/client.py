@@ -54,6 +54,13 @@ class Client:
                                json={"message": message, "conversation_id": conversation_id})
         return self._check(resp).json()
 
+    def warm(self) -> None:
+        """Ask the server to load its model now, while you're still talking."""
+        try:
+            self._http.post("/warm", headers=self._headers(), timeout=5)
+        except httpx.HTTPError:
+            pass
+
     def transcribe(self, wav: bytes) -> str:
         resp = self._http.post("/voice/transcribe", headers={**self._headers(), "Content-Type": "audio/wav"},
                                content=wav, timeout=120)

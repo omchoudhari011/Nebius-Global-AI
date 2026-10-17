@@ -12,6 +12,8 @@
     "export:web": "expo export --platform web --output-dir dist"
   },
   "dependencies": {
+    "@expo-google-fonts/cormorant-garamond": "^0.4.1",
+    "@expo-google-fonts/inter": "^0.4.2",
     "@expo/metro-runtime": "~57.0.16",
     "@expo/vector-icons": "^15.0.2",
     "expo": "~57.0.26",
@@ -19,6 +21,8 @@
     "expo-constants": "~57.0.20",
     "expo-document-picker": "~57.0.3",
     "expo-file-system": "~57.0.7",
+    "expo-font": "~57.0.4",
+    "expo-linear-gradient": "~57.0.2",
     "expo-linking": "~57.0.11",
     "expo-notifications": "~57.0.23",
     "expo-router": "~57.0.24",
@@ -33,7 +37,7 @@
     "react-native-web": "^0.21.2"
   },
   "devDependencies": {
-    "typescript": "~6.0.3",
-    "@types/react": "~19.2.4"
+    "@types/react": "~19.2.4",
+    "typescript": "~6.0.3"
   }
 }

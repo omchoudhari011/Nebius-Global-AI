@@ -53,6 +53,146 @@ def test_protected_folders_and_whole_drives_are_never_changed(tmp_path):
         actions.run("delete_file", {"path": "~"}, PROTECTED)
 
 
+def test_a_folder_is_organized_by_type_without_overwriting(tmp_path):
+    for name in ["trip.jpg", "bill.pdf", "song.mp3", "setup.exe", "notes.xyz", "half.crdownload"]:
+        (tmp_path / name).write_text("x", encoding="utf-8")
+    (tmp_path / "Documents").mkdir()
+    (tmp_path / "Documents" / "bill.pdf").write_text("older", encoding="utf-8")
+    result = actions.run("organize_folder", {"path": str(tmp_path)}, PROTECTED)
+    assert result["moved"] == {"Images": 1, "Documents": 1, "Music": 1, "Installers": 1, "Other": 1}
+    assert (tmp_path / "Documents" / "bill (2).pdf").exists() and (tmp_path / "Documents" / "bill.pdf").read_text() == "older"
+    assert (tmp_path / "half.crdownload").exists()  # a download still in progress stays put
+    with pytest.raises(actions.ActionError, match="never changes"):
+        actions.run("organize_folder", {"path": r"C:\Windows"}, PROTECTED)
+
+
+def test_files_and_folders_can_be_copied_and_created(tmp_path):
+    (tmp_path / "a.txt").write_text("hi", encoding="utf-8")
+    actions.run("create_folder", {"path": str(tmp_path / "Trips" / "2026")}, PROTECTED)
+    copied = actions.run("copy_file", {"source": str(tmp_path / "a.txt"), "destination": str(tmp_path / "Trips")}, PROTECTED)
+    assert Path(copied["to"]).read_text(encoding="utf-8") == "hi" and (tmp_path / "a.txt").exists()
+    with pytest.raises(actions.ActionError, match="already exists"):
+        actions.run("copy_file", {"source": str(tmp_path / "a.txt"), "destination": str(tmp_path / "Trips")}, PROTECTED)
+    with pytest.raises(actions.ActionError, match="never changes"):
+        actions.run("create_folder", {"path": r"C:\Windows\x"}, PROTECTED)
+
+
+def test_sites_searches_and_pages_open_in_the_browser(monkeypatch):
+    opened = []
+    monkeypatch.setattr(actions.webbrowser, "open", lambda url: opened.append(url))
+    assert actions.run("open", {"target": "youtube"}, PROTECTED)["kind"] == "web page"
+    actions.run("go_to", {"query": "Jägermeister Wikipedia"}, PROTECTED)
+    actions.run("search_site", {"site": "amazon", "query": "wireless earbuds"}, PROTECTED)
+    assert opened == ["https://www.youtube.com", "https://duckduckgo.com/?q=%5CJ%C3%A4germeister%20Wikipedia",
+                      "https://www.amazon.in/s?k=wireless+earbuds"]
+
+
+def test_play_opens_the_first_youtube_video(monkeypatch):
+    import httpx
+
+    opened = []
+    monkeypatch.setattr(actions.webbrowser, "open", lambda url: opened.append(url))
+    page = 'x"videoRenderer":{"videoId":"z5y8Clp_TdE","thumbnail":{},"title":{"runs":[{"text":"KALYANI \\u0026 more"}]}'
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: type("R", (), {"text": page})())
+    result = actions.run("play", {"query": "kalyani"}, PROTECTED)
+    assert result == {"service": "youtube", "playing": "KALYANI & more", "url": "https://www.youtube.com/watch?v=z5y8Clp_TdE",
+                      "started": True}
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: type("R", (), {"text": "nothing"})())
+    assert actions.run("play", {"query": "zzzz"}, PROTECTED)["started"] is False  # shows the results instead
+
+
+def test_the_app_meant_is_picked_not_a_file_named_after_it(monkeypatch):
+    windows = [("whatsapp_bot.py - AI ML workshop - Visual Studio Code", "Code.exe", 1, 11),
+               ("WhatsApp", "WhatsApp.Root.exe", 2, 22), ("Inbox - Gmail - Google Chrome", "chrome.exe", 3, 33),
+               ("", "msedgewebview2.exe", 4, 44), ("Edge stuff - Microsoft Edge", "msedge.exe", 5, 55)]
+    monkeypatch.setattr(actions, "_windows", lambda: windows)
+    assert actions.best_window("whatsapp")[1] == "WhatsApp.Root.exe"
+    assert actions.best_window("gmail")[1] == "chrome.exe"
+    assert actions.app_process("whatsapp") == "WhatsApp.Root.exe"
+    assert actions.app_process("edge") == "msedge.exe"  # not the web view other apps use
+    assert actions.app_process("vs code") == "Code.exe"
+    assert actions.best_window("telegram") is None
+    assert "WhatsApp" in actions.describe("close_window", {"title": "whatsapp"}).split("\u201c")[1]
+
+
+def test_windows_itself_is_never_closed(monkeypatch):
+    monkeypatch.setattr(actions, "_windows", lambda: [("File Explorer", "explorer.exe", 9, 99)])
+    with pytest.raises(actions.ActionError, match="won't close"):
+        actions.run("close_app", {"name": "explorer"}, PROTECTED)
+
+
+def test_a_timer_rings_through_the_app(monkeypatch):
+    import threading
+
+    rang = threading.Event()
+    monkeypatch.setattr(actions, "on_timer", lambda label: rang.set() if label == "tea" else None)
+    assert actions.run("timer", {"seconds": 1, "label": "tea"}, PROTECTED)["seconds"] == 1
+    assert rang.wait(5)
+
+
+def test_whatsapp_rows_and_names_are_read_strictly():
+    assert actions._row_title("3 unread messages Tanishka 1:46 pm projects.csv") == "Tanishka"
+    assert actions._row_title("Mum Yesterday Dinner at 8?") == "Mum"
+    assert actions._same_person("tanishka", "Tanishka Sharma")
+    assert not actions._same_person("mum", "Mumbai Trip")
+    assert not actions._same_person("Tanishka", "+91 734 929 0925")
+
+
+def _fake_whatsapp(monkeypatch, chat):
+    sent = []
+    monkeypatch.setattr(actions, "_whatsapp_window", lambda: 1)
+    monkeypatch.setattr(actions, "refocus", lambda hwnd: None)
+    monkeypatch.setattr(actions, "_open_chat", lambda ui, contact: chat)
+    monkeypatch.setattr(actions, "_paste_into_focus", lambda text: sent.append(text))
+    monkeypatch.setattr(actions, "_keystroke", lambda *keys: None)
+
+    class UI:
+        def __init__(self, hwnd):
+            pass
+
+        def first(self, *a, **k):
+            return type("E", (), {"CurrentName": f"Type a message to {chat}", "SetFocus": lambda self: None})()
+
+    monkeypatch.setattr(actions, "_Uia", UI)
+    return sent
+
+
+def test_a_message_goes_only_to_the_named_chat_and_only_when_allowed(monkeypatch):
+    sent = _fake_whatsapp(monkeypatch, "Tanishka")
+    asked = []
+    monkeypatch.setattr(actions, "confirm_hook", lambda title, details: asked.append(details) or True)
+    assert actions.run("send_message", {"contact": "tanishka", "text": "on my way"}, PROTECTED)["sent_to"] == "Tanishka"
+    assert sent == ["on my way"] and asked == ["To: Tanishka\n\non my way"]
+
+    monkeypatch.setattr(actions, "confirm_hook", lambda title, details: False)
+    with pytest.raises(actions.ActionError, match="declined"):
+        actions.run("send_message", {"contact": "Tanishka", "text": "second"}, PROTECTED)
+    monkeypatch.setattr(actions, "confirm_hook", None)  # nobody to ask: never sent
+    with pytest.raises(actions.ActionError, match="declined"):
+        actions.run("send_message", {"contact": "Tanishka", "text": "third"}, PROTECTED)
+    assert sent == ["on my way"]
+
+
+def test_a_different_chat_is_never_messaged(monkeypatch):
+    sent = _fake_whatsapp(monkeypatch, "+91 734 929 0925")
+    monkeypatch.setattr(actions, "confirm_hook", lambda title, details: True)
+    with pytest.raises(actions.ActionError, match="not 'Tanishka'; nothing was sent"):
+        actions.run("send_message", {"contact": "Tanishka", "text": "hi"}, PROTECTED)
+    assert sent == []
+
+
+def test_the_mouse_in_a_corner_stops_an_action_with_a_clear_message(monkeypatch):
+    class FailSafeException(Exception):
+        pass
+
+    def boom(**_):
+        raise FailSafeException("corner")
+
+    monkeypatch.setitem(actions.ACTIONS, "press_keys", boom)
+    with pytest.raises(actions.ActionError, match="emergency stop"):
+        actions.run("press_keys", {"keys": "enter"}, PROTECTED)
+
+
 def test_unknown_actions_and_keys_are_refused():
     with pytest.raises(actions.ActionError, match="doesn't know"):
         actions.run("format_disk", {}, PROTECTED)

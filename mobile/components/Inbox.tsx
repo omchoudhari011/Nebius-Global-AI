@@ -3,7 +3,8 @@
 
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useState } from "react";
-import { FlatList, Modal, Pressable, Text, View } from "react-native";
+import { FlatList, Modal, Pressable, View } from "react-native";
+import { Text } from "./Typography";
 
 import { formatWhen } from "../lib/format";
 import { useInbox } from "../lib/inbox";

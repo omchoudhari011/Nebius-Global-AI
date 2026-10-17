@@ -268,6 +268,9 @@ class Plan:
 
     calls: list[tuple[str, dict]] = field(default_factory=list)
     reply: Callable[[list[dict]], str] = lambda results: ""
+    # Later rounds of a multi-step task: each gets every result so far and returns the next
+    # calls (an empty list skips to the reply - e.g. when the first step failed).
+    then: list[Callable[[list[dict]], list[tuple[str, dict]]]] = field(default_factory=list)
 
 
 class Teacher:
@@ -286,9 +289,15 @@ class Teacher:
 
         last_user = max(i for i, m in enumerate(messages) if m["role"] == "user")
         results = [json.loads(m["content"]) for m in messages[last_user + 1:] if m["role"] == "tool"]
-        if tools and self.plan.calls and not results:
+        rounds = sum(1 for m in messages[last_user + 1:] if m["role"] == "assistant" and m.get("tool_calls"))
+        wanted: list[tuple[str, dict]] = []
+        if tools and self.plan.calls and rounds == 0:
+            wanted = self.plan.calls
+        elif tools and 0 < rounds <= len(self.plan.then):
+            wanted = self.plan.then[rounds - 1](results)
+        if wanted:
             calls = []
-            for name, args in self.plan.calls:
+            for name, args in wanted:
                 self.counter += 1
                 calls.append(ToolCallRequest(f"call_{self.counter}", name, args))
             response = ModelResponse("", calls, self.model_id)
@@ -361,7 +370,10 @@ class World:
         self.teacher = Teacher()
         set_backend(self.teacher)
         self.rng = random.Random(seed)
+        from app import fastpath
         from pc_web_scenarios import FakeDesktop
+
+        fastpath.ENABLED = False  # every example has to come from the (teacher) model
 
         self.fake_desktop = FakeDesktop(self.user_id)
         with db.connect() as conn:
@@ -758,7 +770,9 @@ def scenarios(world: World, per_kind: int) -> list[Scenario]:
 
     import pc_web_scenarios
 
-    out += pc_web_scenarios.scenarios(world, per_kind, Scenario, Plan, pick)
+    # PC and web at half the rate of the core assistant (memory, calendar, notes, reminders): with them
+    # at full rate (v5) they were over half the data and the model got worse at saving memories.
+    out += pc_web_scenarios.scenarios(world, per_kind // 2, Scenario, Plan, pick)
     return out
 
 
@@ -802,7 +816,7 @@ def run(world: World, scenario: Scenario) -> tuple[dict | None, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--per-kind", type=int, default=40, help="examples per behaviour (some kinds use fewer)")
+    parser.add_argument("--per-kind", type=int, default=64, help="examples per behaviour (some kinds use fewer; PC and web half)")
     parser.add_argument("--seed", type=int, default=20261015)
     parser.add_argument("--valid", type=float, default=0.1, help="share held out for validation")
     parser.add_argument("--out", type=Path, default=HERE / "data")

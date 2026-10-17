@@ -23,7 +23,7 @@ import webbrowser
 from pathlib import Path
 
 MAX_READ = 8000
-MAX_LIST = 100
+MAX_LIST = 40  # a long list costs the model seconds to write out; it says how many more
 SKIP_DIRS = {"AppData", "node_modules", ".git", "$Recycle.Bin", "Windows", ".venv", "venv", "__pycache__", "site-packages",
              "anaconda3", "miniconda3", "envs", ".cache", ".conda", "Program Files", "Program Files (x86)", "ProgramData"}
 
@@ -36,6 +36,47 @@ APPS = {
     "vscode": "code", "visual studio code": "code", "spotify": "spotify:", "camera": "microsoft.windows.camera:",
     "clock": "ms-clock:", "mail": "outlookmail:", "store": "ms-windows-store:", "terminal": "wt", "cmd": "cmd",
 }
+# Sites people name without ".com" ("open youtube").
+SITES = {
+    "youtube": "https://www.youtube.com", "gmail": "https://mail.google.com", "google": "https://www.google.com",
+    "wikipedia": "https://www.wikipedia.org", "whatsapp web": "https://web.whatsapp.com", "instagram": "https://www.instagram.com",
+    "facebook": "https://www.facebook.com", "twitter": "https://x.com", "x": "https://x.com", "linkedin": "https://www.linkedin.com",
+    "netflix": "https://www.netflix.com", "amazon": "https://www.amazon.in", "flipkart": "https://www.flipkart.com",
+    "github": "https://github.com", "chatgpt": "https://chatgpt.com", "google maps": "https://maps.google.com",
+    "maps": "https://maps.google.com", "google drive": "https://drive.google.com", "drive": "https://drive.google.com",
+    "google docs": "https://docs.google.com", "google calendar": "https://calendar.google.com", "reddit": "https://www.reddit.com",
+    "outlook web": "https://outlook.live.com", "hotstar": "https://www.hotstar.com", "prime video": "https://www.primevideo.com",
+    "youtube music": "https://music.youtube.com", "spotify web": "https://open.spotify.com", "stack overflow": "https://stackoverflow.com",
+}
+SEARCH_URLS = {
+    "google": "https://www.google.com/search?q={}", "youtube": "https://www.youtube.com/results?search_query={}",
+    "amazon": "https://www.amazon.in/s?k={}", "flipkart": "https://www.flipkart.com/search?q={}",
+    "wikipedia": "https://en.wikipedia.org/w/index.php?search={}", "github": "https://github.com/search?q={}",
+    "maps": "https://www.google.com/maps/search/{}", "images": "https://www.google.com/search?tbm=isch&q={}",
+    "news": "https://news.google.com/search?q={}", "reddit": "https://www.reddit.com/search/?q={}",
+    "spotify": "https://open.spotify.com/search/{}", "gmail": "https://mail.google.com/mail/u/0/#search/{}",
+    "x": "https://x.com/search?q={}",
+}
+SETTINGS_PAGES = {
+    "wifi": "network-wifi", "bluetooth": "bluetooth", "display": "display", "sound": "sound", "battery": "batterysaver",
+    "apps": "appsfeatures", "update": "windowsupdate", "notifications": "notifications", "network": "network-status",
+    "personalization": "personalization", "storage": "storagesense", "mouse": "mousetouchpad", "keyboard": "typing",
+    "time": "dateandtime", "privacy": "privacy", "home": "",
+}
+# Never closed by close_app: Windows itself, and this app.
+SYSTEM_PROCESSES = {"system", "csrss.exe", "wininit.exe", "winlogon.exe", "services.exe", "lsass.exe", "svchost.exe",
+                    "smss.exe", "dwm.exe", "explorer.exe", "fontdrvhost.exe", "sihost.exe", "ctfmon.exe", "python.exe",
+                    "pythonw.exe", "pythonw3.11.exe", "python3.11.exe"}
+FILE_TYPES = {
+    "Images": {"jpg", "jpeg", "png", "gif", "bmp", "webp", "heic", "svg", "tif", "tiff"},
+    "Documents": {"pdf", "doc", "docx", "txt", "rtf", "odt", "md", "xls", "xlsx", "csv", "ppt", "pptx", "epub"},
+    "Videos": {"mp4", "mkv", "mov", "avi", "wmv", "webm"},
+    "Music": {"mp3", "wav", "flac", "m4a", "aac", "ogg"},
+    "Archives": {"zip", "rar", "7z", "tar", "gz"},
+    "Installers": {"exe", "msi"},
+    "Code": {"py", "js", "ts", "html", "css", "json", "ipynb", "java", "c", "cpp"},
+}
+on_timer = None  # set by the app: called with the label when a timer rings
 FILE_EXTENSIONS = {"pdf", "txt", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "png", "jpg", "jpeg", "gif", "mp3", "mp4",
                    "wav", "zip", "exe", "msi", "md", "py", "js", "ts", "csv", "json", "html", "htm", "log", "lnk", "bat", "ps1"}
 VK = {"play_pause": 0xB3, "next": 0xB0, "previous": 0xB1, "mute": 0xAD, "volume_up": 0xAF, "volume_down": 0xAE}
@@ -147,7 +188,7 @@ def read_file(path: str, **_: object) -> dict:
 def list_windows(**_: object) -> dict:
     import pygetwindow
 
-    return {"windows": [t for t in pygetwindow.getAllTitles() if t.strip()][:60], "active": _active_title()}
+    return {"windows": [t for t in pygetwindow.getAllTitles() if t.strip()][:25], "active": _active_title()}
 
 
 def get_clipboard(**_: object) -> dict:
@@ -200,11 +241,19 @@ def open(target: str, **_: object) -> dict:  # noqa: A001 - the action's name
         os.startfile(str(path))  # noqa: S606 - the user asked to open it
         return {"opened": str(path), "kind": "folder" if path.is_dir() else "file"}
     name = target.lower().removesuffix(".exe")
+    page = name.removesuffix(" settings").removeprefix("the ").strip()
+    if name.endswith(" settings") and page.replace("-", "").replace(" ", "") in SETTINGS_PAGES:  # "sound settings"
+        os.startfile(f"ms-settings:{SETTINGS_PAGES[page.replace('-', '').replace(' ', '')]}")  # noqa: S606
+        return {"opened": f"Settings: {page}", "kind": "settings"}
     command = APPS.get(name)
+    if command is None and name.removesuffix(" website").removesuffix(" site") in SITES:
+        url = SITES[name.removesuffix(" website").removesuffix(" site")]
+        webbrowser.open(url)
+        return {"opened": url, "kind": "web page"}
     if command is None:
         shortcut = _start_menu_shortcut(name)
         if shortcut is None:
-            raise ActionError(f"couldn't find an app called {target!r}")
+            raise ActionError(f"couldn't find an app called {target!r}; for a website, use pc_go_to")
         os.startfile(str(shortcut))  # noqa: S606
         return {"opened": shortcut.stem, "kind": "app"}
     try:
@@ -219,7 +268,10 @@ def open(target: str, **_: object) -> dict:  # noqa: A001 - the action's name
 
 def media(action: str, steps: int = 1, **_: object) -> dict:
     _key(VK[action], steps if action in ("volume_up", "volume_down") else 1)
-    return {"done": action, "steps": steps}
+    if action in ("volume_up", "volume_down", "mute"):
+        return {"done": action, "steps": steps}
+    time.sleep(1.0)  # let the player update its title
+    return {"done": action, **now_playing()}
 
 
 def set_volume(level: int, **_: object) -> dict:
@@ -233,13 +285,37 @@ def lock_screen(**_: object) -> dict:
     return {"locked": True}
 
 
+def best_window(name: str) -> tuple[str, str, int, int] | None:
+    """The window someone means by `name`: the app itself ("WhatsApp" is WhatsApp, not a file
+    called whatsapp_bot.py in an editor), else the closest title."""
+    wanted = name.strip().lower()
+    scored = []
+    for title, process, pid, hwnd in _windows():
+        t, app = title.lower(), process.lower().removesuffix(".exe").split(".")[0]
+        if t == wanted or app == wanted:
+            score = 4
+        elif t.endswith(f" - {wanted}") or t.endswith(f" - {wanted} - google chrome") or app.startswith(wanted):
+            score = 3
+        elif re.search(rf"(^|[\s\-|]){re.escape(wanted)}($|[\s\-|])", t):
+            score = 2
+        elif wanted in t:
+            score = 1
+        else:
+            continue
+        scored.append((score, title, process, pid, hwnd))
+    if not scored:
+        return None
+    _score, title, process, pid, hwnd = max(scored, key=lambda s: s[0])
+    return title, process, pid, hwnd
+
+
 def _window(title: str):  # noqa: ANN202
     import pygetwindow
 
-    matches = [w for w in pygetwindow.getAllWindows() if title.lower() in w.title.lower() and w.title.strip()]
-    if not matches:
-        raise ActionError(f"no open window has {title!r} in its title")
-    return matches[0]
+    best = best_window(title)
+    if best is None:
+        raise ActionError(f"no open window matches {title!r}")
+    return next(w for w in pygetwindow.getAllWindows() if w._hWnd == best[3])  # noqa: SLF001
 
 
 def focus_window(title: str, **_: object) -> dict:
@@ -342,14 +418,599 @@ def set_clipboard(text: str, **_: object) -> dict:
     return {"copied_characters": len(text)}
 
 
+# The web -----------------------------------------------------------------------------------------
+
+def go_to(query: str, **_: object) -> dict:
+    """The first search result, opened directly (DuckDuckGo's "\\" jumps to it)."""
+    from urllib.parse import quote
+
+    known = SITES.get(query.strip().lower())
+    url = known or f"https://duckduckgo.com/?q={quote(chr(92) + query.strip())}"
+    webbrowser.open(url)
+    return {"opened": url, "for": query, "kind": "web page"}
+
+
+def search_site(site: str, query: str, **_: object) -> dict:
+    from urllib.parse import quote, quote_plus
+
+    template = SEARCH_URLS[site]
+    url = template.format(quote(query) if site in ("spotify", "gmail", "maps") else quote_plus(query))
+    webbrowser.open(url)
+    return {"opened": url, "searched": site, "for": query}
+
+
+# Music and video ---------------------------------------------------------------------------------
+
+def _windows() -> list[tuple[str, str, int, int]]:
+    """(title, process name, pid, hwnd) of every visible window with a title."""
+    import psutil
+
+    user32 = ctypes.windll.user32
+    found: list[tuple[str, str, int, int]] = []
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    def each(hwnd, _lparam):  # noqa: ANN001, ANN202
+        if user32.IsWindowVisible(hwnd):
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length:
+                buffer = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd, buffer, length + 1)
+                pid = ctypes.c_ulong()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                try:
+                    name = psutil.Process(pid.value).name()
+                except (psutil.Error, ValueError):
+                    name = "?"
+                found.append((buffer.value, name, pid.value, hwnd))
+        return True
+
+    user32.EnumWindows(each, 0)
+    return found
+
+
+def now_playing(**_: object) -> dict:
+    playing = []
+    for title, process, _pid, _hwnd in _windows():
+        if process.lower() == "spotify.exe" and title not in ("Spotify", "Spotify Premium", "Spotify Free"):
+            playing.append({"app": "Spotify", "title": title})
+        elif " - YouTube" in title:
+            playing.append({"app": "YouTube", "title": title.split(" - YouTube")[0]})
+    spotify_paused = any(p.lower() == "spotify.exe" and t in ("Spotify Premium", "Spotify Free") for t, p, _, _ in _windows())
+    return {"now_playing": playing or None, **({"spotify": "paused or idle"} if spotify_paused else {})}
+
+
+def play(query: str, service: str = "youtube", **_: object) -> dict:
+    from urllib.parse import quote, quote_plus
+
+    if service == "spotify":
+        os.startfile(f"spotify:search:{quote(query)}")  # noqa: S606 - Spotify's own link scheme
+        started = _spotify_play_top_result()
+        time.sleep(1.5)
+        return {"service": "spotify", "searched": query, "started": started, **now_playing()}
+    import httpx
+
+    try:
+        page = httpx.get(f"https://www.youtube.com/results?search_query={quote_plus(query)}", timeout=10,
+                         headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9"}).text
+    except httpx.HTTPError as exc:
+        raise ActionError(f"couldn't reach YouTube ({exc})") from None
+    match = re.search(r'"videoRenderer":\{"videoId":"([\w-]{11})".*?"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"', page)
+    if not match:
+        url = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
+        webbrowser.open(url)
+        return {"service": "youtube", "opened": url, "started": False, "note": "no video found; showing the search results"}
+    video, title = match.group(1), json_unescape(match.group(2))
+    url = f"https://www.youtube.com/watch?v={video}"
+    webbrowser.open(url)
+    return {"service": "youtube", "playing": title, "url": url, "started": True}
+
+
+def json_unescape(text: str) -> str:
+    import json
+
+    try:
+        return json.loads(f'"{text}"')
+    except ValueError:
+        return text
+
+
+def _spotify_play_top_result() -> bool:
+    """Spotify opens its search; press the top result's Play button."""
+    try:
+        from pywinauto import Desktop
+    except ImportError:
+        return False
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        time.sleep(1.0)
+        try:
+            window = next((w for w in Desktop(backend="uia").windows() if w.process_id() in
+                           {pid for _t, p, pid, _h in _windows() if p.lower() == "spotify.exe"}), None)
+            if window is None:
+                continue
+            buttons = [b for b in window.descendants(control_type="Button")
+                       if b.window_text().lower().startswith("play") and b.window_text().lower() != "play"]
+            if buttons:
+                buttons[0].invoke()
+                return True
+        except Exception:  # noqa: BLE001 - Spotify still loading
+            continue
+    return False
+
+
+# Settings ----------------------------------------------------------------------------------------
+
+def set_brightness(level: int, **_: object) -> dict:
+    try:
+        import screen_brightness_control as sbc
+
+        sbc.set_brightness(level)
+    except Exception as exc:  # noqa: BLE001 - e.g. an external monitor without DDC/CI
+        raise ActionError(f"this screen's brightness can't be set from Windows ({exc})") from None
+    return {"brightness": level}
+
+
+def set_theme(mode: str, **_: object) -> dict:
+    import winreg
+
+    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+                         0, winreg.KEY_SET_VALUE)
+    with key:
+        for name in ("AppsUseLightTheme", "SystemUsesLightTheme"):
+            winreg.SetValueEx(key, name, 0, winreg.REG_DWORD, 0 if mode == "dark" else 1)
+    return {"theme": mode}
+
+
+def open_settings(page: str, **_: object) -> dict:
+    os.startfile(f"ms-settings:{SETTINGS_PAGES[page]}")  # noqa: S606 - a fixed Settings page
+    return {"opened": f"Settings: {page}"}
+
+
+def timer(seconds: int, label: str = "Timer", **_: object) -> dict:
+    import threading
+
+    def ring() -> None:
+        if on_timer is not None:
+            on_timer(label)
+        else:
+            try:
+                import winsound
+
+                for _ in range(3):
+                    winsound.Beep(988, 300)
+            except (ImportError, RuntimeError):
+                pass
+
+    clock = threading.Timer(seconds, ring)
+    clock.daemon = True
+    clock.start()
+    ends = dt.datetime.now() + dt.timedelta(seconds=seconds)
+    return {"timer": label, "rings_at": ends.strftime("%H:%M:%S"), "seconds": seconds}
+
+
+# Apps --------------------------------------------------------------------------------------------
+
+def list_apps(**_: object) -> dict:
+    import psutil
+
+    apps: dict[str, dict] = {}
+    for title, process, pid, _hwnd in _windows():
+        entry = apps.setdefault(process, {"app": process.removesuffix(".exe"), "windows": 0, "memory_mb": 0})
+        entry["windows"] += 1
+        try:
+            entry["memory_mb"] = max(entry["memory_mb"], round(psutil.Process(pid).memory_info().rss / 1e6))
+        except psutil.Error:
+            pass
+    return {"apps": sorted(apps.values(), key=lambda a: -a["memory_mb"])[:40]}
+
+
+APP_ALIASES = {"word": "winword", "excel": "excel", "powerpoint": "powerpnt", "vs code": "code", "vscode": "code",
+               "edge": "msedge", "file explorer": "explorer", "whatsapp": "whatsapp", "teams": "ms-teams"}
+
+
+def app_process(name: str) -> str | None:
+    """The running process someone means by an app name: exact first, then the shortest
+    process name starting with it, then one containing it."""
+    wanted = APP_ALIASES.get(name.strip().lower(), name.strip().lower().removesuffix(".exe"))
+    names = {p for _t, p, _pid, _h in _windows()}
+    stems = {p: p.lower().removesuffix(".exe") for p in names}
+    for test in (lambda s: s == wanted or s.split(".")[0] == wanted, lambda s: s.startswith(wanted), lambda s: wanted in s):
+        matches = sorted((p for p, s in stems.items() if test(s)), key=len)
+        if matches:
+            return matches[0]
+    return None
+
+
+def close_app(name: str, **_: object) -> dict:
+    import psutil
+
+    process = app_process(name)
+    targets = [(t, p, pid, h) for t, p, pid, h in _windows() if p == process]
+    if not targets:
+        raise ActionError(f"no running app with a window matches {name!r}")
+    if any(p.lower() in SYSTEM_PROCESSES for _t, p, _pid, _h in targets):
+        raise ActionError(f"Custodian won't close {targets[0][1]}: Windows or Custodian itself needs it")
+    for _title, _process, _pid, hwnd in targets:
+        ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE: the app can still ask to save
+    time.sleep(3)
+    still = [t for t, p, pid, _h in _windows() if pid in {pid for _t, _p, pid, _h in targets}]
+    pids = {pid for _t, _p, pid, _h in targets}
+    return {"closed": targets[0][1].removesuffix(".exe"), "windows_closed": len(targets) - len(still),
+            "still_open": still or None, "running": any(psutil.pid_exists(p) for p in pids) if still else False}
+
+
+# Files -------------------------------------------------------------------------------------------
+
+def copy_file(source: str, destination: str, *, protected: list[str], **_: object) -> dict:
+    src, dest = _path(source), _path(destination)
+    _guard(dest, protected)
+    if not src.exists():
+        raise ActionError(f"{src} doesn't exist")
+    if dest.is_dir():
+        dest = dest / src.name
+    if dest.exists():
+        raise ActionError(f"{dest} already exists")
+    if src.is_dir():
+        shutil.copytree(src, dest)
+    else:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+    return {"copied": str(src), "to": str(dest)}
+
+
+def create_folder(path: str, *, protected: list[str], **_: object) -> dict:
+    folder = _path(path)
+    _guard(folder, protected)
+    existed = folder.exists()
+    folder.mkdir(parents=True, exist_ok=True)
+    return {"folder": str(folder), "already_existed": existed}
+
+
+def organize_folder(path: str, *, protected: list[str], **_: object) -> dict:
+    folder = _path(path)
+    _guard(folder, protected)
+    if not folder.is_dir():
+        raise ActionError(f"{folder} isn't a folder")
+    moved: dict[str, int] = {}
+    for entry in folder.iterdir():
+        if not entry.is_file() or entry.name.startswith(".") or entry.suffix.lower() in (".crdownload", ".part", ".tmp", ".lnk", ".ini"):
+            continue
+        ext = entry.suffix.lower().lstrip(".")
+        kind = next((k for k, exts in FILE_TYPES.items() if ext in exts), "Other")
+        target_dir = folder / kind
+        target_dir.mkdir(exist_ok=True)
+        target, n = target_dir / entry.name, 2
+        while target.exists():
+            target, n = target_dir / f"{entry.stem} ({n}){entry.suffix}", n + 1
+        shutil.move(str(entry), str(target))
+        moved[kind] = moved.get(kind, 0) + 1
+    return {"folder": str(folder), "moved": moved, "files_moved": sum(moved.values())}
+
+
+# Writing into apps -------------------------------------------------------------------------------
+
+def write_in_app(text: str, app: str = "notepad", **_: object) -> dict:
+    import subprocess
+
+    import pyautogui
+    import pyperclip
+
+    before = {h for _t, _p, _pid, h in _windows()}
+    command = {"notepad": ["notepad.exe"], "wordpad": ["write.exe"], "word": ["cmd", "/c", "start", "", "winword", "/n"]}[app]
+    subprocess.Popen(command)  # noqa: S603 - a fixed app
+    marker = {"notepad": "notepad", "wordpad": "wordpad", "word": "word"}[app]
+    deadline, window = time.monotonic() + 15, None
+    while time.monotonic() < deadline and window is None:
+        time.sleep(0.5)
+        window = next(((t, h) for t, p, _pid, h in _windows() if h not in before and marker in (t + p).lower()), None)
+    if window is None:
+        raise ActionError(f"{app} didn't open a new window")
+    ctypes.windll.user32.SetForegroundWindow(window[1])
+    time.sleep(0.8 if app == "notepad" else 2.5)
+    saved = pyperclip.paste()
+    pyperclip.copy(text)
+    pyautogui.hotkey("ctrl", "v")
+    time.sleep(0.3)
+    pyperclip.copy(saved)
+    return {"app": app, "window": window[0], "characters": len(text)}
+
+
+# Seeing and using the screen (Windows UI Automation: names, not pixels) --------------------------
+
+ELEMENT_TYPES = {"Button", "Hyperlink", "Edit", "ComboBox", "CheckBox", "RadioButton", "MenuItem", "TabItem", "ListItem",
+                 "SplitButton", "Document"}
+
+
+def _target_window(window: str = ""):  # noqa: ANN202
+    from pywinauto import Desktop
+
+    if window:
+        best = best_window(window)
+        if best is None:
+            raise ActionError(f"no open window matches {window!r}")
+        hwnd = best[3]
+    else:
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+    return Desktop(backend="uia").window(handle=hwnd).wrapper_object()
+
+
+def _elements(win, limit: int = 400) -> list:  # noqa: ANN001
+    found, deadline = [], time.monotonic() + 8
+    for element in win.descendants():
+        if time.monotonic() > deadline or len(found) >= limit:
+            break
+        try:
+            kind, name = element.element_info.control_type, element.window_text().strip()
+        except Exception:  # noqa: BLE001
+            continue
+        if name and (kind in ELEMENT_TYPES or kind == "Text"):
+            found.append((element, kind, name))
+    return found
+
+
+BROWSERS = {"chrome.exe", "msedge.exe", "brave.exe", "opera.exe"}
+
+
+def read_screen(window: str = "", **_: object) -> dict:
+    win = _target_window(window)
+    out = _read(win)
+    process = next((p for _t, p, _pid, h in _windows() if h == win.handle), "").lower()
+    if process in BROWSERS and not out["text"]:
+        out["note"] = ("the browser isn't showing this page's contents to Windows, so only its toolbar is listed. "
+                       "Run desktop\\run-desktop.ps1 -BrowserAccess once and restart the browser to allow it.")
+    return out
+
+
+def _read(win) -> dict:  # noqa: ANN001
+    controls, texts, seen = [], [], set()
+    for _element, kind, name in _elements(win):
+        if (kind, name) in seen:
+            continue
+        seen.add((kind, name))
+        if kind == "Text":
+            if len(texts) < 40:
+                texts.append(name[:200])
+        elif len(controls) < 80:
+            controls.append({"name": name[:120], "type": kind})
+    return {"window": win.window_text(), "controls": controls, "text": texts}
+
+
+def _find_element(name: str, window: str, types: set[str] | None = None):  # noqa: ANN202
+    win = _target_window(window)
+    candidates = [(e, k, n) for e, k, n in _elements(win) if k != "Text" and (types is None or k in types)]
+    wanted = name.strip().lower()
+    for test in (lambda n: n.lower() == wanted, lambda n: n.lower().startswith(wanted), lambda n: wanted in n.lower()):
+        match = next((c for c in candidates if test(c[2])), None)
+        if match:
+            return win, match
+    raise ActionError(f"nothing named {name!r} in {win.window_text()!r}; call pc_read_screen to see the names")
+
+
+def click_element(name: str, window: str = "", **_: object) -> dict:
+    win, (element, kind, found) = _find_element(name, window)
+    try:
+        element.invoke()
+    except Exception:  # noqa: BLE001 - not every control supports Invoke
+        element.click_input()
+    return {"clicked": found, "type": kind, "window": win.window_text()}
+
+
+def fill_field(name: str, text: str, window: str = "", **_: object) -> dict:
+    win, (element, kind, found) = _find_element(name, window, {"Edit", "ComboBox", "Document"})
+    try:
+        element.set_edit_text(text)
+    except Exception:  # noqa: BLE001 - e.g. a web page field: click it and paste
+        import pyautogui
+        import pyperclip
+
+        element.click_input()
+        saved = pyperclip.paste()
+        pyperclip.copy(text)
+        pyautogui.hotkey("ctrl", "a")
+        pyautogui.hotkey("ctrl", "v")
+        time.sleep(0.2)
+        pyperclip.copy(saved)
+    return {"filled": found, "type": kind, "characters": len(text), "window": win.window_text()}
+
+
+# Messaging ---------------------------------------------------------------------------------------
+
+confirm_hook = None  # set by the app: (title, details) -> bool, for actions that confirm what they found
+COMPOSER_PREFIX = "type a message to "
+
+
+class _Uia:
+    """Native UI Automation lookups. WhatsApp (a web view) lists each element dozens of times,
+    so walking its tree takes seconds; FindFirst with a condition takes milliseconds."""
+
+    def __init__(self, hwnd: int) -> None:
+        from pywinauto.uia_defines import IUIA
+
+        self.iuia = IUIA().iuia
+        self.ids = IUIA().UIA_dll
+        self.root = self.iuia.ElementFromHandle(hwnd)
+
+    def first(self, name: str | None = None, control: str | None = None, *, contains: bool = False):  # noqa: ANN201
+        """The first visible element of `control` type whose name is (or contains) `name`."""
+        ids, conditions = self.ids, [self.iuia.CreatePropertyCondition(self.ids.UIA_IsOffscreenPropertyId, False)]
+        if name is not None:
+            if contains:  # Windows 10 1809+: case-insensitive substring match
+                conditions.append(self.iuia.CreatePropertyConditionEx(ids.UIA_NamePropertyId, name, 3))
+            else:
+                conditions.append(self.iuia.CreatePropertyCondition(ids.UIA_NamePropertyId, name))
+        if control is not None:
+            conditions.append(self.iuia.CreatePropertyCondition(ids.UIA_ControlTypePropertyId,
+                                                                getattr(ids, f"UIA_{control}ControlTypeId")))
+        condition = conditions[0]
+        for extra in conditions[1:]:
+            condition = self.iuia.CreateAndCondition(condition, extra)
+        found = self.root.FindFirst(ids.TreeScope_Descendants, condition)
+        return found if found else None  # "not found" comes back as a NULL pointer, not None
+
+    def set_value(self, element, text: str) -> None:  # noqa: ANN001
+        pattern = element.GetCurrentPattern(self.ids.UIA_ValuePatternId).QueryInterface(self.ids.IUIAutomationValuePattern)
+        pattern.SetValue(text)
+
+    def press(self, element) -> None:  # noqa: ANN001
+        """Activate a list row or button the way a screen reader does (no mouse involved)."""
+        for pattern_id, interface, method in (
+            (self.ids.UIA_InvokePatternId, self.ids.IUIAutomationInvokePattern, "Invoke"),
+            (self.ids.UIA_SelectionItemPatternId, self.ids.IUIAutomationSelectionItemPattern, "Select"),
+            (self.ids.UIA_LegacyIAccessiblePatternId, self.ids.IUIAutomationLegacyIAccessiblePattern, "DoDefaultAction"),
+        ):
+            try:
+                pattern = element.GetCurrentPattern(pattern_id)
+                if pattern:
+                    getattr(pattern.QueryInterface(interface), method)()
+                    return
+            except Exception:  # noqa: BLE001 - try the next way
+                continue
+        from pywinauto.controls.uiawrapper import UIAWrapper
+        from pywinauto.uia_element_info import UIAElementInfo
+
+        UIAWrapper(UIAElementInfo(element)).click_input()
+
+
+def _keystroke(*keys: int) -> None:
+    """Press a key combination with keyboard events only: no mouse involved, so it works
+    wherever the pointer is (pyautogui refuses when it's parked in a corner)."""
+    user32 = ctypes.windll.user32
+    for key in keys:
+        user32.keybd_event(key, 0, 0, 0)
+    for key in reversed(keys):
+        user32.keybd_event(key, 0, 2, 0)
+    time.sleep(0.05)
+
+
+VK_CONTROL, VK_RETURN, VK_V, VK_A, VK_ESCAPE = 0x11, 0x0D, 0x56, 0x41, 0x1B
+
+
+def _paste_into_focus(text: str) -> None:
+    import pyperclip
+
+    saved = pyperclip.paste()
+    pyperclip.copy(text)
+    _keystroke(VK_CONTROL, VK_A)
+    _keystroke(VK_CONTROL, VK_V)
+    time.sleep(0.3)
+    pyperclip.copy(saved)
+
+
+_ROW_TAIL = re.compile(r"\s+(?:\d{1,2}:\d{2}\s?[ap]\.?m\.?|\d{1,2}:\d{2}|yesterday|today|\d{1,2}/\d{1,2}/\d{2,4}"
+                       r"|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b.*$", re.I | re.S)
+
+
+def _row_title(name: str) -> str:
+    """'3 unread messages Tanishka 1:46 pm projects.csv' -> 'Tanishka'."""
+    name = re.sub(r"^\d+ unread messages?\s+", "", name.strip(), flags=re.I)
+    return _ROW_TAIL.sub("", name).strip()
+
+
+def _same_person(wanted: str, chat: str) -> bool:
+    """'tanishka' matches 'Tanishka' and 'Tanishka Sharma'; 'mum' doesn't match 'Mumbai Trip'."""
+    want, have = re.findall(r"\w+", wanted.lower()), re.findall(r"\w+", chat.lower())
+    return bool(want) and all(w in have for w in want)
+
+
+def _whatsapp_window() -> int:
+    for attempt in range(30):
+        found = next(((t, p, pid, h) for t, p, pid, h in _windows() if p.lower().startswith("whatsapp")), None)
+        if found:
+            return found[3]
+        if attempt == 0:
+            try:
+                os.startfile("whatsapp:")  # noqa: S606 - WhatsApp's own link scheme
+            except OSError:
+                shortcut = _start_menu_shortcut("whatsapp")
+                if shortcut is None:
+                    raise ActionError("WhatsApp isn't installed on this PC") from None
+                os.startfile(str(shortcut))  # noqa: S606
+        time.sleep(0.5)
+    raise ActionError("WhatsApp didn't open")
+
+
+def _click_center(element) -> None:  # noqa: ANN001
+    """A real left click in the middle of an element (works where the mouse is; no fail-safe)."""
+    rect = element.CurrentBoundingRectangle
+    x, y = (rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2
+    user32 = ctypes.windll.user32
+    user32.SetCursorPos(x, y)
+    time.sleep(0.05)
+    user32.mouse_event(0x0002, 0, 0, 0, 0)  # left down
+    user32.mouse_event(0x0004, 0, 0, 0, 0)  # left up
+
+
+def _composer_chat(ui: _Uia) -> str | None:
+    composer = ui.first(COMPOSER_PREFIX.strip(), "Edit", contains=True)
+    return (composer.CurrentName or "")[len(COMPOSER_PREFIX):].strip() if composer is not None else None
+
+
+def _open_chat(ui: _Uia, contact: str) -> str | None:
+    """Search for `contact` and open the first chat titled with that name. Returns the chat's
+    real name as WhatsApp's message box reports it ("Type a message to <name>"), or None."""
+    if (_composer_chat(ui) or "") and _same_person(contact, _composer_chat(ui) or ""):
+        return _composer_chat(ui)  # already open
+    # While it holds a search, the box loses its name; the message box always has one.
+    search = ui.first("Search or start a new chat", "Edit") or ui.first("", "Edit")
+    if not search:
+        raise ActionError("couldn't find WhatsApp's search box (is WhatsApp signed in?)")
+    ui.set_value(search, contact)
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        time.sleep(0.4)
+        row = ui.first(contact, "DataItem", contains=True) or ui.first(contact, "ListItem", contains=True)
+        if row is None or not _same_person(contact, _row_title(row.CurrentName or "")):
+            continue
+        _click_center(row)  # what a person does; focusing a row doesn't move WhatsApp's own selection
+        chat = None
+        for _ in range(15):
+            time.sleep(0.2)
+            chat = _composer_chat(ui)
+            if chat and _same_person(contact, chat):
+                return chat
+        return chat
+    return None
+
+
+def send_message(contact: str, text: str, app: str = "whatsapp", **_: object) -> dict:
+    """Open the chat named `contact` in WhatsApp, check it really is that chat, show the user who
+    and what, and send only if they allow it."""
+    hwnd = _whatsapp_window()
+    refocus(hwnd)
+    ui = _Uia(hwnd)
+    chat = _open_chat(ui, contact)
+    if chat is None:
+        raise ActionError(f"no WhatsApp chat called {contact!r} was found; nothing was sent")
+    if not _same_person(contact, chat):
+        raise ActionError(f"the chat that opened is {chat!r}, not {contact!r}; nothing was sent")
+    if confirm_hook is None or not confirm_hook("Send a WhatsApp message", f"To: {chat}\n\n{text[:1500]}"):
+        raise ActionError("The user declined this on the PC.")  # nobody to ask = never send
+    refocus(hwnd)
+    composer = ui.first(COMPOSER_PREFIX.strip(), "Edit", contains=True)
+    if composer is None or not _same_person(contact, (composer.CurrentName or "")[len(COMPOSER_PREFIX):]):
+        raise ActionError("the chat changed before sending; nothing was sent")
+    composer.SetFocus()
+    time.sleep(0.15)
+    _paste_into_focus(text)
+    _keystroke(VK_RETURN)
+    time.sleep(0.6)
+    return {"sent_to": chat, "app": "WhatsApp", "characters": len(text)}
+
+
 ACTIONS = {
     "system_info": system_info, "list_files": list_files, "find_files": find_files, "read_file": read_file,
     "list_windows": list_windows, "get_clipboard": get_clipboard, "screenshot": screenshot, "open": open,
     "media": media, "set_volume": set_volume, "lock_screen": lock_screen, "focus_window": focus_window,
     "close_window": close_window, "type_text": type_text, "press_keys": press_keys, "click": click,
     "write_file": write_file, "move_file": move_file, "delete_file": delete_file, "set_clipboard": set_clipboard,
+    "go_to": go_to, "search_site": search_site, "play": play, "now_playing": now_playing,
+    "set_brightness": set_brightness, "set_theme": set_theme, "open_settings": open_settings, "timer": timer,
+    "list_apps": list_apps, "close_app": close_app, "copy_file": copy_file, "create_folder": create_folder,
+    "organize_folder": organize_folder, "write_in_app": write_in_app, "read_screen": read_screen,
+    "click_element": click_element, "fill_field": fill_field, "send_message": send_message,
 }
-NEEDS_PROTECTED = {"write_file", "move_file", "delete_file"}
+SELF_CONFIRMING = {"send_message"}  # they ask once they know exactly what they'll do
+NEEDS_PROTECTED = {"write_file", "move_file", "delete_file", "copy_file", "create_folder", "organize_folder"}
 
 
 def run(function: str, args: dict, protected: list[str]) -> object:
@@ -357,7 +1018,43 @@ def run(function: str, args: dict, protected: list[str]) -> object:
     if action is None:
         raise ActionError(f"this desktop app doesn't know how to {function}; update it")
     extra = {"protected": protected} if function in NEEDS_PROTECTED else {}
-    return action(**args, **extra)
+    try:
+        return action(**args, **extra)
+    except Exception as exc:
+        if type(exc).__name__ == "FailSafeException":  # pyautogui's emergency stop
+            raise ActionError("stopped: the mouse is in a corner of the screen (Custodian's emergency stop); "
+                              "move it away and ask again") from None
+        raise
+
+
+def _window_title(window: str) -> str:
+    if window:
+        best = best_window(window)
+        return best[0] if best else window
+    return foreground()[0] or "the window in front"
+
+
+def foreground() -> tuple[str, int]:
+    """(title, handle) of the window in front."""
+    user32 = ctypes.windll.user32
+    hwnd = user32.GetForegroundWindow()
+    length = user32.GetWindowTextLengthW(hwnd)
+    buffer = ctypes.create_unicode_buffer(length + 1)
+    user32.GetWindowTextW(hwnd, buffer, length + 1)
+    return buffer.value, hwnd
+
+
+def refocus(hwnd: int) -> None:
+    """Give the keyboard back to a window (the confirmation dialog took it)."""
+    user32 = ctypes.windll.user32
+    if hwnd and user32.IsWindow(hwnd):
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE: a minimised window has nothing on screen to use
+            time.sleep(0.6)
+        user32.keybd_event(0x12, 0, 0, 0)  # an Alt tap lets this process move the foreground
+        user32.keybd_event(0x12, 0, 2, 0)
+        user32.SetForegroundWindow(hwnd)
+        time.sleep(0.4)
 
 
 def describe(function: str, args: dict) -> str:
@@ -369,9 +1066,14 @@ def describe(function: str, args: dict) -> str:
         "write_file": lambda a: f"{'Overwrite' if a.get('overwrite') else 'Create'} the file\n{a['path']}\n\n{a['content'][:400]}",
         "move_file": lambda a: f"Move\n{a['source']}\nto\n{a['destination']}",
         "delete_file": lambda a: f"Move to the Recycle Bin:\n{a['path']}",
-        "close_window": lambda a: f"Close the window \u201c{a['title']}\u201d (unsaved work may be lost)",
+        "close_window": lambda a: f"Close the window \u201c{(best_window(a['title']) or [a['title']])[0]}\u201d (unsaved work may be lost)",
         "read_file": lambda a: f"Read the file\n{a['path']}\nand send its text to Custodian",
         "get_clipboard": lambda a: "Send the text on your clipboard to Custodian",
         "screenshot": lambda a: "Take a screenshot and send it to Custodian to describe",
+        "close_app": lambda a: f"Quit {app_process(a['name']) or a['name']} and close all its windows (it may ask to save)",
+        "organize_folder": lambda a: f"Sort the loose files in\n{a['path']}\ninto subfolders by type (Images, Documents, ...)",
+        "write_in_app": lambda a: f"Open {a.get('app', 'notepad')} and write:\n\n{a['text'][:500]}",
+        "click_element": lambda a: f"Click \u201c{a['name']}\u201d in \u201c{_window_title(a.get('window', ''))}\u201d",
+        "fill_field": lambda a: f"Type into \u201c{a['name']}\u201d in \u201c{_window_title(a.get('window', ''))}\u201d:\n\n{a['text'][:300]}",
     }
     return shown.get(function, lambda a: f"{function}: {a}")(args)

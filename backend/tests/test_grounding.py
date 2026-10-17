@@ -241,6 +241,15 @@ def test_a_personal_question_with_nothing_on_file_invites_i_dont_know(user_id):
         ("I found your note about the plumber that you saved on Monday.", [], False),
         ("Added “Team sync” on Sat 3 Oct, 15:00.", [("calendar", "create_event", "succeeded")], False),
         ("I can't send notifications, but I can add a calendar event.", [], False),
+        ("Opened YouTube.", [], True),
+        ("Playing “Kalyani” on YouTube.", [], True),
+        ("Dimmed the screen to 30%.", [], True),
+        ("Sure. Timer set for 10 minutes.", [], True),
+        ("Wrote the leave letter in Notepad.", [], True),
+        ("Opened YouTube.", [("pc", "open", "succeeded")], False),
+        ("I couldn't open YouTube: the desktop app isn't running.", [], False),
+        ("Wrote it down in your notes.", [("notes", "create_note", "succeeded")], False),
+        ("Playing it safe, I didn't change anything.", [], False),
     ],
 )
 def test_claim_detection(reply, outcomes, flagged):

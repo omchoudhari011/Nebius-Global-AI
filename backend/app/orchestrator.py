@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from . import conversations, db, documents, google_account, grounding, history_search, memory, plans, privacy, sensitive, skills, usage, vectors
+from . import conversations, db, documents, fastpath, google_account, grounding, history_search, memory, plans, privacy, sensitive, skills, usage, vectors, warmup
 from .config import get_settings
 from .crypto import decrypt, encrypt, encrypt_json
 from .model_backends import ModelError, get_backend, get_large_backend, large_base_url
@@ -43,7 +43,7 @@ log = logging.getLogger(__name__)
 LARGE_MODEL_SKILLS = {"web"}  # skills answered by the larger model whenever LARGE_MODEL_ID is set
 # ...unless the question is about the user ("my rent", "remind me"): those stay on the local model.
 PERSONAL = re.compile(r"\b(i|i'm|im|me|my|mine|myself|we|our|us)\b", re.IGNORECASE)
-MAX_TOOL_ROUNDS = 4  # model turns that may call tools before it must answer
+MAX_TOOL_ROUNDS = 6  # model turns that may call tools before it must answer (a PC task can take several)
 MAX_MEMORY_WRITES = 3  # memories the model may save in one reply; the rest are rejected
 HISTORY_LIMIT = 20  # earlier user/assistant messages of this conversation sent as context
 RECALL_K = 10  # keyword-matched memories, put first
@@ -384,6 +384,8 @@ def handle(
     uploaded files the user attached to this message: their text goes into this turn (see
     _attached), with no Files switch needed - attaching it is the permission."""
     settings = get_settings()
+    if message is not None:
+        warmup.used()  # keep a local model loaded for the next message (app/warmup.py)
     large = get_large_backend()
     escalated = bool(deep and large)
     backend = large if escalated else get_backend()
@@ -490,7 +492,21 @@ def handle(
     allowed = skill.tools if skill else None
     connected = {"google"} if google_account.status(user_id)["connected"] else set()
     offered = [f for f in registry.for_scopes(allowed) if f.account is None or f.account in connected]
+    # PC tools come in groups (media, files, ...): offer the ones this message - or, for a short
+    # follow-up like "yes, do it", the one before - is about.
+    previous = next((t["content"] for t in reversed(history) if t["role"] == "user"), "")
+    offered = registry.offer(offered, f"{message or ''} {previous if len((message or '').split()) <= 4 else ''}",
+                             everything_if_unclear=message is None)  # a scheduled task gets them all
     tool_schemas = [f.openai_schema() for f in offered] + ([] if private else [REMEMBER_TOOL])
+    # "next track", "volume 40", "put on Kalyani": an exact everyday command needs no model
+    # (app/fastpath.py). The call still goes through the gate below; a failure is still explained.
+    intent = fastpath.match(message) if message is not None and not escalated else None
+    quick = registry.find(intent.function) if intent else None
+    if quick is not None and (allowed is None or (quick.tool, quick.scope) in allowed):
+        if quick not in offered:
+            offered.append(quick)
+            tool_schemas.insert(0, quick.openai_schema())
+        backend = fastpath.FastPath(intent, backend)
     # A memory has to be something the user said: their words in this turn, this chat and the
     # earlier messages quoted to the model. A scheduled run has none, so it saves no memories.
     said = (

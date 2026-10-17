@@ -1,0 +1,110 @@
+"""Everyday commands that skip the model: exact matches only, through the same gate and checks."""
+
+import threading
+
+import pytest
+
+from app import db, desktop, fastpath, orchestrator, permissions
+from app.model_backends import ModelResponse, set_backend
+from app.model_backends.base import ModelBackend
+
+
+@pytest.mark.parametrize(
+    "said, function, args",
+    [
+        ("next track please", "pc_media", {"action": "next", "steps": 1}),
+        ("Hey Jarvis, skip this song", "pc_media", {"action": "next", "steps": 1}),
+        ("pause the music", "pc_media", {"action": "play_pause", "steps": 1}),
+        ("resume", "pc_media", {"action": "play_pause", "steps": 1}),
+        ("volume up", "pc_media", {"action": "volume_up", "steps": 5}),
+        ("set the volume to 40%", "pc_set_volume", {"level": 40}),
+        ("volume 70 percent", "pc_set_volume", {"level": 70}),
+        ("put on Bohemian Rhapsody", "pc_play", {"query": "bohemian rhapsody"}),
+        ("play Perfect by Ed Sheeran on spotify", "pc_play", {"query": "perfect by ed sheeran", "service": "spotify"}),
+        ("lock my pc", "pc_lock_screen", {}),
+        ("dark mode", "pc_set_theme", {"mode": "dark"}),
+        ("set a timer for 10 minutes", "pc_timer", {"seconds": 600, "label": "Timer"}),
+        ("5 minute timer", "pc_timer", {"seconds": 300, "label": "Timer"}),
+        ("set brightness to 30", "pc_set_brightness", {"level": 30}),
+        ("open notepad", "pc_open", {"target": "notepad"}),
+        ("open youtube.com", "pc_open", {"target": "youtube.com"}),
+        ("what's my battery level?", "pc_system_info", {}),
+        ("what's playing?", "pc_now_playing", {}),
+    ],
+)
+def test_exact_everyday_commands_are_recognised(said, function, args):
+    intent = fastpath.match(said)
+    assert intent is not None and (intent.function, intent.args) == (function, args)
+
+
+@pytest.mark.parametrize("said", [
+    "open my notes", "play the music", "set the volume to 400", "open the report I was working on yesterday",
+    "next week's meetings", "what's my name", "pause for a second and tell me a joke", "lock in the meeting at 3",
+    "play it", "open", "volume", "timer",
+])
+def test_anything_else_goes_to_the_model(said):
+    assert fastpath.match(said) is None
+
+
+class NoModel(ModelBackend):
+    name = "none"
+    model_id = "none"
+
+    def __init__(self):
+        self.calls = 0
+
+    def generate(self, messages, tools=None):
+        self.calls += 1
+        return ModelResponse("The desktop app couldn't do that just now.", [], self.model_id)
+
+
+@pytest.fixture
+def pc_on(user_id):
+    with db.connect() as conn:
+        tool = conn.execute("SELECT id FROM tools WHERE name = 'pc'").fetchone()["id"]
+    permissions.grant(user_id, tool, "read")
+    permissions.grant(user_id, tool, "write")
+    desktop.reset()
+    stop, outcome = threading.Event(), {"ok": True}
+
+    def loop():
+        while not stop.is_set():
+            action = desktop.next_action(user_id, "Test PC", wait=0.3)
+            if action:
+                result = {"done": action["args"]["action"], "now_playing": [{"app": "Spotify", "title": "Arijit Singh - Kesariya"}]}
+                desktop.finish(user_id, action["id"], outcome["ok"], result if outcome["ok"] else None,
+                               None if outcome["ok"] else "the media keys aren't responding")
+
+    worker = threading.Thread(target=loop, daemon=True)
+    worker.start()
+    desktop.touch(user_id, "Test PC")
+    yield outcome
+    stop.set()
+    worker.join(timeout=2)
+    desktop.reset()
+
+
+def test_a_fast_command_runs_without_the_model_and_is_still_checked(user_id, pc_on):
+    model = NoModel()
+    set_backend(model)
+    out = orchestrator.handle(user_id, "next track please")
+    assert model.calls == 0
+    assert out["reply"] == "Skipped to the next track - now playing Arijit Singh - Kesariya."
+    assert [(t["function"], t["status"]) for t in out["used"]["tools"]] == [("media", "succeeded")]
+    assert out["used"]["checks"]["status"] == "passed"
+
+
+def test_a_failed_fast_command_is_explained_by_the_model(user_id, pc_on):
+    pc_on["ok"] = False
+    model = NoModel()
+    set_backend(model)
+    out = orchestrator.handle(user_id, "next track")
+    assert model.calls == 1 and out["reply"] == "The desktop app couldn't do that just now."
+
+
+def test_with_the_switch_off_the_gate_still_blocks_it(user_id):
+    model = NoModel()
+    set_backend(model)
+    out = orchestrator.handle(user_id, "next track")
+    assert [(t["function"], t["status"]) for t in out["used"]["tools"]] == [("media", "denied")]
+    assert model.calls == 1  # the model explains the switch is off

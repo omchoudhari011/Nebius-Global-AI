@@ -231,7 +231,7 @@ def execute(
         parsed = json.loads(args_text) if args_text.strip() else {}
         if not isinstance(parsed, dict):
             raise ValueError("arguments must be a JSON object")
-        validated = fn.args_model.model_validate(parsed)
+        validated = fn.args_model.model_validate(registry.fix_arguments(fn, parsed))
     except (ValueError, ValidationError) as exc:
         outcome.status, outcome.error = "rejected", _validation_message(exc)
         _finish(call_id, outcome.status, error=outcome.error)

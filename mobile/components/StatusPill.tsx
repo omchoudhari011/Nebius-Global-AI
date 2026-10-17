@@ -1,6 +1,7 @@
 // Which model the server is running and whether its scheduler is on.
 
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "./Typography";
 
 import { useAuth } from "../lib/auth";
 import { useTokens } from "../lib/tokens";

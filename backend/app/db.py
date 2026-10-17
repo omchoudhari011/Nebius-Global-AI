@@ -172,13 +172,21 @@ def db_path() -> Path:
     return get_settings().database_path
 
 
+_made_dirs: set[Path] = set()
+
+
 def get_connection() -> sqlite3.Connection:
     path = db_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.parent not in _made_dirs:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _made_dirs.add(path.parent)
     conn = sqlite3.connect(path, check_same_thread=False, timeout=5.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout = 5000")
+    # With WAL (schema.sql), NORMAL syncs at checkpoints rather than on every commit: a turn
+    # makes ~20 small commits, and a power cut can lose at most the last ones, never corrupt.
+    conn.execute("PRAGMA synchronous = NORMAL")
     # Zero deleted content instead of leaving it in free pages, so a deleted memory's
     # plaintext search copy doesn't stay readable in the file (see memory.purge_search_index).
     conn.execute("PRAGMA secure_delete = ON")

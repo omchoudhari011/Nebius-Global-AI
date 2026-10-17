@@ -11,7 +11,10 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
-BG, FG, SOFT, ACCENT, DANGER = "#1b1e27", "#e6e8ef", "#a0a7ba", "#8b80f0", "#ff8b70"
+# The app's royal palette: midnight navy, ivory text, antique gold.
+BG, FG, SOFT, ACCENT, DANGER = "#111a30", "#f4ecd8", "#b9b09c", "#d4af5a", "#ff917c"
+ON_ACCENT, RULE = "#16110a", "#3a3a4a"
+SERIF = "Cambria"  # a Windows serif for titles (Cormorant isn't installed system-wide)
 CONFIRM_SECONDS = 60
 
 
@@ -72,8 +75,8 @@ class Window:
         panel.overrideredirect(True)
         panel.attributes("-topmost", True)
         panel.attributes("-alpha", 0.96)
-        panel.configure(bg=BG, padx=16, pady=12)
-        self.status = tk.Label(panel, text="", bg=BG, fg=ACCENT, font=("Segoe UI", 10, "bold"), anchor="w")
+        panel.configure(bg=BG, padx=16, pady=12, highlightthickness=1, highlightbackground=ACCENT)
+        self.status = tk.Label(panel, text="", bg=BG, fg=ACCENT, font=(SERIF, 12, "bold"), anchor="w")
         self.status.pack(fill="x")
         self.heard = tk.Label(panel, text="", bg=BG, fg=SOFT, font=("Segoe UI", 10, "italic"), anchor="w", justify="left", wraplength=380)
         self.heard.pack(fill="x", pady=(4, 0))
@@ -108,7 +111,8 @@ class Window:
         win.attributes("-topmost", True)
         win.configure(bg=BG, padx=20, pady=16)
         win.resizable(False, False)
-        tk.Label(win, text=title, bg=BG, fg=FG, font=("Segoe UI", 12, "bold"), anchor="w").pack(fill="x")
+        tk.Label(win, text=title, bg=BG, fg=ACCENT, font=(SERIF, 15, "bold"), anchor="w").pack(fill="x")
+        tk.Frame(win, bg=RULE, height=1).pack(fill="x", pady=(6, 8))
         tk.Label(win, text=details, bg=BG, fg=SOFT, font=("Consolas", 10), justify="left", anchor="w",
                  wraplength=460).pack(fill="x", pady=(8, 12))
         countdown = tk.Label(win, text="", bg=BG, fg=SOFT, font=("Segoe UI", 9))
@@ -122,7 +126,7 @@ class Window:
                 done.set()
             win.destroy()
 
-        tk.Button(buttons, text="Allow once", command=lambda: finish(True), bg=ACCENT, fg="white", relief="flat",
+        tk.Button(buttons, text="Allow once", command=lambda: finish(True), bg=ACCENT, fg=ON_ACCENT, relief="flat",
                   padx=14, pady=6).pack(side="right")
         tk.Button(buttons, text="Deny", command=lambda: finish(False), bg=BG, fg=DANGER, relief="flat",
                   padx=14, pady=6).pack(side="right", padx=8)

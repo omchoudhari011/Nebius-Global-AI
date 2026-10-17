@@ -7,6 +7,7 @@ schema.sql.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -40,6 +41,21 @@ from .schemas import (
     PcVolumeArgs,
     PcWindowArgs,
     PcWriteFileArgs,
+    PcAppArgs,
+    PcBrightnessArgs,
+    PcCopyArgs,
+    PcElementArgs,
+    PcFillArgs,
+    PcFolderArgs,
+    PcGoToArgs,
+    PcPlayArgs,
+    PcScreenArgs,
+    PcSearchSiteArgs,
+    PcSettingsArgs,
+    PcThemeArgs,
+    PcTimerArgs,
+    PcWriteInAppArgs,
+    PcSendMessageArgs,
     ReadPageArgs,
 
     WebSearchArgs,
@@ -68,6 +84,7 @@ class ToolFunction:
     hosts: tuple[str, ...] = ()  # the only hosts the sandbox lets this tool reach ("*": any public host)
     runs_on: str = "sandbox"  # "sandbox" on the server, or "desktop": the Custodian app on your PC
     confirm: bool = False  # the desktop app asks you before doing it (changes or reveals something)
+    group: str = ""  # offered only when the message is about this (see GROUPS); "" = always
 
     @property
     def exposed_name(self) -> str:
@@ -235,47 +252,103 @@ FUNCTIONS: tuple[ToolFunction, ...] = (
         module="app.tools.web_tools",
         hosts=("*",),
     ),
-    ToolFunction(tool="pc", function="system_info", scope="read", args_model=NoArgs, module="desktop", runs_on="desktop",
-                 description="The PC's battery, CPU, memory, disk space, time, and the window in front."),
-    ToolFunction(tool="pc", function="list_files", scope="read", args_model=PcListFilesArgs, module="desktop", runs_on="desktop",
-                 description="List the files in a folder on the PC."),
-    ToolFunction(tool="pc", function="find_files", scope="read", args_model=PcFindFilesArgs, module="desktop", runs_on="desktop",
-                 description="Find files on the PC whose name contains some text."),
-    ToolFunction(tool="pc", function="read_file", scope="read", args_model=PcPathArgs, module="desktop", runs_on="desktop", confirm=True,
-                 description="Read a text file on the PC (the user confirms)."),
-    ToolFunction(tool="pc", function="list_windows", scope="read", args_model=NoArgs, module="desktop", runs_on="desktop",
-                 description="The titles of the open windows."),
-    ToolFunction(tool="pc", function="get_clipboard", scope="read", args_model=NoArgs, module="desktop", runs_on="desktop", confirm=True,
-                 description="The text on the clipboard (the user confirms)."),
-    ToolFunction(tool="pc", function="screenshot", scope="read", args_model=NoArgs, module="desktop", runs_on="desktop", confirm=True,
-                 description="Take a screenshot and describe what's on the screen (the user confirms)."),
-    ToolFunction(tool="pc", function="open", scope="write", args_model=PcOpenArgs, module="desktop", runs_on="desktop",
-                 description="Open an app ('notepad', 'chrome', 'spotify', 'settings'), a web address, or a file or folder."),
-    ToolFunction(tool="pc", function="media", scope="write", args_model=PcMediaArgs, module="desktop", runs_on="desktop",
-                 description="Media keys: play/pause, next, previous, mute, volume up or down."),
-    ToolFunction(tool="pc", function="set_volume", scope="write", args_model=PcVolumeArgs, module="desktop", runs_on="desktop",
-                 description="Set the PC's volume to a percentage."),
-    ToolFunction(tool="pc", function="lock_screen", scope="write", args_model=NoArgs, module="desktop", runs_on="desktop",
-                 description="Lock the PC."),
-    ToolFunction(tool="pc", function="focus_window", scope="write", args_model=PcWindowArgs, module="desktop", runs_on="desktop",
-                 description="Bring a window to the front by part of its title."),
-    ToolFunction(tool="pc", function="close_window", scope="write", args_model=PcWindowArgs, module="desktop", runs_on="desktop", confirm=True,
-                 description="Close a window by part of its title (the user confirms)."),
-    ToolFunction(tool="pc", function="type_text", scope="write", args_model=PcTypeArgs, module="desktop", runs_on="desktop", confirm=True,
-                 description="Type text into the window in front (the user confirms)."),
-    ToolFunction(tool="pc", function="press_keys", scope="write", args_model=PcKeysArgs, module="desktop", runs_on="desktop", confirm=True,
-                 description="Press a key or shortcut such as 'ctrl+s' or 'alt+tab' (the user confirms)."),
-    ToolFunction(tool="pc", function="click", scope="write", args_model=PcClickArgs, module="desktop", runs_on="desktop", confirm=True,
-                 description="Click at screen coordinates (the user confirms)."),
-    ToolFunction(tool="pc", function="write_file", scope="write", args_model=PcWriteFileArgs, module="desktop", runs_on="desktop", confirm=True,
-                 description="Create or overwrite a text file on the PC (the user confirms)."),
-    ToolFunction(tool="pc", function="move_file", scope="write", args_model=PcMoveArgs, module="desktop", runs_on="desktop", confirm=True,
-                 description="Move or rename a file or folder (the user confirms)."),
-    ToolFunction(tool="pc", function="delete_file", scope="write", args_model=PcPathArgs, module="desktop", runs_on="desktop", confirm=True,
-                 description="Move a file or folder to the Recycle Bin (the user confirms)."),
-    ToolFunction(tool="pc", function="set_clipboard", scope="write", args_model=PcClipboardArgs, module="desktop", runs_on="desktop",
-                 description="Put text on the clipboard."),
+    *(
+        ToolFunction(tool="pc", function=function, scope=scope, args_model=args, module="desktop", runs_on="desktop",
+                     confirm=confirm, group=group, description=description)
+        for function, scope, group, confirm, args, description in (
+            # Always offered: opening things, and going to a web page by description.
+            ("open", "write", "", False, PcOpenArgs,
+             "Open an app ('notepad', 'chrome', 'spotify'), a site by name ('youtube', 'gmail'), a web address, or a file or folder."),
+            ("go_to", "write", "", False, PcGoToArgs,
+             "Open the best web page for a description in the browser, e.g. 'Jägermeister Wikipedia' or 'IRCTC login'."),
+            ("search_site", "write", "web", False, PcSearchSiteArgs,
+             "Open a site's search results in the browser, e.g. Amazon for 'wireless earbuds'."),
+            ("play", "write", "media", False, PcPlayArgs,
+             "Find a song or video and start playing it on YouTube (default) or Spotify."),
+            ("now_playing", "read", "media", False, NoArgs, "What's playing now in Spotify or a YouTube tab."),
+            ("media", "write", "media", False, PcMediaArgs,
+             "Media keys: play/pause, next, previous, mute, volume up or down. The result says what's playing after."),
+            ("set_volume", "write", "media", False, PcVolumeArgs, "Set the PC's volume to a percentage."),
+            ("system_info", "read", "system", False, NoArgs,
+             "The PC's battery, CPU, memory, disk space, time, and the window in front."),
+            ("lock_screen", "write", "system", False, NoArgs, "Lock the PC."),
+            ("set_brightness", "write", "system", False, PcBrightnessArgs, "Set the screen brightness."),
+            ("set_theme", "write", "system", False, PcThemeArgs, "Switch Windows to dark or light mode."),
+            ("open_settings", "write", "system", False, PcSettingsArgs,
+             "Open a Windows Settings page (Wi-Fi, Bluetooth, display, sound, ...)."),
+            ("timer", "write", "system", False, PcTimerArgs, "Start a countdown on the PC; it rings and shows a note when done."),
+            ("list_windows", "read", "apps", False, NoArgs, "The titles of the open windows."),
+            ("list_apps", "read", "apps", False, NoArgs, "The apps running with a window, and their memory use."),
+            ("focus_window", "write", "apps", False, PcWindowArgs, "Bring a window to the front by part of its title."),
+            ("close_window", "write", "apps", True, PcWindowArgs, "Close a window by part of its title (the user confirms)."),
+            ("close_app", "write", "apps", True, PcAppArgs, "Quit an app and all its windows, e.g. 'chrome' (the user confirms)."),
+            ("list_files", "read", "files", False, PcListFilesArgs, "List the files in a folder on the PC."),
+            ("find_files", "read", "files", False, PcFindFilesArgs, "Find files on the PC whose name contains some text."),
+            ("read_file", "read", "files", True, PcPathArgs, "Read a text file on the PC (the user confirms)."),
+            ("write_file", "write", "files", True, PcWriteFileArgs, "Create or overwrite a text file on the PC (the user confirms)."),
+            ("copy_file", "write", "files", False, PcCopyArgs, "Copy a file or folder."),
+            ("move_file", "write", "files", True, PcMoveArgs, "Move or rename a file or folder (the user confirms)."),
+            ("delete_file", "write", "files", True, PcPathArgs, "Move a file or folder to the Recycle Bin (the user confirms)."),
+            ("create_folder", "write", "files", False, PcFolderArgs, "Create a folder."),
+            ("organize_folder", "write", "files", True, PcFolderArgs,
+             "Sort a folder's loose files into subfolders by type: Images, Documents, Videos, ... (the user confirms)."),
+            ("write_in_app", "write", "typing", True, PcWriteInAppArgs,
+             "Open Notepad or Word and write text into a new document (the user confirms)."),
+            ("send_message", "write", "messaging", True, PcSendMessageArgs,
+             "Send a WhatsApp message to one chat by name. The PC shows the chat it found and the text, and sends only if the user allows."),
+            ("type_text", "write", "typing", True, PcTypeArgs, "Type text into the window in front (the user confirms)."),
+            ("press_keys", "write", "typing", True, PcKeysArgs,
+             "Press a key or shortcut such as 'ctrl+s' or 'alt+tab' (the user confirms)."),
+            ("set_clipboard", "write", "typing", False, PcClipboardArgs, "Put text on the clipboard."),
+            ("get_clipboard", "read", "typing", True, NoArgs, "The text on the clipboard (the user confirms)."),
+            ("read_screen", "read", "screen", False, PcScreenArgs,
+             "List the buttons, links, fields and text in a window, by name, to click or fill them."),
+            ("click_element", "write", "screen", True, PcElementArgs,
+             "Click a button or link by its name, from pc_read_screen (the user confirms)."),
+            ("fill_field", "write", "screen", True, PcFillArgs, "Type into a text field by its name (the user confirms)."),
+            ("screenshot", "read", "screen", True, NoArgs, "Take a screenshot and describe what's on the screen (the user confirms)."),
+            ("click", "write", "screen", True, PcClickArgs, "Click at screen coordinates (the user confirms)."),
+        )
+    ),
 )
+
+# Which PC tools a message is offered: a small model picks better from a short list, and a
+# shorter prompt answers faster. A message matching no group gets every PC tool.
+GROUPS: dict[str, tuple[str, ...]] = {
+    "web": ("search", "amazon", "flipkart", "wikipedia", "google", "github", "reddit", "maps", "map", "images",
+            "news", "shopping", "buy", "website", "site", "page", "look up", "find on", "pictures", "photos of"),
+    "media": ("play", "pause", "resume", "stop", "music", "song", "songs", "video", "videos", "track", "playlist",
+              "album", "artist", "volume", "louder", "quieter", "loud", "mute", "unmute", "skip", "next", "previous",
+              "spotify", "youtube", "playing", "listen", "watch"),
+    "system": ("battery", "charging", "cpu", "processor", "ram", "memory", "disk", "storage", "space", "drive",
+               "brightness", "bright", "dim", "dark", "light", "theme", "mode", "settings", "wifi", "wi fi",
+               "bluetooth", "display", "sound", "timer", "countdown", "lock", "update", "network", "time", "plugged",
+               "charger", "power", "percent", "volume"),
+    "apps": ("window", "windows", "app", "apps", "program", "programs", "close", "quit", "exit", "kill", "shut down", "running", "switch to", "focus",
+             "minimize", "in front", "tab", "tabs"),
+    "files": ("file", "files", "folder", "folders", "downloads", "desktop", "documents", "pictures", "my resume", "cv",
+              "pdf", "pdfs", "delete", "remove", "move", "copy", "rename", "organize", "organise", "sort", "clean",
+              "tidy", "save a", "save it", "save the", "find", "zip", "photo", "photos"),
+    "typing": ("type", "write", "writing", "press", "key", "keys", "shortcut", "ctrl", "alt", "enter", "paste",
+               "clipboard", "notepad", "word", "letter", "essay", "draft", "copy", "text"),
+    "messaging": ("whatsapp", "message", "messages", "msg", "send", "text", "texting", "tell", "reply", "wish", "ping"),
+    "screen": ("on my screen", "on the screen", "on screen", "read the screen", "my screen", "click", "button", "fill",
+               "form", "field", "screenshot", "you see", "showing", "sign in", "log in", "submit", "tick", "check box"),
+}
+
+
+def groups_for(message: str | None) -> set[str]:
+    text = " " + " ".join(re.findall(r"[a-z0-9]+", (message or "").lower())) + " "
+    return {g for g, words in GROUPS.items() if any(f" {w} " in text for w in words)}
+
+
+def offer(functions: list[ToolFunction], message: str | None, *, everything_if_unclear: bool = False) -> list[ToolFunction]:
+    """`functions` narrowed to the groups the message is about. A message matching no group
+    gets only the ungrouped ones (opening apps, sites and pages), unless `everything_if_unclear`."""
+    wanted = groups_for(message)
+    if not wanted and everything_if_unclear:
+        return functions
+    return [f for f in functions if not f.group or f.group in wanted]
 
 _BY_NAME = {f.exposed_name: f for f in FUNCTIONS}
 _BY_NAME.update({f"{f.tool}.{f.function}": f for f in FUNCTIONS})
@@ -315,3 +388,16 @@ def clean_schema(node: Any, *, in_properties: bool = False) -> Any:
         if out.get("default") is None:
             out.pop("default", None)
     return out
+
+
+_SERVICE_IN_QUERY = re.compile(r"\s+(?:on|in|from|using)\s+(spotify|youtube)\s*$", re.I)
+
+
+def fix_arguments(fn: ToolFunction, args: dict) -> dict:
+    """Mend arguments a small model reliably gets slightly wrong, before validation: "Perfect by
+    Ed Sheeran in spotify" is the song "Perfect by Ed Sheeran" on Spotify."""
+    if fn.exposed_name == "pc_play" and isinstance(args.get("query"), str):
+        found = _SERVICE_IN_QUERY.search(args["query"])
+        if found:
+            args = {**args, "query": args["query"][: found.start()].strip(), "service": found.group(1).lower()}
+    return args

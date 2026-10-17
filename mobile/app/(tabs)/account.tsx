@@ -3,7 +3,8 @@
 
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { ActivityIndicator, Linking, Platform, RefreshControl, ScrollView, Share, Text, View } from "react-native";
+import { ActivityIndicator, Linking, Platform, RefreshControl, ScrollView, Share, View } from "react-native";
+import { Text } from "../../components/Typography";
 
 import { Button, Card, Chip, Field, Notice, ScreenHeader, SectionTitle, Segmented } from "../../components/ui";
 import * as api from "../../lib/api";
@@ -32,7 +33,7 @@ const WHERE: Record<ServiceLocation, string> = {
 };
 
 const useStyles = themed((t) => ({
-  screen: { flex: 1, backgroundColor: t.bg },
+  screen: { flex: 1, backgroundColor: "transparent" },
   content: { padding: space.lg, paddingTop: 0, gap: space.lg, width: "100%", maxWidth: 760, alignSelf: "center" },
   rowBetween: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: space.md },
   planName: { fontSize: 22, fontWeight: "700", color: t.ink },

@@ -25,8 +25,9 @@ the volume down" - and speaks its replies ([Jarvis: your PC and the web](#jarvis
 - **Backend** (`backend/`): FastAPI, SQLite with FTS5, NumPy for vector search, APScheduler.
   Message text, tool arguments and results, memories and their embeddings are encrypted with
   Fernet before they are saved.
-- **App** (`mobile/`): Expo SDK 57 (React Native) for iOS, Android and the web, with light
-  and dark mode.
+- **App** (`mobile/`): Expo SDK 57 (React Native) for iOS, Android and the web. Dark mode is
+  midnight navy and antique gold, light mode ivory and royal blue, with Cormorant Garamond
+  headings and Inter text (every text colour meets WCAG AA).
 - **One Docker image** serves the API and the web app from the same origin.
 
 ```
@@ -234,15 +235,38 @@ network - and page text is treated as information, never as instructions. With
 questions about you ("my", "me") and off-the-record chats stay on the local model.
 
 **The desktop app** (`desktop/`, switches: **PC · read** and **PC · write**) is a tray app for
-Windows that lets Custodian act on your PC: open apps, websites, files and folders; play,
-pause, skip, mute and set the volume; list, focus and close windows; type, press keys and
-click; find, read, write, move and delete files (to the Recycle Bin); use the clipboard; take
-a screenshot it can describe; and lock the screen. It has no open port: it asks the server
+Windows that lets Custodian act on your PC, from plain requests:
+
+| Say | It does |
+|---|---|
+| "open youtube", "open notepad", "open my downloads" | opens the site, app or folder |
+| "take me to the Wikipedia page for Jägermeister" | opens the best page for it in your browser |
+| "search Amazon for wireless earbuds" | opens that site's results (Amazon, Flipkart, YouTube, Google, Maps, ...) |
+| "play Kalyani", "play Shape of You on Spotify" | finds it and starts playing; pause, skip and volume report what's playing |
+| "dim the screen", "dark mode", "open Bluetooth settings", "10 minute timer" | brightness, theme, Settings pages, timers that ring and speak |
+| "what apps are running?", "close Chrome" | lists apps and memory use; quits an app (it can still ask to save) |
+| "organise my downloads", "make a folder called Trips" | sorts files into Images, Documents, ...; creates, copies, moves, deletes (to the Recycle Bin) |
+| "write a leave letter in Notepad" | writes the whole text into a new Notepad or Word document |
+| "send a WhatsApp to Tanishka saying I'll be late" | opens that chat, checks it really is Tanishka's, shows you the chat and text, and sends only on **Allow once** |
+| "click Send in WhatsApp", "fill the search box with ..." | reads the window's buttons and fields by name, then clicks or fills them |
+| "find my resume and open it", "close Chrome and lock the PC" | several steps in a row, each using the last one's result |
+
+It also locks the screen, types, presses keys, uses the clipboard and takes screenshots it can
+describe. The commands people say most - "next track", "pause", "volume 40", "put on Kalyani",
+"dark mode", "10 minute timer", "lock my PC", "open Notepad", "battery?" - are recognised exactly
+(`app/fastpath.py`) and run in about 0.2 s without the model, through the same permission gate,
+audit log and accuracy checks; anything else, or an action that didn't succeed, goes to the
+model. Arguments a small model reliably gets slightly wrong ("Perfect in spotify" as a YouTube
+search) are mended before they're validated. A message is offered only the tools it's about (media, files, the screen, ...), so
+the small model chooses well and answers fast. The app has no open port: it asks the server
 for the next action (`/desktop/next`) and sends the result back. Anything risky - typing,
-keys, clicks, closing a window, reading or changing a file, the clipboard, screenshots -
-shows a dialog on the PC first and is cancelled unless you click **Allow once** within a
-minute. `C:\Windows`, `C:\Program Files` and `C:\ProgramData` are never changed, and every
-allow or decline is logged in `%APPDATA%\Custodian\desktop.log`.
+keys, clicks, closing a window or app, reading or changing files, the clipboard, screenshots -
+shows a dialog on the PC naming exactly what will happen and is cancelled unless you click
+**Allow once** within a minute. `C:\Windows`, `C:\Program Files` and `C:\ProgramData` are never
+changed, Windows' own processes are never closed, and every allow or decline is logged in
+`%APPDATA%\Custodian\desktop.log`. Chrome and Edge show web pages' buttons to Windows only when
+started with an accessibility switch: run `desktop\run-desktop.ps1 -BrowserAccess` once (it adds
+`--force-renderer-accessibility` to their shortcuts) to let Custodian click on web pages too.
 
 It is also the voice assistant: say **"Hey Jarvis"** (or press **Ctrl+Alt+Space**), speak, and
 the reply is spoken back. The wake word is detected on the PC by
@@ -358,6 +382,7 @@ Set in `backend/.env` (see `backend/.env.example` for every option).
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` | (unset) | Your Google OAuth client, for Calendar, Gmail and Drive |
 | `LARGE_MODEL_ID` / `LARGE_MODEL_BASE_URL` / `LARGE_MODEL_API_KEY` | (unset) / Token Factory / `NEBIUS_API_KEY` | The larger model for **Think harder**, questions about the world, and escalation |
 | `SEARXNG_URL` | `http://127.0.0.1:8888` | The SearXNG server for web search |
+| `MODEL_KEEP_WARM_MINUTES` | `60` | Keep a local (Ollama) model loaded this long after the last message, so replies don't start with a 5 s load; `0` frees the GPU right away |
 | `MODEL_PRICE_INPUT_PER_M` / `MODEL_PRICE_OUTPUT_PER_M` | (unset) | USD per million prompt / completion tokens, for cost estimates |
 
 ## How it works
@@ -523,6 +548,7 @@ All routes except `/health` and `/auth/login` need a session (cookie or `Authori
 | `POST /tasks/{id}/run` · `GET /tasks/{id}/runs` | Run now; run history |
 | `GET /features` | What this server has set up (voice, photos, larger model, Google, phone push, desktop app), unread count |
 | `GET /desktop/next` · `POST /desktop/results/{id}` · `GET /desktop/status` | The desktop app: wait for the next PC action, report its result; is it connected |
+| `POST /warm` | Start loading the local model now (the desktop app calls it on “Hey Jarvis”, the app when you start typing) |
 | `GET /notifications` · `POST /notifications/{id}/read` · `POST /notifications/read-all` | The inbox |
 | `GET /reminders` · `DELETE /reminders/{id}` | Upcoming reminders; cancel one |
 | `GET/POST /documents` · `DELETE /documents/{id}` | Files: upload `{name, content_type, data}` (base64, up to 10 MB) |
@@ -543,6 +569,8 @@ python -m pytest                     # unit, API and sandbox tests
 python eval/run_all.py               # rewrites eval/results.md (memory, lifetime-chat and paraphrase recall, latency, blocking, hallucination guard, security)
 python eval/run_all.py --model nebius  # the same against the real model
 python scripts/demo_walkthrough.py   # the whole story in the terminal
+python eval/agent_eval.py            # 1000 everyday PC and web requests through the real model -> eval/agent_results.md
+python eval/agent_eval.py --suite chrome   # 1000 browsing requests;  --suite pc: 1000 apps/settings/files/windows/messages
 
 cd ../mobile
 npx tsc --noEmit && npx expo export --platform web

@@ -8,7 +8,7 @@ import { ActivityIndicator, Platform, View } from "react-native";
 
 import { useAuth } from "../../lib/auth";
 import { InboxProvider } from "../../lib/inbox";
-import { useTokens } from "../../lib/tokens";
+import { fonts, useTokens } from "../../lib/tokens";
 
 export default function TabsLayout() {
   const t = useTokens();
@@ -29,14 +29,15 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarHideOnKeyboard: true,
-        tabBarActiveTintColor: t.accentText,
+        tabBarActiveTintColor: t.scheme === "dark" ? t.gold : t.accentText,
         tabBarInactiveTintColor: t.inkSoft,
+        tabBarLabelStyle: { fontFamily: fonts.bodySemibold, fontSize: 11, letterSpacing: 0.4 },
         tabBarStyle: [
-          { backgroundColor: t.surface, borderTopColor: t.border },
+          { backgroundColor: t.surface, borderTopColor: t.hairline, borderTopWidth: 1 },
           // On the web there's no safe-area inset, and the default height clips stacked labels.
           Platform.OS === "web" ? { height: 60, paddingTop: 4, paddingBottom: 6 } : null,
         ],
-        sceneStyle: { backgroundColor: t.bg },
+        sceneStyle: { backgroundColor: "transparent" },
       }}
     >
       <Tabs.Screen

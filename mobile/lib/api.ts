@@ -205,6 +205,8 @@ export const removeLicense = () => request<Billing>("/billing/license", { method
 // Day-to-day features -------------------------------------------------------------------------
 
 export const getFeatures = () => request<Features>("/features");
+/** Start loading the server's local model while the user types (no-op for a cloud model). */
+export const warm = () => request<void>("/warm", { method: "POST" });
 export const getDesktopStatus = () => request<{ connected: boolean; device: string | null }>("/desktop/status");
 
 export const getNotifications = (unread = false) => request<AppNotification[]>(`/notifications${unread ? "?unread=true" : ""}`);

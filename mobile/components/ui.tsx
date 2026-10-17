@@ -2,10 +2,13 @@
 
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { ComponentProps, ReactNode } from "react";
-import { ActivityIndicator, Platform, Pressable, Switch, Text, TextInput, View, type TextInputProps } from "react-native";
+import { ActivityIndicator, Platform, Pressable, Switch, View, type TextInputProps } from "react-native";
+import { Text, TextInput } from "./Typography";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { radius, space, themed, useTokens, type Tokens } from "../lib/tokens";
+import { LinearGradient } from "expo-linear-gradient";
+
+import { fonts, radius, space, themed, useTokens, type Tokens } from "../lib/tokens";
 import type { TaskRunStatus, ToolStatus } from "../lib/types";
 
 export type IconName = ComponentProps<typeof Ionicons>["name"];
@@ -14,7 +17,7 @@ export type Tone = "neutral" | "accent" | "success" | "danger" | "warning";
 export function toneColors(t: Tokens, tone: Tone): { fg: string; bg: string } {
   switch (tone) {
     case "accent":
-      return { fg: t.scheme === "dark" ? t.onAccent : t.accent, bg: t.scheme === "dark" ? t.accent : "#ebe8fb" };
+      return { fg: t.accentText, bg: t.accentSoft };
     case "success":
       return { fg: t.success, bg: t.successBg };
     case "danger":
@@ -45,11 +48,11 @@ const useButtonStyles = themed((t) => ({
     gap: space.sm,
   },
   compact: { minHeight: 34, paddingHorizontal: space.md },
-  primary: { backgroundColor: t.accent },
-  secondary: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
+  primary: { backgroundColor: t.accent, borderWidth: 1, borderColor: t.scheme === "dark" ? "#e6c97f" : t.accent },
+  secondary: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.hairline },
   danger: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.danger },
   ghost: { backgroundColor: "transparent" },
-  label: { fontSize: 15, fontWeight: "600" },
+  label: { fontSize: 15, fontWeight: "600", letterSpacing: 0.3 },
   labelCompact: { fontSize: 13 },
   pressed: { opacity: 0.75 },
   disabled: { opacity: 0.5 },
@@ -145,8 +148,20 @@ export function Chip({ label, tone = "neutral", icon }: { label: string; tone?: 
 }
 
 const useCardStyles = themed((t) => ({
-  card: { backgroundColor: t.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: t.border, padding: space.lg, gap: space.md },
-  title: { fontSize: 13, fontWeight: "700", letterSpacing: 0.6, textTransform: "uppercase", color: t.inkSoft },
+  card: {
+    backgroundColor: t.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: t.hairline,
+    padding: space.lg,
+    gap: space.md,
+    shadowColor: "#000",
+    shadowOpacity: t.scheme === "dark" ? 0.35 : 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  },
+  title: { fontSize: 12, fontWeight: "700", letterSpacing: 1.8, textTransform: "uppercase", color: t.scheme === "dark" ? t.gold : t.accent2 },
   sectionHint: { fontSize: 13, color: t.inkSoft, marginTop: -space.sm },
 }));
 
@@ -171,26 +186,60 @@ export function SectionTitle({ title, hint, right }: { title: string; hint?: str
 }
 
 const useHeaderStyles = themed((t) => ({
-  wrap: { backgroundColor: t.bg, paddingHorizontal: space.lg, paddingBottom: space.md },
+  wrap: { backgroundColor: "transparent", paddingHorizontal: space.lg, paddingBottom: space.md, gap: space.md },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.md, minHeight: 44 },
-  title: { fontSize: 24, fontWeight: "700", color: t.ink },
-  subtitle: { fontSize: 13, color: t.inkSoft, marginTop: 2 },
+  title: { fontFamily: fonts.display, fontSize: 32, lineHeight: 36, color: t.ink, letterSpacing: 0.3 },
+  subtitle: { fontSize: 13, color: t.inkSoft, marginTop: 2, letterSpacing: 0.2 },
 }));
 
-export function ScreenHeader({ title, subtitle, right }: { title: string; subtitle?: ReactNode; right?: ReactNode }) {
+/** A fine gold rule that fades out at both ends. */
+export function GoldRule({ style }: { style?: object }) {
+  const t = useTokens();
+  return (
+    <LinearGradient
+      colors={["transparent", t.gold, "transparent"]}
+      start={{ x: 0, y: 0.5 }}
+      end={{ x: 1, y: 0.5 }}
+      style={[{ height: 1, opacity: t.scheme === "dark" ? 0.55 : 0.45 }, style]}
+    />
+  );
+}
+
+/** Custodian's monogram: a serif "C" in a gold ring. */
+export function Crest({ size = 40 }: { size?: number }) {
+  const t = useTokens();
+  return (
+    <LinearGradient
+      colors={t.scheme === "dark" ? ["#f0d68f", "#b8892f"] : ["#c9a24c", "#8a6418"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={{ width: size, height: size, borderRadius: size / 2, padding: Math.max(1.5, size / 22) }}
+    >
+      <View style={{ flex: 1, borderRadius: size / 2, backgroundColor: t.surface, alignItems: "center", justifyContent: "center" }}>
+        <Text style={{ fontFamily: fonts.displayBold, fontSize: size * 0.56, lineHeight: size * 0.66, color: t.gold, marginTop: -size * 0.04 }}>C</Text>
+      </View>
+    </LinearGradient>
+  );
+}
+
+export function ScreenHeader({ title, subtitle, right, crest }: { title: string; subtitle?: ReactNode; right?: ReactNode; crest?: boolean }) {
   const s = useHeaderStyles();
   const insets = useSafeAreaInsets();
   return (
     <View style={[s.wrap, { paddingTop: insets.top + space.md }]}>
       <View style={s.row}>
-        <View style={{ flexShrink: 1 }}>
-          <Text accessibilityRole="header" style={s.title}>
-            {title}
-          </Text>
-          {typeof subtitle === "string" ? <Text style={s.subtitle}>{subtitle}</Text> : subtitle}
+        <View style={{ flexShrink: 1, flexDirection: "row", alignItems: "center", gap: space.md }}>
+          {crest ? <Crest size={42} /> : null}
+          <View style={{ flexShrink: 1 }}>
+            <Text accessibilityRole="header" style={s.title}>
+              {title}
+            </Text>
+            {typeof subtitle === "string" ? <Text style={s.subtitle}>{subtitle}</Text> : subtitle}
+          </View>
         </View>
         {right ? <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>{right}</View> : null}
       </View>
+      <GoldRule />
     </View>
   );
 }
@@ -229,14 +278,14 @@ const useFieldStyles = themed((t) => ({
   input: {
     minHeight: 44,
     borderWidth: 1,
-    borderColor: t.border,
+    borderColor: t.hairline,
     borderRadius: radius.md,
     paddingHorizontal: space.md,
     paddingVertical: 10,
     backgroundColor: t.surface,
     color: t.ink,
     fontSize: 16,
-    outlineColor: t.accent,
+    outlineColor: t.gold,
   },
 }));
 

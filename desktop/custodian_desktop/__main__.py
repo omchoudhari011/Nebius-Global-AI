@@ -22,6 +22,14 @@ from .voice import Listener, Speaker
 
 log = logging.getLogger("custodian.desktop")
 CONVERSATION_MINUTES = 15  # voice turns this close together continue the same chat
+ACTS_ON_FRONT_WINDOW = {"type_text", "press_keys", "click", "click_element", "fill_field"}
+
+
+def _foreground() -> int:
+    try:
+        return actions.foreground()[1]
+    except Exception:  # noqa: BLE001 - not on Windows (tests)
+        return 0
 
 
 def _icon() -> Image.Image:
@@ -43,6 +51,7 @@ class App:
                                  threshold=self.settings.wake_threshold, device=self.settings.microphone)
         self.conversation_id: int | None = None
         self.last_turn = 0.0
+        actions.on_timer = self.timer_rang
         self.paused = False
         self.stopping = threading.Event()
         self.tray = None
@@ -96,13 +105,23 @@ class App:
 
     def handle_action(self, action: dict) -> None:
         function, args = action["function"], action["args"]
-        if action.get("confirm"):
-            allowed = self.window.confirm(action.get("description", function).split("(")[0].strip().rstrip("."),
-                                          actions.describe(function, args))
-            log.info("%s %s %s", "ALLOWED" if allowed else "DECLINED", function, actions.describe(function, args)[:200])
+        if action.get("confirm") and function in actions.SELF_CONFIRMING:
+            def ask(title: str, details: str) -> bool:
+                allowed = self.window.confirm(title, details)
+                log.info("%s %s %s", "ALLOWED" if allowed else "DECLINED", function, details[:200])
+                return allowed
+
+            actions.confirm_hook = ask  # the action asks with what it found (the real chat's name)
+        elif action.get("confirm"):
+            front = _foreground()
+            details = actions.describe(function, args)
+            allowed = self.window.confirm(action.get("description", function).split("(")[0].strip().rstrip("."), details)
+            log.info("%s %s %s", "ALLOWED" if allowed else "DECLINED", function, details[:200])
             if not allowed:
                 self.client.send_result(action["id"], False, error="The user declined this on the PC.")
                 return
+            if function in ACTS_ON_FRONT_WINDOW:
+                actions.refocus(front)  # the dialog took the keyboard; give it back first
         try:
             result = actions.run(function, args, self.settings.protected)
             self.client.send_result(action["id"], True, result=result)
@@ -114,6 +133,7 @@ class App:
     def on_state(self, state: str) -> None:
         if state == "recording":
             self.window.show("Listening…", heard="", reply="")
+            threading.Thread(target=self.client.warm, daemon=True).start()  # load the model while you talk
         elif state == "didn't catch that":
             self.window.show("Didn't catch that", hide_after=2)
 
@@ -141,6 +161,20 @@ class App:
             self.window.show("Something went wrong", reply=str(exc)[:300], hide_after=8)
             if self.settings.speak_replies:
                 self.speaker.say("Sorry, something went wrong.")
+
+    def timer_rang(self, label: str) -> None:
+        log.info("timer rang: %s", label)
+        self.window.show("⏰ Time's up", reply=label, hide_after=30)
+        try:
+            import winsound
+
+            for _ in range(3):
+                winsound.Beep(988, 300)
+                time.sleep(0.15)
+        except (ImportError, RuntimeError):
+            pass
+        if self.settings.speak_replies:
+            self.speaker.say(f"Time's up: {label}." if label != "Timer" else "Time's up.")
 
     def talk_now(self) -> None:
         self.speaker.stop()  # pressing it while it speaks cuts the reply short
