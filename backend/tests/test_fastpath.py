@@ -30,6 +30,23 @@ from app.model_backends.base import ModelBackend
         ("open youtube.com", "pc_open", {"target": "youtube.com"}),
         ("what's my battery level?", "pc_system_info", {}),
         ("what's playing?", "pc_now_playing", {}),
+        ("load localhost:3000", "pc_open", {"target": "localhost:3000"}),
+        ("open https://www.irctc.co.in in chrome", "pc_open", {"target": "https://www.irctc.co.in"}),
+        ("open gmail in chrome", "pc_open", {"target": "gmail"}),
+        ("youtube Apna Bana Le", "pc_play", {"query": "apna bana le"}),
+        ("find redmi note 13 on Flipkart", "pc_search_site", {"site": "flipkart", "query": "redmi note 13"}),
+        ("open Amazon and search for a laptop stand", "pc_search_site", {"site": "amazon", "query": "a laptop stand"}),
+        ("search youtube for pasta recipes", "pc_search_site", {"site": "youtube", "query": "pasta recipes"}),
+        ("google who is the CEO of NVIDIA and open the top result", "web_search", {"query": "who is the ceo of nvidia"}),
+        ("close this tab", "pc_press_keys", {"keys": "ctrl+w"}),
+        ("refresh the page", "pc_press_keys", {"keys": "f5"}),
+        ("press ctrl+s", "pc_press_keys", {"keys": "ctrl+s"}),
+        ("undo that", "pc_press_keys", {"keys": "ctrl+z"}),
+        ("show the desktop", "pc_press_keys", {"keys": "win+d"}),
+        ("make my screen dimmer", "pc_set_brightness", {"level": 30}),
+        ("switch to chrome", "pc_focus_window", {"title": "chrome"}),
+        ("bring up the calculator", "pc_open", {"target": "calculator"}),
+        ("open youtube and play kalyani", "pc_play", {"query": "kalyani"}),
     ],
 )
 def test_exact_everyday_commands_are_recognised(said, function, args):
@@ -40,7 +57,9 @@ def test_exact_everyday_commands_are_recognised(said, function, args):
 @pytest.mark.parametrize("said", [
     "open my notes", "play the music", "set the volume to 400", "open the report I was working on yesterday",
     "next week's meetings", "what's my name", "pause for a second and tell me a joke", "lock in the meeting at 3",
-    "play it", "open", "volume", "timer",
+    "play it", "open", "volume", "timer", "open report.pdf", "load my notes", "search for my notes on cooking",
+    "find my resume", "play Kalyani and set the volume to 40", "close chrome and then lock the pc",
+    "open notepad and write a poem",
 ])
 def test_anything_else_goes_to_the_model(said):
     assert fastpath.match(said) is None
@@ -108,3 +127,10 @@ def test_with_the_switch_off_the_gate_still_blocks_it(user_id):
     out = orchestrator.handle(user_id, "next track")
     assert [(t["function"], t["status"]) for t in out["used"]["tools"]] == [("media", "denied")]
     assert model.calls == 1  # the model explains the switch is off
+
+
+def test_search_then_open_takes_the_top_link():
+    intent = fastpath.match("search ISRO news and open the first link")
+    step = intent.then({"results": [{"url": "https://www.isro.gov.in/news", "title": "ISRO"}]})
+    assert step == ("pc_open", {"target": "https://www.isro.gov.in/news"})
+    assert intent.then({"results": []}) is None  # nothing found: the model says so

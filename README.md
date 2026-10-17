@@ -339,14 +339,24 @@ clear message when the monthly allowance is used up.
 Small local models skip saving what you tell them and describe things they never checked.
 `backend/finetune/` trains a LoRA adapter for the local Nemotron model on synthetic
 conversations built from Custodian's own prompts and tools, kept only when the app's accuracy
-checks pass them, then installs the result in Ollama as `custodian-nemotron`:
+checks pass them. The conversations cover memory, calendar, notes, reminders and files, plus
+the PC and the web (at half the rate - with more, a model got worse at saving memories),
+including multi-step tasks where each step uses the last one's result. The result is
+installed in Ollama next to the model you use, never over it:
 
 ```powershell
-cd backend; .\finetune\run_finetune.ps1    # needs an NVIDIA GPU (8 GB+) and Docker Desktop
+cd backend; .\finetune\run_finetune.ps1    # an NVIDIA GPU (8 GB+) and Docker Desktop; ~3 h
 ```
 
-`finetune/compare.py` measures the base and tuned models on held-out conversations and the
-app's evals. Details: [backend/finetune/README.md](backend/finetune/README.md).
+Run it when the PC is idle (overnight): training needs almost the whole of an 8 GB GPU, and a
+chat, video or game at the same time makes it many times slower. It then compares the new
+model with yours (`finetune/compare.py`: held-out conversations, the accuracy and memory
+evals; `eval/agent_eval.py`: 1000 everyday requests) and prints the command to switch if it's
+better. Details: [backend/finetune/README.md](backend/finetune/README.md).
+
+The model in use is `custodian-nemotron` (v4). Later rounds trained so far: v5 was better at
+multi-step tasks, the screen and WhatsApp but saved memories less reliably, so v4 stayed; the
+rebalanced v6 dataset is ready in `finetune/data` for the next overnight run.
 
 ## Configuration
 
@@ -580,4 +590,19 @@ cd ../desktop                        # Windows
 ```
 
 Current results are in [backend/eval/results.md](backend/eval/results.md). CI
-(`.github/workflows/ci.yml`) runs all of the above and smoke-tests the Docker image.
+(`.github/workflows/ci.yml`) runs all of the above (except the agent tests, which need the
+real model) and smoke-tests the Docker image.
+
+The agent tests, with `custodian-nemotron` (v4) on an RTX 5050 laptop, 1000 requests each, worded
+differently from the fine-tuning data. They go through the real model and the whole agent loop;
+the desktop app is stood in by one that records what it was asked to do:
+
+| Suite | Passed | Median | p95 | Report |
+|---|---|---|---|---|
+| Everyday mix (apps, sites, music, settings, files, WhatsApp, screen, web, multi-step) | 94.4% | 1.93 s | 6.80 s | [agent_results.md](backend/eval/agent_results.md) |
+| Chrome (URLs, site searches, search-then-open, YouTube, reading pages, tabs) | 91.6% | 0.24 s | 6.06 s | [agent_results_chrome.md](backend/eval/agent_results_chrome.md) |
+| PC operations (apps, windows, media, settings, files, keys, clipboard, messages) | 95.8% | 1.33 s | 2.58 s | [agent_results_pc.md](backend/eval/agent_results_pc.md) |
+
+Run with the PC in use: on an idle PC the everyday median was 1.6 s and p95 3.1 s. Exact
+everyday commands take ~0.1-0.3 s through `app/fastpath.py`; reading a live web page takes the
+longest (5-7 s).

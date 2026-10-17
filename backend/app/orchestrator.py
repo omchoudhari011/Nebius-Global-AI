@@ -427,6 +427,11 @@ def handle(
             )
     else:
         skill = skills.load_skill(skills.pick_skill_name(message or "")) or skills.load_skill(skills.DEFAULT_SKILL)
+    # An exact everyday PC command ("load localhost:3000") belongs to the PC skill whatever the
+    # keywords said (app/fastpath.py runs it below).
+    intent = fastpath.match(message) if message is not None and not task and not deep else None
+    if intent and skill is not None and not any(tool == "pc" for tool, _ in skill.tools):
+        skill = skills.load_skill("pc") or skill
     if (large is not None and not escalated and not private and skill is not None and skill.name in LARGE_MODEL_SKILLS
             and not PERSONAL.search(message or "")):
         escalated, backend = True, large  # questions about the world: the larger model knows far more
@@ -500,8 +505,7 @@ def handle(
     tool_schemas = [f.openai_schema() for f in offered] + ([] if private else [REMEMBER_TOOL])
     # "next track", "volume 40", "put on Kalyani": an exact everyday command needs no model
     # (app/fastpath.py). The call still goes through the gate below; a failure is still explained.
-    intent = fastpath.match(message) if message is not None and not escalated else None
-    quick = registry.find(intent.function) if intent else None
+    quick = registry.find(intent.function) if intent and not escalated else None
     if quick is not None and (allowed is None or (quick.tool, quick.scope) in allowed):
         if quick not in offered:
             offered.append(quick)
