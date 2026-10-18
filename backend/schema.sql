@@ -1,4 +1,4 @@
--- Custodian schema v5. Design notes and the ER diagram: SCHEMA.md.
+-- Custodian schema v9. Design notes and the ER diagram: SCHEMA.md.
 -- Tool data (calendar events, notes) is not here: each tool keeps its own database under
 -- DATA_DIR/tools/<tool>/ so the sandboxed tool process never needs this file.
 --
@@ -43,7 +43,11 @@ CREATE TABLE user_settings (
   retention_days INTEGER CHECK (retention_days IS NULL OR retention_days BETWEEN 1 AND 3650),  -- NULL = keep chats
   redact_secrets TEXT NOT NULL DEFAULT 'auto' CHECK (redact_secrets IN ('auto', 'on', 'off')),
   license_key TEXT,                      -- signed by the vendor; verified offline by app/licensing.py
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  -- Everything else you can switch in the app, as one JSON object (app/settings_store.py): spoken
+  -- announcements on the PC, the morning briefing, PC file indexing, overnight learning, ...
+  -- A missing key means its default.
+  prefs TEXT CHECK (prefs IS NULL OR json_valid(prefs))
 );
 
 -- Tools and permissions ---------------------------------------------------------------
@@ -181,6 +185,10 @@ CREATE TABLE tool_calls (
   latency_ms INTEGER,                    -- tool time; read by eval/latency_eval.py
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   finished_at TEXT,
+  -- How to reverse it, when it can be (app/activity.py): the desktop app reports it with the
+  -- result - the volume before, the Recycle Bin item, the files a sort moved. Fernet JSON.
+  undo BLOB,
+  undone_at TEXT,
   FOREIGN KEY (tool_id, scope) REFERENCES tool_scopes(tool_id, scope),
   CHECK ((status = 'running') = (finished_at IS NULL))
 );
@@ -197,7 +205,13 @@ CREATE TABLE memories (
   source_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,  -- message it came from; NULL if seeded
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  expires_at TEXT                        -- NULL = keep; recall() skips expired rows, a scheduler job deletes them
+  expires_at TEXT,                       -- NULL = keep; recall() skips expired rows, a scheduler job deletes them
+  -- Facts that change (app/memory_graph.py): when a newer memory replaces this one ("moved to
+  -- Mumbai" after "lives in Pune"), this one is kept as history - valid until then, and pointing
+  -- at the memory that replaced it - instead of contradicting it.
+  valid_until TEXT,
+  superseded_by INTEGER REFERENCES memories(id) ON DELETE SET NULL,
+  linked INTEGER NOT NULL DEFAULT 0 CHECK (linked IN (0, 1))  -- 1 once its people, places and projects are mapped
 );
 CREATE INDEX memories_by_user ON memories(user_id, type);
 CREATE INDEX memories_by_source ON memories(source_message_id);
@@ -241,6 +255,35 @@ CREATE TABLE message_recalls (
   PRIMARY KEY (message_id, recalled_id)
 );
 CREATE INDEX message_recalls_by_recalled ON message_recalls(recalled_id);
+
+-- The memory graph (app/memory_graph.py): the people, places, projects and organisations your
+-- memories mention, which memories mention each, and how they're related ("Tanishka" -sister->
+-- you, "Custodian" -works on-> ...). Names and relations are Fernet-encrypted like the memories
+-- they come from; deleting a memory removes the links it was the source of.
+CREATE TABLE entities (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('person', 'place', 'project', 'organization', 'pet', 'thing')),
+  name BLOB NOT NULL,                    -- Fernet
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX entities_by_user ON entities(user_id);
+CREATE TABLE memory_entities (
+  memory_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+  PRIMARY KEY (memory_id, entity_id)
+);
+CREATE INDEX memory_entities_by_entity ON memory_entities(entity_id);
+CREATE TABLE entity_links (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+  target_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+  relation BLOB NOT NULL,                -- Fernet: "sister", "works at", "lives in"
+  memory_id INTEGER REFERENCES memories(id) ON DELETE CASCADE,  -- the memory that says so
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX entity_links_by_source ON entity_links(source_id);
+CREATE INDEX entity_links_by_target ON entity_links(target_id);
 
 -- Embeddings for semantic search (app/vectors.py), one row per item and embedding model.
 -- Fernet-encrypted like the text they come from, since a vector can be partly turned back
@@ -324,7 +367,7 @@ CREATE TABLE usage_daily (
 CREATE TABLE notifications (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL CHECK (kind IN ('reminder', 'task', 'system')),
+  kind TEXT NOT NULL CHECK (kind IN ('reminder', 'task', 'system', 'watch', 'meeting', 'learning')),
   title BLOB NOT NULL,                   -- Fernet
   body BLOB,                             -- Fernet
   ref TEXT,                              -- what it points at, e.g. 'reminder:12', 'conversation:40'
@@ -344,11 +387,12 @@ CREATE TABLE message_feedback (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Connected accounts (app/integrations/google.py). Tokens are Fernet-encrypted and never
--- reach a tool: the gate hands a tool only a short-lived access token.
+-- Connected accounts (app/google_account.py, app/connections.py). Tokens are Fernet-encrypted
+-- and never reach a tool: the gate hands a tool only a short-lived access token. Home Assistant
+-- keeps its long-lived token in refresh_token; Telegram keeps the linked chat there.
 CREATE TABLE integrations (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  provider TEXT NOT NULL CHECK (provider IN ('google')),
+  provider TEXT NOT NULL CHECK (provider IN ('google', 'spotify', 'microsoft', 'homeassistant', 'telegram')),
   account TEXT,                          -- the connected address, for display
   scopes TEXT NOT NULL,
   refresh_token BLOB NOT NULL,           -- Fernet
@@ -395,6 +439,25 @@ INSERT INTO tool_scopes (tool_id, scope, description) VALUES
   ((SELECT id FROM tools WHERE name = 'pc'),  'read',  'system info, files, windows, clipboard, screenshot'),
   ((SELECT id FROM tools WHERE name = 'pc'),  'write', 'open apps, media, volume, lock, type, click, files');
 
-PRAGMA user_version = 8;                 -- keep in sync with SCHEMA_VERSION in app/db.py
+INSERT INTO tools (name) VALUES
+  ('routines'),                          -- app/tools/routines_tool.py: "work mode", "good night"
+  ('watchers'),                          -- app/tools/watchers_tool.py: price drops, an email from someone
+  ('home'),                              -- app/tools/home_tool.py: Home Assistant (lights, AC)
+  ('spotify'),                           -- app/tools/spotify_tool.py: the Spotify Web API
+  ('outlook');                           -- app/tools/outlook_tool.py: Microsoft 365 mail and calendar
+
+INSERT INTO tool_scopes (tool_id, scope, description) VALUES
+  ((SELECT id FROM tools WHERE name = 'routines'), 'read',  'list_routines'),
+  ((SELECT id FROM tools WHERE name = 'routines'), 'write', 'save_routine, delete_routine'),
+  ((SELECT id FROM tools WHERE name = 'watchers'), 'read',  'list_watches'),
+  ((SELECT id FROM tools WHERE name = 'watchers'), 'write', 'watch_page, watch_email, stop_watch'),
+  ((SELECT id FROM tools WHERE name = 'home'),     'read',  'list_devices'),
+  ((SELECT id FROM tools WHERE name = 'home'),     'write', 'control'),
+  ((SELECT id FROM tools WHERE name = 'spotify'),  'read',  'now_playing, search'),
+  ((SELECT id FROM tools WHERE name = 'spotify'),  'write', 'play, control'),
+  ((SELECT id FROM tools WHERE name = 'outlook'),  'read',  'search_mail, read_mail, list_events'),
+  ((SELECT id FROM tools WHERE name = 'outlook'),  'write', 'create_event');
+
+PRAGMA user_version = 9;                 -- keep in sync with SCHEMA_VERSION in app/db.py
 
 COMMIT;

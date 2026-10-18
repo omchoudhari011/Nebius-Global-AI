@@ -34,6 +34,7 @@ from .routers import billing as billing_routes
 from .routers import chat as chat_routes
 from .routers import everyday as everyday_routes
 from .routers import data as data_routes
+from .routers import jarvis as jarvis_routes
 from .routers import privacy as privacy_routes
 from .routers import tasks as task_routes
 from .tools import sandbox
@@ -280,6 +281,7 @@ def create_app() -> FastAPI:
     app.include_router(privacy_routes.router)
     app.include_router(billing_routes.router)
     app.include_router(everyday_routes.router)
+    app.include_router(jarvis_routes.router)
 
     web = _web_dir(settings)
     if web is not None:

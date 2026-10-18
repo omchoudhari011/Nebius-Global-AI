@@ -1,6 +1,8 @@
 """Lifetime memory: every saved memory reaches every chat, and what the user said in earlier
 conversations is recalled by keyword (app/history_search.py)."""
 
+import sqlite3
+
 import pytest
 
 from app import conversations, db, history_search, memory, orchestrator
@@ -225,18 +227,50 @@ def test_a_v2_database_is_upgraded_in_place(user_id):
         conn.execute("ALTER TABLE conversations DROP COLUMN private")
         conn.execute("ALTER TABLE messages DROP COLUMN checks")
         conn.execute("ALTER TABLE messages DROP COLUMN trace")
-        for table in ("notifications", "message_feedback", "integrations"):
+        for table in ("notifications", "message_feedback", "integrations", "entity_links", "memory_entities", "entities"):
             conn.execute(f"DROP TABLE {table}")
-        new_tools = "SELECT id FROM tools WHERE name IN ('reminders', 'documents', 'gcal', 'gmail', 'gdrive', 'web', 'pc')"
+        conn.execute("ALTER TABLE tool_calls DROP COLUMN undo")
+        conn.execute("ALTER TABLE tool_calls DROP COLUMN undone_at")
+        new_tools = ("SELECT id FROM tools WHERE name IN ('reminders', 'documents', 'gcal', 'gmail', 'gdrive', 'web', 'pc', "
+                     "'routines', 'watchers', 'home', 'spotify', 'outlook')")
         conn.execute(f"DELETE FROM skill_tools WHERE tool_id IN ({new_tools})")
         conn.execute(f"DELETE FROM permissions WHERE tool_id IN ({new_tools})")
         conn.execute(new_tools.replace("SELECT id FROM", "DELETE FROM", 1))
-        conn.execute("PRAGMA user_version = 2")
+    # memories.superseded_by references memories(id), and SQLite can't drop such a column: rebuild
+    # the table as v2 had it, with foreign keys off so nothing that points at it is touched.
+    raw = sqlite3.connect(db.db_path())
+    raw.execute("PRAGMA foreign_keys = OFF")
+    raw.executescript(
+        """
+        BEGIN;
+        CREATE TABLE memories_v2 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          type TEXT NOT NULL DEFAULT 'episodic' CHECK (type IN ('episodic', 'semantic', 'preference')),
+          content BLOB NOT NULL,
+          source_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          expires_at TEXT
+        );
+        INSERT INTO memories_v2 SELECT id, user_id, type, content, source_message_id, created_at, updated_at, expires_at FROM memories;
+        DROP TABLE memories;
+        ALTER TABLE memories_v2 RENAME TO memories;
+        CREATE INDEX memories_by_user ON memories(user_id, type);
+        CREATE TRIGGER memories_touch AFTER UPDATE OF type, content, expires_at ON memories
+        BEGIN UPDATE memories SET updated_at = datetime('now') WHERE id = new.id; END;
+        CREATE TRIGGER memories_fts_delete AFTER DELETE ON memories
+        BEGIN DELETE FROM memories_fts WHERE rowid = old.id; END;
+        PRAGMA user_version = 2;
+        COMMIT;
+        """
+    )
+    raw.close()
 
-    db.init_db()  # v2 -> v3 -> ... -> v8
+    db.init_db()  # v2 -> v3 -> ... -> v9
 
     with db.connect() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 8
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 9
         tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert {"message_recalls", "memory_vectors", "message_vectors", "user_settings", "usage_daily", "sessions",
                 "notifications", "message_feedback", "integrations"} <= tables

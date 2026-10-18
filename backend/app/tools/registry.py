@@ -56,7 +56,13 @@ from .schemas import (
     PcTimerArgs,
     PcWriteInAppArgs,
     PcSendMessageArgs,
+    PcAlarmArgs,
+    PcDndArgs,
+    PcPlanArgs,
+    PcSayArgs,
     ReadPageArgs,
+    RoutineNameArgs,
+    SaveRoutineArgs,
 
     WebSearchArgs,
     ToolArgs,
@@ -308,7 +314,39 @@ FUNCTIONS: tuple[ToolFunction, ...] = (
             ("fill_field", "write", "screen", True, PcFillArgs, "Type into a text field by its name (the user confirms)."),
             ("screenshot", "read", "screen", True, NoArgs, "Take a screenshot and describe what's on the screen (the user confirms)."),
             ("click", "write", "screen", True, PcClickArgs, "Click at screen coordinates (the user confirms)."),
+            ("do_not_disturb", "write", "system", False, PcDndArgs,
+             "Turn Windows' Do Not Disturb on (silence notifications) or off."),
+            ("alarm", "write", "system", False, PcAlarmArgs,
+             "Set an alarm on the PC for a time of day (the next time it comes round); it rings and speaks."),
+            ("say", "write", "speak", False, PcSayArgs, "Say something out loud on the PC's speakers."),
+            # Never offered to the model: a routine's single approval for all its steps (app/routines.py).
+            ("confirm_plan", "write", "internal", True, PcPlanArgs, "Ask the user once to allow a list of steps."),
         )
+    ),
+    ToolFunction(
+        tool="routines",
+        function="save_routine",
+        scope="write",
+        description=("Create or replace a routine: a name they'll say to run it ('work mode', 'good night') and the "
+                     "steps it does in order, each a short command. Saying the name later runs it."),
+        args_model=SaveRoutineArgs,
+        module="app.tools.routines_tool",
+    ),
+    ToolFunction(
+        tool="routines",
+        function="list_routines",
+        scope="read",
+        description="List the user's routines and the steps of each.",
+        args_model=NoArgs,
+        module="app.tools.routines_tool",
+    ),
+    ToolFunction(
+        tool="routines",
+        function="delete_routine",
+        scope="write",
+        description="Delete one of the user's routines by its name.",
+        args_model=RoutineNameArgs,
+        module="app.tools.routines_tool",
     ),
 )
 
@@ -323,7 +361,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "system": ("battery", "charging", "cpu", "processor", "ram", "memory", "disk", "storage", "space", "drive",
                "brightness", "bright", "dim", "dark", "light", "theme", "mode", "settings", "wifi", "wi fi",
                "bluetooth", "display", "sound", "timer", "countdown", "lock", "update", "network", "time", "plugged",
-               "charger", "power", "percent", "volume"),
+               "charger", "power", "percent", "volume", "alarm", "wake me", "disturb", "dnd", "notifications", "focus"),
     "apps": ("window", "windows", "app", "apps", "program", "programs", "close", "quit", "exit", "kill", "shut down", "running", "switch to", "focus",
              "minimize", "in front", "tab", "tabs"),
     "files": ("file", "files", "folder", "folders", "downloads", "desktop", "documents", "pictures", "my resume", "cv",
@@ -334,7 +372,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "messaging": ("whatsapp", "message", "messages", "msg", "send", "text", "texting", "tell", "reply", "wish", "ping"),
     "screen": ("on my screen", "on the screen", "on screen", "read the screen", "my screen", "click", "button", "fill",
                "form", "field", "screenshot", "you see", "showing", "sign in", "log in", "submit", "tick", "check box"),
+    "speak": ("out loud", "aloud", "announce", "speak", "say it", "read it out"),
 }
+INTERNAL = "internal"  # never offered to the model; only Custodian's own code calls these
 
 
 def groups_for(message: str | None) -> set[str]:
@@ -345,6 +385,7 @@ def groups_for(message: str | None) -> set[str]:
 def offer(functions: list[ToolFunction], message: str | None, *, everything_if_unclear: bool = False) -> list[ToolFunction]:
     """`functions` narrowed to the groups the message is about. A message matching no group
     gets only the ungrouped ones (opening apps, sites and pages), unless `everything_if_unclear`."""
+    functions = [f for f in functions if f.group != INTERNAL]
     wanted = groups_for(message)
     if not wanted and everything_if_unclear:
         return functions

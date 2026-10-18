@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from . import conversations, db, documents, fastpath, google_account, grounding, history_search, memory, plans, privacy, sensitive, skills, usage, vectors, warmup
+from . import activity, conversations, db, documents, fastpath, google_account, grounding, history_search, memory, plans, privacy, routines, sensitive, skills, usage, vectors, warmup
 from .config import get_settings
 from .crypto import decrypt, encrypt, encrypt_json
 from .model_backends import ModelError, get_backend, get_large_backend, large_base_url
@@ -427,9 +427,16 @@ def handle(
             )
     else:
         skill = skills.load_skill(skills.pick_skill_name(message or "")) or skills.load_skill(skills.DEFAULT_SKILL)
-    # An exact everyday PC command ("load localhost:3000") belongs to the PC skill whatever the
-    # keywords said (app/fastpath.py runs it below).
-    intent = fastpath.match(message) if message is not None and not task and not deep else None
+    # Saying a routine's name ("work mode") runs it (app/routines.py); an exact everyday PC
+    # command ("load localhost:3000") belongs to the PC skill whatever the keywords said
+    # (app/fastpath.py runs it below).
+    routine = routines.match(user_id, message) if message is not None and not task and not deep else None
+    if routine is not None:
+        skill = skills.load_skill("routines") or skill
+    intent = fastpath.match(message) if message is not None and not task and not deep and routine is None else None
+    if intent and intent.function == "pc_press_keys" and intent.args.get("keys") == "ctrl+z" \
+            and activity.latest_undoable(user_id, within_minutes=10) is not None:
+        intent = fastpath.Intent("undo_last_action", {}, lambda r: f"Done - I {r.get('undone', 'undid that')}.")  # "undo that" right after an action
     if intent and skill is not None and not any(tool == "pc" for tool, _ in skill.tools):
         skill = skills.load_skill("pc") or skill
     if (large is not None and not escalated and not private and skill is not None and skill.name in LARGE_MODEL_SKILLS
@@ -503,10 +510,19 @@ def handle(
     offered = registry.offer(offered, f"{message or ''} {previous if len((message or '').split()) <= 4 else ''}",
                              everything_if_unclear=message is None)  # a scheduled task gets them all
     tool_schemas = [f.openai_schema() for f in offered] + ([] if private else [REMEMBER_TOOL])
+    # "undo that", "what did I send Tanishka yesterday?": Custodian's own activity log (app/activity.py).
+    if message is not None and (activity.ASKS_ABOUT_ACTIVITY.search(message)
+                                or (intent is not None and intent.function in activity.INTERNAL_NAMES)):
+        tool_schemas += [activity.UNDO_TOOL, activity.SEARCH_TOOL]
     # "next track", "volume 40", "put on Kalyani": an exact everyday command needs no model
     # (app/fastpath.py). The call still goes through the gate below; a failure is still explained.
+    # A routine's steps run the same way (app/routines.py).
     quick = registry.find(intent.function) if intent and not escalated else None
-    if quick is not None and (allowed is None or (quick.tool, quick.scope) in allowed):
+    if routine is not None:
+        backend = routines.RoutinePath(routine)
+    elif intent is not None and intent.function in activity.INTERNAL_NAMES and not escalated:
+        backend = fastpath.FastPath(intent, backend)
+    elif quick is not None and (allowed is None or (quick.tool, quick.scope) in allowed):
         if quick not in offered:
             offered.append(quick)
             tool_schemas.insert(0, quick.openai_schema())
@@ -606,6 +622,17 @@ def handle(
                     evidence.memory_ids.add(memory_id)
                 elif rejection:
                     evidence.rejected_memories.append(rejection)
+            elif call.name in activity.INTERNAL_NAMES:
+                try:
+                    args = call.arguments if isinstance(call.arguments, dict) else json.loads(call.arguments_text() or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                result = activity.run_internal(user_id, call.name, args if isinstance(args, dict) else {}, message_id=final_id)
+                if call.name == "undo_last_action":  # it acted on the PC: the reply may say so when it worked
+                    done = json.loads(result)
+                    evidence.outcomes.append(sandbox.ToolCallOutcome(name=call.name, status=done["status"], tool="pc",
+                                                                     function="undo", result=done.get("result"),
+                                                                     error=done.get("error")))
             else:
                 outcome = sandbox.execute(
                     user_id,
@@ -614,6 +641,7 @@ def handle(
                     message_id=final_id,
                     allowed=allowed,
                     skill_name=skill.name if skill else None,
+                    preapproved=call.id in getattr(backend, "preapproved", ()),
                 )
                 evidence.outcomes.append(outcome)
                 result = outcome.to_model_content()
@@ -638,6 +666,8 @@ def handle(
     )
     if message is not None and not private:  # kept so a reply you rate can teach the model (app/feedback.py)
         _save_trace(final_id, trace)
+    if routine is not None:
+        routines.mark_run(routine["id"])
 
     # 6. Link what the model was given to the reply, and report what shaped it. A memory or
     #    conversation deleted while the model was working is skipped, not linked.

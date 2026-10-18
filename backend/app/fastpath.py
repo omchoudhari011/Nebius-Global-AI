@@ -96,18 +96,124 @@ def _open_label(target: str) -> str:
 ENABLED = True  # off while generating fine-tuning data: the model must still learn these commands
 
 
+# Everyday commands in Hindi and Marathi - in Devanagari as Whisper writes them, and in the Latin
+# letters people type ("chrome kholo") - turned into the English command they mean, so they get
+# the same instant handling. Anything else in those languages goes to the model as it is.
+_DEVANAGARI_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
+_NAMES_IN_DEVANAGARI = {
+    "क्रोम": "chrome", "गूगल क्रोम": "chrome", "यूट्यूब": "youtube", "यूट्युब": "youtube", "नोटपैड": "notepad",
+    "नोटपॅड": "notepad", "स्पॉटिफाई": "spotify", "स्पोटिफाई": "spotify", "व्हाट्सएप": "whatsapp", "व्हॉट्सॲप": "whatsapp",
+    "वॉट्सऐप": "whatsapp", "कैलकुलेटर": "calculator", "कॅल्क्युलेटर": "calculator", "गूगल": "google", "जीमेल": "gmail",
+    "वीएस कोड": "vs code", "एक्सेल": "excel", "वर्ड": "word", "एज": "edge", "कैमरा": "camera", "कॅमेरा": "camera",
+    "सेटिंग्स": "settings", "डाउनलोड्स": "downloads", "डाउनलोड": "downloads", "डॉक्युमेंट्स": "documents",
+    # "गाना बजाओ" is "play some music": which music is the model's call, as in English
+    "गाना": "music", "गाने": "songs", "गाणं": "music", "गाणे": "music", "गाणी": "songs", "म्यूजिक": "music",
+    "कुछ गाने": "some music", "कोई गाना": "a song", "gaana": "music", "gaane": "songs", "music": "music",
+}
+_TRANSLATIONS: tuple[tuple[str, str], ...] = (
+    # media
+    (r"(?:अगला|अगले|पुढचं|पुढचे|पुढील)\s+(?:गाना|गाने|गाणं|गाणे)(?:\s+(?:बजाओ|लगाओ|चलाओ|लाव|वाजव))?|agla\s+gaana|next\s+gaana", "next song"),
+    (r"(?:पिछला|पिछले|मागचं|मागचे|मागील)\s+(?:गाना|गाने|गाणं|गाणे)(?:\s+(?:बजाओ|लगाओ|चलाओ|लाव|वाजव))?|pichla\s+gaana", "previous song"),
+    (r"(?:गाना|गाणं|गाणे|म्यूजिक|music|gaana)?\s*(?:रोको|रोक\s+दो|रुको|थांबव|थांबवा|ruko|roko|rok\s+do)", "pause"),
+    (r"(?:आवाज़|आवाज|वॉल्यूम|awaaz|awaz|volume)\s+(?:बढ़ाओ|बढाओ|तेज़\s+करो|तेज\s+करो|वाढव|वाढवा|badhao|badha\s+do|tez\s+karo)", "volume up"),
+    (r"(?:आवाज़|आवाज|वॉल्यूम|awaaz|awaz|volume)\s+(?:कम\s+करो|कम\s+कर\s+दो|धीमी\s+करो|कमी\s+कर|कमी\s+करा|kam\s+karo|kam\s+kar\s+do|dheemi\s+karo)", "volume down"),
+    (r"(?:आवाज़|आवाज|वॉल्यूम|awaaz|awaz|volume)\s+(\d{1,3})\s*(?:%|प्रतिशत|टक्के)?\s*(?:करो|कर\s+दो|कर|करा|karo|kar\s+do)", r"volume \1"),
+    (r"(?:आवाज़|आवाज)\s+बंद\s+(?:करो|कर|करा)|म्यूट\s+(?:करो|कर|करा)|mute\s+karo|awaaz\s+band\s+karo", "mute"),
+    (r"(.+?)\s+(?:बजाओ|बजा\s+दो|चलाओ|चला\s+दो|लगाओ|लगा\s+दो|वाजव|वाजवा|लाव|लावा|bajao|baja\s+do|chalao|chala\s+do|lagao|laga\s+do)", r"play \1"),
+    # the PC
+    (r"(?:कंप्यूटर|कम्प्यूटर|पीसी|लैपटॉप|लॅपटॉप|संगणक|स्क्रीन|pc|computer|laptop|screen)\s+(?:लॉक|lock)\s+(?:करो|कर\s+दो|कर|करा|karo|kar\s+do)", "lock my pc"),
+    (r"(\d{1,4})\s+(?:मिनट|मिनिट|मिनिटांचा|minute|minat)\s+(?:का|चा|ka)?\s*(?:टाइमर|टायमर|timer)\s*(?:लगाओ|लगा\s+दो|लाव|लावा|सेट\s+करो|lagao|laga\s+do|set\s+karo)?", r"\1 minute timer"),
+    (r"(?:डार्क|dark)\s+(?:मोड|mode)(?:\s+(?:करो|कर|चालू\s+कर|on\s+karo|karo))?", "dark mode"),
+    (r"(?:लाइट|लाईट|light)\s+(?:मोड|mode)(?:\s+(?:करो|कर|चालू\s+कर|on\s+karo|karo))?", "light mode"),
+    (r"(?:बैटरी|बॅटरी|battery)\s+(?:कितनी\s+है|किती\s+आहे|kitni\s+hai|kitna\s+hai)", "battery"),
+    (r"(.+?)\s+(?:बंद\s+करो|बंद\s+कर\s+दो|बंद\s+कर|बंद\s+करा|band\s+karo|band\s+kar\s+do)", r"close \1"),
+    (r"(.+?)\s+(?:खोलो|खोल\s+दो|खोलिए|खोलना|उघड|उघडा|kholo|khol\s+do|kholiye)", r"open \1"),
+)
+
+
+def translate(text: str) -> str:
+    """'क्रोम खोलो' -> 'open chrome', 'volume badhao' -> 'volume up'. Text in other words is
+    returned as it was."""
+    text = text.translate(_DEVANAGARI_DIGITS)
+    for pattern, english in _TRANSLATIONS:
+        found = re.fullmatch(pattern, text)
+        if found:
+            text = found.expand(english).strip()
+            break
+    else:
+        return text
+    words = text.split(" ", 1)
+    if len(words) == 2:  # the name in the command: "open क्रोम" -> "open chrome"
+        name = words[1].strip()
+        text = f"{words[0]} {_NAMES_IN_DEVANAGARI.get(name, name)}"
+    return text
+
+
+def normalise(message: str) -> str:
+    """Lower case, no closing punctuation or commas, and no "hey jarvis", "please", "can you"."""
+    text = re.sub(r"[.!?।]+$", "", message.strip().lower()).replace("’", "'")
+    text = " ".join(text.replace(",", " ").split())
+    for _ in range(3):
+        text = _FILLER.sub("", text).strip(" ,")
+    return text
+
+
+def _alarm_reply(r: dict) -> str:
+    return f"Alarm set for {r.get('rings_at', 'then')}" + (f" ({r['label']})." if r.get("label") not in (None, "Alarm") else ".")
+
+
 def match(message: str | None) -> Intent | None:
     """The intent for an exact, unambiguous command, or None (let the model handle it)."""
     if not message or not ENABLED:
         return None
-    text = re.sub(r"[.!?]+$", "", message.strip().lower()).replace("’", "'")
-    text = " ".join(text.replace(",", " ").split())
-    for _ in range(3):
-        text = _FILLER.sub("", text).strip(" ,")
+    return parse(message)
+
+
+def parse(message: str, *, routine: bool = False) -> Intent | None:
+    """match() without the on/off switch: also how a routine's steps ("open vs code", "volume 30")
+    become tool calls (app/routines.py), where `routine` also allows a bare "say ..."."""
+    text = translate(normalise(message))
     compound = re.search(r"\s(?:and|then|after\s+that|also)\s", text) is not None
     two_step = re.fullmatch(r".+\s+and\s+open\s+the\s+(?:first|top).*|(?:open|go\s+to)\s+\S+(?:\s+\S+)?\s+and\s+(?:search|play)\s.+", text)
     if compound and not two_step:
         return None  # several things at once: the model plans them
+    if re.fullmatch(r"undo\s+(?:what\s+you\s+(?:just\s+)?did|the\s+last\s+(?:thing|action|change|step)|your\s+last\s+action)"
+                    r"|put\s+(?:it|that|everything)\s+back(?:\s+(?:how|the\s+way)\s+it\s+was)?|revert\s+(?:that|it|the\s+last\s+change)"
+                    r"|take\s+that\s+back|reverse\s+(?:that|it)", text):
+        return Intent("undo_last_action", {}, lambda r: f"Done - I {r.get('undone', 'undid that')}.")
+    m = re.fullmatch(r"(?:turn\s+(on|off)\s+|switch\s+(on|off)\s+|enable\s+|disable\s+)?(?:do\s+not\s+disturb|dnd|focus\s+assist)"
+                     r"(?:\s+mode)?(?:\s+(on|off))?|(silence|mute)\s+(?:my\s+|all\s+)?notifications|(unmute|allow)\s+(?:my\s+)?notifications", text)
+    if m:
+        on = not (m.group(1) == "off" or m.group(2) == "off" or m.group(3) == "off" or m.group(5)
+                  or re.match(r"disable\s", text))
+        return Intent("pc_do_not_disturb", {"on": on},
+                      lambda r: "Do Not Disturb is on - notifications are silenced." if r.get("do_not_disturb")
+                      else "Do Not Disturb is off.")
+    m = re.fullmatch(r"(?:set\s+)?(?:an?\s+|my\s+)?alarm\s+(?:for|at)\s+(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m|p\.m)?(?:\s+tomorrow)?"
+                     r"|wake\s+me\s+(?:up\s+)?at\s+(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m|p\.m)?(?:\s+tomorrow)?", text)
+    if m:
+        hour, minute, half = (m.group(1), m.group(2), m.group(3)) if m.group(1) else (m.group(4), m.group(5), m.group(6))
+        hour, minute = int(hour), int(minute or 0)
+        if half and half.startswith("p") and hour < 12:
+            hour += 12
+        elif half and half.startswith("a") and hour == 12:
+            hour = 0
+        if hour <= 23 and minute <= 59:
+            return Intent("pc_alarm", {"time": f"{hour:02d}:{minute:02d}", "label": "Alarm"}, _alarm_reply)
+    m = re.fullmatch(r"(?:say|announce|speak)\s+(.+?)\s+(?:out\s+loud|aloud|on\s+(?:my\s+|the\s+)?(?:pc|computer|laptop|speakers?))"
+                     + (r"|(?:say|announce|speak)\s+(.+)" if routine else ""), text)
+    if m and len(m.group(1) or m.group(2) or "") <= 300:
+        said = m.group(1) or m.group(2)
+        return Intent("pc_say", {"text": said}, lambda r, s=said: f"Said “{s}” on your PC.")
+    m = re.fullmatch(r"(?:close|quit|exit|kill|shut\s+down|shut)\s+(?:the\s+|my\s+)?(.+?)(?:\s+app|\s+application|\s+window)?", text)
+    if m and m.group(1) in APP_NAMES - {"settings", "explorer", "file explorer"}:
+        app = m.group(1)
+
+        def closed(r: dict, a=app) -> str:
+            if r.get("still_open"):
+                return f"I asked {_open_label(a)} to close, but it's still open - it may be asking you to save something."
+            return f"Closed {_open_label(a)}."
+        return Intent("pc_close_app", {"name": app}, closed)
     words = r"(?:\s+(?:song|track|one|video))?"
     if re.fullmatch(rf"(?:play\s+)?(?:the\s+)?next{words}|skip(?:\s+this)?{words}", text):
         return _media("next", "next")

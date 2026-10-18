@@ -9,7 +9,8 @@ import re
 from datetime import date, datetime
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _LINE_BREAK = re.compile(r"[\r\n  ]")
@@ -283,3 +284,72 @@ class PcSendMessageArgs(ToolArgs):
     contact: SafeLine = Field(min_length=1, max_length=100, description="The chat's name as saved in WhatsApp, e.g. 'Tanishka' or 'Mum'.")
     text: PlainText = Field(min_length=1, max_length=4000, description="The exact message to send.")
     app: Literal["whatsapp"] = "whatsapp"
+
+
+class PcDndArgs(ToolArgs):
+    on: bool = Field(default=True, description="true silences notifications; false lets them through again.")
+
+
+class PcAlarmArgs(ToolArgs):
+    time: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$", description="When, as a 24-hour time, e.g. '07:00' or '18:30'.")
+    label: SafeLine = Field(default="Alarm", max_length=100)
+
+
+class PcSayArgs(ToolArgs):
+    text: PlainText = Field(min_length=1, max_length=1000, description="What to say out loud on the PC's speakers.")
+
+
+class PcPlanArgs(ToolArgs):
+    title: SafeLine = Field(min_length=1, max_length=100)
+    steps: list[SafeLine] = Field(min_length=1, max_length=12)
+
+
+# Routines -----------------------------------------------------------------------------------
+
+# What a routine's steps may do: everyday PC actions that are easy to reverse or harmless. Never
+# deleting, writing or moving files, typing, clicking or sending messages - those wait for a
+# person every time.
+ROUTINE_FUNCTIONS = frozenset({
+    "pc_open", "pc_go_to", "pc_search_site", "pc_play", "pc_media", "pc_set_volume", "pc_lock_screen", "pc_set_brightness",
+    "pc_set_theme", "pc_open_settings", "pc_timer", "pc_alarm", "pc_focus_window", "pc_close_window", "pc_close_app",
+    "pc_create_folder", "pc_organize_folder", "pc_do_not_disturb", "pc_say", "pc_browser_open",
+})
+ROUTINE_STEP_HELP = ("Write each step as a short command, such as 'open vs code', 'open github.com', 'play lofi beats on "
+                     "spotify', 'volume 30', 'brightness 60', 'dark mode', 'do not disturb on', '25 minute timer', 'alarm "
+                     "at 07:00', 'close chrome', 'lock my pc' or 'say good night'.")
+
+
+class SaveRoutineArgs(ToolArgs):
+    name: SafeLine = Field(min_length=1, max_length=60,
+                           description="Its name, which is also what they say to run it, e.g. 'work mode' or 'good night'.")
+    steps: list[SafeLine] = Field(min_length=1, max_length=12,
+                                  description="What it does, in order. " + ROUTINE_STEP_HELP)
+    phrases: list[SafeLine] = Field(default_factory=list, max_length=5,
+                                    description="Other ways they'll say it, e.g. 'start work' (optional).")
+    # Filled in by the check below from `steps` (anything sent in its place is overwritten): the
+    # tool calls each step stands for, validated like any other call.
+    parsed: SkipJsonSchema[list[dict]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _steps_are_actions(self) -> "SaveRoutineArgs":
+        from .. import fastpath  # here: fastpath imports the model backends, which import this module's users
+        from . import registry
+
+        parsed, unclear = [], []
+        for step in self.steps:
+            intent = fastpath.parse(step, routine=True)
+            fn = registry.find(intent.function) if intent and intent.then is None else None
+            if fn is None or fn.exposed_name not in ROUTINE_FUNCTIONS:
+                unclear.append(step)
+                continue
+            args = fn.args_model.model_validate(registry.fix_arguments(fn, intent.args)).model_dump(mode="json")
+            parsed.append({"function": fn.exposed_name, "args": args, "said": step})
+        if unclear:
+            raise ValueError("these steps aren't actions a routine can do: " + "; ".join(f"'{s}'" for s in unclear)
+                             + ". " + ROUTINE_STEP_HELP + " A routine can't delete or write files, type, click or send messages.")
+        self.parsed = parsed
+        return self
+
+
+class RoutineNameArgs(ToolArgs):
+    name: SafeLine = Field(min_length=1, max_length=60, description="The routine's name.")

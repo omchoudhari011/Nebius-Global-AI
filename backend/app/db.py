@@ -19,7 +19,7 @@ from pathlib import Path
 from .config import BACKEND_DIR, get_settings
 
 SCHEMA_PATH = BACKEND_DIR / "schema.sql"
-SCHEMA_VERSION = 8  # must match the PRAGMA user_version at the end of schema.sql
+SCHEMA_VERSION = 9  # must match the PRAGMA user_version at the end of schema.sql
 
 # Upgrades for databases made by an older schema.sql: {from version: script}. Each script
 # runs in one transaction and ends by setting user_version to the next version, so a failed
@@ -163,6 +163,82 @@ MIGRATIONS = {
           ((SELECT id FROM tools WHERE name = 'pc'),  'read',  'system info, files, windows, clipboard, screenshot'),
           ((SELECT id FROM tools WHERE name = 'pc'),  'write', 'open apps, media, volume, lock, type, click, files');
         PRAGMA user_version = 8;
+        COMMIT;
+    """,
+    8: """
+        BEGIN;
+        ALTER TABLE user_settings ADD COLUMN prefs TEXT CHECK (prefs IS NULL OR json_valid(prefs));
+        ALTER TABLE memories ADD COLUMN valid_until TEXT;
+        ALTER TABLE memories ADD COLUMN superseded_by INTEGER REFERENCES memories(id) ON DELETE SET NULL;
+        ALTER TABLE memories ADD COLUMN linked INTEGER NOT NULL DEFAULT 0 CHECK (linked IN (0, 1));
+        ALTER TABLE tool_calls ADD COLUMN undo BLOB;
+        ALTER TABLE tool_calls ADD COLUMN undone_at TEXT;
+        CREATE TABLE entities (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL CHECK (kind IN ('person', 'place', 'project', 'organization', 'pet', 'thing')),
+          name BLOB NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX entities_by_user ON entities(user_id);
+        CREATE TABLE memory_entities (
+          memory_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+          entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+          PRIMARY KEY (memory_id, entity_id)
+        );
+        CREATE INDEX memory_entities_by_entity ON memory_entities(entity_id);
+        CREATE TABLE entity_links (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          source_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+          target_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+          relation BLOB NOT NULL,
+          memory_id INTEGER REFERENCES memories(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX entity_links_by_source ON entity_links(source_id);
+        CREATE INDEX entity_links_by_target ON entity_links(target_id);
+        CREATE TABLE integrations_v9 (
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          provider TEXT NOT NULL CHECK (provider IN ('google', 'spotify', 'microsoft', 'homeassistant', 'telegram')),
+          account TEXT,
+          scopes TEXT NOT NULL,
+          refresh_token BLOB NOT NULL,
+          access_token BLOB,
+          expires_at TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (user_id, provider)
+        );
+        INSERT INTO integrations_v9 SELECT user_id, provider, account, scopes, refresh_token, access_token, expires_at, created_at
+          FROM integrations;
+        DROP TABLE integrations;
+        ALTER TABLE integrations_v9 RENAME TO integrations;
+        CREATE TABLE notifications_v9 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL CHECK (kind IN ('reminder', 'task', 'system', 'watch', 'meeting', 'learning')),
+          title BLOB NOT NULL,
+          body BLOB,
+          ref TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          read_at TEXT
+        );
+        INSERT INTO notifications_v9 SELECT id, user_id, kind, title, body, ref, created_at, read_at FROM notifications;
+        DROP TABLE notifications;
+        ALTER TABLE notifications_v9 RENAME TO notifications;
+        CREATE INDEX notifications_by_user ON notifications(user_id, read_at, id);
+        INSERT INTO tools (name) VALUES ('routines'), ('watchers'), ('home'), ('spotify'), ('outlook');
+        INSERT INTO tool_scopes (tool_id, scope, description) VALUES
+          ((SELECT id FROM tools WHERE name = 'routines'), 'read',  'list_routines'),
+          ((SELECT id FROM tools WHERE name = 'routines'), 'write', 'save_routine, delete_routine'),
+          ((SELECT id FROM tools WHERE name = 'watchers'), 'read',  'list_watches'),
+          ((SELECT id FROM tools WHERE name = 'watchers'), 'write', 'watch_page, watch_email, stop_watch'),
+          ((SELECT id FROM tools WHERE name = 'home'),     'read',  'list_devices'),
+          ((SELECT id FROM tools WHERE name = 'home'),     'write', 'control'),
+          ((SELECT id FROM tools WHERE name = 'spotify'),  'read',  'now_playing, search'),
+          ((SELECT id FROM tools WHERE name = 'spotify'),  'write', 'play, control'),
+          ((SELECT id FROM tools WHERE name = 'outlook'),  'read',  'search_mail, read_mail, list_events'),
+          ((SELECT id FROM tools WHERE name = 'outlook'),  'write', 'create_event');
+        PRAGMA user_version = 9;
         COMMIT;
     """,
 }

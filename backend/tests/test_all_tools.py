@@ -24,6 +24,10 @@ LOCAL = [
     ("reminders_cancel_reminder", {"id": 1}, lambda r: r["cancelled"] == 1),
     ("documents_search_documents", {"query": "pets"}, lambda r: r["documents"][0]["name"] == "lease.txt"),
     ("documents_read_document", {"id": 1}, lambda r: "5000" in r["text"]),
+    ("routines_save_routine", {"name": "Work mode", "steps": ["open vs code", "volume 30", "do not disturb on"]},
+     lambda r: r["saved"]["steps"] == ["open vs code", "volume 30", "do not disturb on"]),
+    ("routines_list_routines", {}, lambda r: r["routines"][0]["name"] == "Work mode"),
+    ("routines_delete_routine", {"name": "work mode"}, lambda r: r["deleted"] == "work mode"),
 ]
 # The Google functions need a connected account and Google's servers; tests/test_everyday.py
 # runs them in the sandbox against a local fake API, and the gate's handling is checked here.
@@ -128,6 +132,8 @@ PC = {
     "pc_create_folder": {"path": "~/Desktop/Trips"}, "pc_organize_folder": {"path": "~/Downloads"},
     "pc_write_in_app": {"text": "Dear Sir,"}, "pc_read_screen": {}, "pc_click_element": {"name": "Send"},
     "pc_fill_field": {"name": "Search", "text": "hello"}, "pc_send_message": {"contact": "Tanishka", "text": "on my way"},
+    "pc_do_not_disturb": {"on": True}, "pc_alarm": {"time": "07:00"}, "pc_say": {"text": "Good morning"},
+    "pc_confirm_plan": {"title": "Run “Work mode”", "steps": ["Open vs code"]},
 }
 WEB = {"web_search", "web_read_page"}
 

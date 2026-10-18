@@ -130,6 +130,107 @@ def test_a_timer_rings_through_the_app(monkeypatch):
     assert rang.wait(5)
 
 
+def _undo(result: dict) -> None:
+    """Run the undo step an action reported, as the server would."""
+    step = result["undo"]
+    actions.run(step["function"], step["args"], PROTECTED)
+
+
+def test_moves_sorts_new_folders_copies_and_overwrites_can_be_undone(tmp_path, monkeypatch):
+    recycled = []
+    import send2trash
+
+    monkeypatch.setattr(send2trash, "send2trash", lambda p: (recycled.append(p), Path(p).unlink()))
+    monkeypatch.setattr(actions, "UNDO_DIR", tmp_path / "undo")
+    (tmp_path / "a.txt").write_text("first", encoding="utf-8")
+    moved = actions.run("move_file", {"source": str(tmp_path / "a.txt"), "destination": str(tmp_path / "b.txt")}, PROTECTED)
+    _undo(moved)
+    assert (tmp_path / "a.txt").exists() and not (tmp_path / "b.txt").exists()
+
+    written = actions.run("write_file", {"path": str(tmp_path / "a.txt"), "content": "second", "overwrite": True}, PROTECTED)
+    assert written["undo"]["function"] == "restore_backup"
+    _undo(written)
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "first"
+
+    folder = actions.run("create_folder", {"path": str(tmp_path / "Trips")}, PROTECTED)
+    _undo(folder)
+    assert not (tmp_path / "Trips").exists()
+    assert "undo" not in actions.run("create_folder", {"path": str(tmp_path)}, PROTECTED)  # it was already there
+
+    copied = actions.run("copy_file", {"source": str(tmp_path / "a.txt"), "destination": str(tmp_path / "c.txt")}, PROTECTED)
+    _undo(copied)
+    assert recycled == [str(tmp_path / "c.txt")]
+
+    for name in ["trip.jpg", "bill.pdf"]:
+        (tmp_path / name).write_text("x", encoding="utf-8")
+    sorted_ = actions.run("organize_folder", {"path": str(tmp_path)}, PROTECTED)
+    assert sorted_["undo"]["label"] == f"put the 3 sorted files back in {tmp_path.name}"
+    _undo(sorted_)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["a.txt", "bill.pdf", "trip.jpg", "undo"]
+
+
+def test_undo_steps_respect_the_protected_folders(tmp_path):
+    with pytest.raises(actions.ActionError, match="never changes"):
+        actions.run("undo_moves", {"moves": [[str(tmp_path / "x"), r"C:\Windows\x"]]}, PROTECTED)
+    with pytest.raises(actions.ActionError, match="never changes"):
+        actions.run("recycle_created", {"path": r"C:\Program Files\App"}, PROTECTED)
+    with pytest.raises(actions.ActionError, match="saved copy is gone"):
+        actions.run("restore_backup", {"backup": str(tmp_path / "elsewhere.txt"), "path": str(tmp_path / "a.txt")}, PROTECTED)
+
+
+def test_volume_is_set_exactly_and_reports_how_to_put_it_back(monkeypatch):
+    class Speakers:
+        level, muted = 0.7, 1
+
+        def GetMasterVolumeLevelScalar(self):  # noqa: N802 - the COM method's name
+            return self.level
+
+        def SetMasterVolumeLevelScalar(self, value, _context):  # noqa: N802
+            self.level = value
+
+        def GetMute(self):  # noqa: N802
+            return self.muted
+
+        def SetMute(self, value, _context):  # noqa: N802
+            self.muted = value
+
+    speakers = Speakers()
+    monkeypatch.setattr(actions, "_speakers", lambda: speakers)
+    result = actions.run("set_volume", {"level": 30}, PROTECTED)
+    assert result == {"volume": 30, "undo": {"function": "set_volume", "args": {"level": 70},
+                                             "label": "put the volume back to 70%"}}
+    assert speakers.level == 0.3 and speakers.muted == 0  # asking for a level unmutes
+
+
+def test_alarms_ring_at_the_next_time_and_survive_a_restart(tmp_path, monkeypatch):
+    import datetime as dt
+
+    monkeypatch.setattr(actions, "ALARMS_FILE", tmp_path / "alarms.json")
+    soon = (dt.datetime.now() + dt.timedelta(minutes=5)).strftime("%H:%M")
+    made = actions.run("alarm", {"time": soon, "label": "Stand up"}, PROTECTED)
+    assert made["rings_at"].startswith(soon) and made["undo"]["function"] == "cancel_timer"
+    assert [a["label"] for a in actions._load_alarms()] == ["Stand up"]
+    earlier = (dt.datetime.now() - dt.timedelta(minutes=1)).strftime("%H:%M")
+    assert actions.run("alarm", {"time": earlier}, PROTECTED)["rings_at"].endswith("tomorrow")
+
+    for clock in list(actions._clocks.values()):  # "restart": the timers are gone, the file isn't
+        clock.cancel()
+    actions._clocks.clear()
+    assert actions.restore_alarms() == 2
+    _undo(made)
+    assert [a["label"] for a in actions._load_alarms()] == ["Alarm"]
+    with pytest.raises(actions.ActionError, match="already rang or was cancelled"):
+        _undo(made)
+    for clock in list(actions._clocks.values()):
+        clock.cancel()
+
+
+def test_a_routine_list_is_shown_whole_in_one_confirmation():
+    shown = actions.describe("confirm_plan", {"title": "Run “Good night”", "steps": ["Close chrome", "Lock my pc"]})
+    assert shown == "\u2022 Close chrome\n\u2022 Lock my pc"
+    assert actions.run("confirm_plan", {"title": "x", "steps": ["a"]}, PROTECTED) == {"approved": True, "steps": 1}
+
+
 def test_whatsapp_rows_and_names_are_read_strictly():
     assert actions._row_title("3 unread messages Tanishka 1:46 pm projects.csv") == "Tanishka"
     assert actions._row_title("Mum Yesterday Dinner at 8?") == "Mum"

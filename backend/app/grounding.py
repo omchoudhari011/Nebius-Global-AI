@@ -428,7 +428,8 @@ def review(reply: str, evidence: Evidence) -> list[Finding]:
                 )
             )
 
-    if not evidence.succeeded("reminders", "create_reminder") and _says(reply, _REMINDER_CLAIM):
+    alarm_set = evidence.succeeded("pc", "alarm") or evidence.succeeded("pc", "timer")  # the PC rings: also a reminder
+    if not (evidence.succeeded("reminders", "create_reminder") or alarm_set) and _says(reply, _REMINDER_CLAIM):
         why = _why_not(evidence, "reminders", "create_reminder")
         findings.append(
             Finding(

@@ -52,6 +52,7 @@ class App:
         self.conversation_id: int | None = None
         self.last_turn = 0.0
         actions.on_timer = self.timer_rang
+        actions.on_say = self.say_aloud
         self.paused = False
         self.stopping = threading.Event()
         self.tray = None
@@ -115,7 +116,8 @@ class App:
         elif action.get("confirm"):
             front = _foreground()
             details = actions.describe(function, args)
-            allowed = self.window.confirm(action.get("description", function).split("(")[0].strip().rstrip("."), details)
+            title = args.get("title") if function == "confirm_plan" else action.get("description", function).split("(")[0].strip().rstrip(".")
+            allowed = self.window.confirm(title, details)
             log.info("%s %s %s", "ALLOWED" if allowed else "DECLINED", function, details[:200])
             if not allowed:
                 self.client.send_result(action["id"], False, error="The user declined this on the PC.")
@@ -176,6 +178,15 @@ class App:
         if self.settings.speak_replies:
             self.speaker.say(f"Time's up: {label}." if label != "Timer" else "Time's up.")
 
+    def say_aloud(self, text: str) -> None:
+        """pc_say: speak it, whatever "Speak replies" is set to - it was asked for."""
+        self.window.show("Custodian", reply=text, hide_after=8)
+        self.listener.pause(True)
+        try:
+            self.speaker.say(text)
+        finally:
+            self.listener.pause(self.paused)
+
     def talk_now(self) -> None:
         self.speaker.stop()  # pressing it while it speaks cuts the reply short
         self.listener.trigger()
@@ -226,6 +237,9 @@ class App:
 
     def run(self) -> None:
         def start() -> None:
+            restored = actions.restore_alarms()  # alarms set before a restart still ring
+            if restored:
+                log.info("restored %d alarm(s)", restored)
             if not self.ensure_signed_in():
                 return
             threading.Thread(target=self.bridge, daemon=True, name="bridge").start()

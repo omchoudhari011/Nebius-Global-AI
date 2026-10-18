@@ -153,6 +153,7 @@ class ToolCallOutcome:
     result: Any = None
     error: str | None = None
     latency_ms: int | None = None
+    undoable: bool = False  # the desktop app said how to reverse it (app/activity.py)
 
     def to_model_content(self) -> str:
         """The tool message the model reads next."""
@@ -184,15 +185,17 @@ def _validation_message(exc: Exception) -> str:
     return f"invalid arguments - {exc}"
 
 
-def _finish(call_id: int, status: str, *, result: Any = None, error: str | None = None, latency_ms: int | None = None) -> None:
+def _finish(call_id: int, status: str, *, result: Any = None, error: str | None = None, latency_ms: int | None = None,
+            undo: dict | None = None) -> None:
     with db.connect() as conn:
         conn.execute(
             """
             UPDATE tool_calls
-            SET status = ?, result = ?, error = ?, latency_ms = ?, finished_at = datetime('now')
+            SET status = ?, result = ?, error = ?, latency_ms = ?, undo = ?, finished_at = datetime('now')
             WHERE id = ?
             """,
-            (status, encrypt_json(result) if status == "succeeded" else None, error, latency_ms, call_id),
+            (status, encrypt_json(result) if status == "succeeded" else None, error, latency_ms,
+             encrypt_json(undo) if undo and status == "succeeded" else None, call_id),
         )
 
 
@@ -204,9 +207,13 @@ def execute(
     message_id: int,
     allowed: frozenset[tuple[str, str]] | None,
     skill_name: str | None = None,
+    preapproved: bool = False,
 ) -> ToolCallOutcome:
     """Gate and run one proposed tool call. `allowed` is the current skill's
-    (tool, scope) allowlist; None means no skill is in force (every scope allowed)."""
+    (tool, scope) allowlist; None means no skill is in force (every scope allowed).
+    `preapproved` means the user already allowed this exact step on the PC as part of a list
+    (a routine, app/routines.py), so the desktop app doesn't ask again; only Custodian's own code
+    sets it, never the model."""
     fn = registry.find(name)
     if fn is None:
         log.warning("model proposed unknown tool %r", name)
@@ -278,14 +285,19 @@ def execute(
         context["allow_hosts"] = [urlsplit(searx).hostname if h == "searxng" else h for h in fn.hosts]
         timeout = max(timeout, NETWORK_TIMEOUT_SECONDS)
     if fn.runs_on == "desktop":
-        context["confirm"] = fn.confirm
+        context["confirm"] = fn.confirm and not preapproved
         context["description"] = fn.description
     request = ToolRequest(module=fn.module, function=fn.function, args=validated.model_dump(mode="json"), context=context)
     executor = DESKTOP if fn.runs_on == "desktop" else EXECUTORS.get(tool["executor"]) or UnavailableExecutor(tool["executor"])
     started = time.perf_counter()
+    undo = None
     try:
         outcome.result = executor.run(request, timeout)
         outcome.status = "succeeded"
+        if fn.runs_on == "desktop" and isinstance(outcome.result, dict) and "undo" in outcome.result:
+            from .. import activity  # here: activity imports the desktop bridge
+
+            undo = activity.clean_undo(outcome.result.pop("undo"))  # kept for "undo that", not shown to the model
     except ToolTimeout as exc:
         outcome.status, outcome.error = "timed_out", str(exc)
     except ToolFailure as exc:
@@ -294,7 +306,8 @@ def execute(
         log.exception("tool %s.%s crashed", fn.tool, fn.function)
         outcome.status, outcome.error = "failed", f"{type(exc).__name__}: {exc}"[:500]
     outcome.latency_ms = int((time.perf_counter() - started) * 1000)
-    _finish(call_id, outcome.status, result=outcome.result, error=outcome.error, latency_ms=outcome.latency_ms)
+    _finish(call_id, outcome.status, result=outcome.result, error=outcome.error, latency_ms=outcome.latency_ms, undo=undo)
+    outcome.undoable = undo is not None
     return outcome
 
 

@@ -290,18 +290,55 @@ def open(target: str, **_: object) -> dict:  # noqa: A001 - the action's name
     return {"opened": target, "kind": "app"}
 
 
+def _speakers():  # noqa: ANN202 - pycaw's IAudioEndpointVolume
+    """The default output's volume control (Windows Core Audio), or None without pycaw."""
+    try:
+        import comtypes
+        from pycaw.pycaw import AudioUtilities
+    except ImportError:
+        return None
+    comtypes.CoInitialize()  # each action runs on its own thread
+    device = AudioUtilities.GetSpeakers()
+    return getattr(device, "EndpointVolume", None)
+
+
+def volume_level() -> tuple[int, bool] | None:
+    """(volume percent, muted) now, or None when it can't be read."""
+    speakers = _speakers()
+    if speakers is None:
+        return None
+    return round(speakers.GetMasterVolumeLevelScalar() * 100), bool(speakers.GetMute())
+
+
 def media(action: str, steps: int = 1, **_: object) -> dict:
+    before = volume_level() if action in ("volume_up", "volume_down", "mute") else None
     _key(VK[action], steps if action in ("volume_up", "volume_down") else 1)
     if action in ("volume_up", "volume_down", "mute"):
-        return {"done": action, "steps": steps}
+        out: dict = {"done": action, "steps": steps}
+        after = volume_level()
+        if after is not None:
+            out.update(volume=after[0], muted=after[1])
+        if before is not None and action == "mute":
+            out["undo"] = {"function": "media", "args": {"action": "mute"}, "label": "unmute" if not before[1] else "mute again"}
+        elif before is not None:
+            out["undo"] = {"function": "set_volume", "args": {"level": before[0]}, "label": f"put the volume back to {before[0]}%"}
+        return out
     time.sleep(1.0)  # let the player update its title
     return {"done": action, **now_playing()}
 
 
 def set_volume(level: int, **_: object) -> dict:
-    _key(VK["volume_down"], 50)  # to zero (each key press is 2%)
-    _key(VK["volume_up"], round(level / 2))
-    return {"volume": round(level / 2) * 2}
+    speakers = _speakers()
+    if speakers is None:  # no Core Audio: key presses, 2% each
+        _key(VK["volume_down"], 50)
+        _key(VK["volume_up"], round(level / 2))
+        return {"volume": round(level / 2) * 2}
+    before = round(speakers.GetMasterVolumeLevelScalar() * 100)
+    speakers.SetMasterVolumeLevelScalar(level / 100, None)
+    if level > 0 and speakers.GetMute():
+        speakers.SetMute(0, None)  # "volume 40" means you want to hear it
+    return {"volume": level, "undo": {"function": "set_volume", "args": {"level": before},
+                                      "label": f"put the volume back to {before}%"}}
 
 
 def lock_screen(**_: object) -> dict:
@@ -398,14 +435,24 @@ def click(x: int, y: int, button: str = "left", **_: object) -> dict:
     return {"clicked": [x, y], "button": button}
 
 
+UNDO_DIR = Path(os.environ.get("APPDATA", Path.home())) / "Custodian" / "undo"  # copies of files before an overwrite
+
+
 def write_file(path: str, content: str, overwrite: bool = False, *, protected: list[str], **_: object) -> dict:
     file = _path(path)
     _guard(file, protected)
     if file.exists() and not overwrite:
         raise ActionError(f"{file} already exists; ask to overwrite it")
+    undo = {"function": "recycle_created", "args": {"path": str(file)}, "label": f"move the new file {file.name} to the Recycle Bin"}
+    if file.is_file():  # keep what was there, so "undo" can put it back
+        UNDO_DIR.mkdir(parents=True, exist_ok=True)
+        backup = UNDO_DIR / f"{dt.datetime.now():%Y%m%d-%H%M%S}-{file.name}"
+        shutil.copy2(file, backup)
+        undo = {"function": "restore_backup", "args": {"backup": str(backup), "path": str(file)},
+                "label": f"put back the old {file.name}"}
     file.parent.mkdir(parents=True, exist_ok=True)
     file.write_text(content, encoding="utf-8")
-    return {"written": str(file), "characters": len(content)}
+    return {"written": str(file), "characters": len(content), "undo": undo}
 
 
 def move_file(source: str, destination: str, *, protected: list[str], **_: object) -> dict:
@@ -419,7 +466,9 @@ def move_file(source: str, destination: str, *, protected: list[str], **_: objec
     if dest.exists():
         raise ActionError(f"{dest} already exists")
     shutil.move(str(src), str(dest))
-    return {"moved": str(src), "to": str(dest)}
+    return {"moved": str(src), "to": str(dest),
+            "undo": {"function": "move_file", "args": {"source": str(dest), "destination": str(src)},
+                     "label": f"move {dest.name} back to {src.parent}"}}
 
 
 def delete_file(path: str, *, protected: list[str], **_: object) -> dict:
@@ -432,7 +481,97 @@ def delete_file(path: str, *, protected: list[str], **_: object) -> dict:
     if not target.exists():
         raise ActionError(f"{target} doesn't exist")
     send2trash(str(target))
+    return {"moved_to_recycle_bin": str(target),
+            "undo": {"function": "restore_deleted", "args": {"path": str(target)},
+                     "label": f"restore {target.name} from the Recycle Bin"}}
+
+
+# Undoing (only ever sent by the server, from a record an action above made) ----------------------
+
+def _recycle_bin():  # noqa: ANN202 - a Shell folder
+    import pythoncom
+    import win32com.client
+
+    pythoncom.CoInitialize()
+    return win32com.client.Dispatch("Shell.Application").Namespace(10)  # ssfBITBUCKET
+
+
+def restore_deleted(path: str, *, protected: list[str], **_: object) -> dict:
+    """Put a file Custodian moved to the Recycle Bin back where it was."""
+    target = _path(path)
+    _guard(target, protected)
+    if target.exists():
+        raise ActionError(f"{target} is already there")
+    folder = _recycle_bin()
+    found = []
+    for item in folder.Items():
+        stored = Path(item.Path)  # C:\$Recycle.Bin\<sid>\$R1A2B3C.pdf: the file itself, with its extension
+        same_place = os.path.normcase(folder.GetDetailsOf(item, 1)) == os.path.normcase(str(target.parent))  # "Original Location"
+        same_name = item.Name.lower() in (target.name.lower(), target.stem.lower()) and stored.suffix.lower() == target.suffix.lower()
+        if same_place and same_name:
+            info = stored.with_name("$I" + stored.name[2:])  # its record, written when it was deleted
+            found.append((info.stat().st_mtime if info.exists() else 0.0, item))
+    if not found:
+        raise ActionError(f"{target.name} isn't in the Recycle Bin any more")
+    max(found, key=lambda pair: pair[0])[1].InvokeVerb("undelete")  # the newest deletion of that name
+    for _ in range(30):
+        if target.exists():
+            return {"restored": str(target)}
+        time.sleep(0.1)
+    raise ActionError(f"Windows didn't restore {target.name}")
+
+
+def undo_moves(moves: list, *, protected: list[str], **_: object) -> dict:
+    """Put files back where they were before a sort: `moves` is [[now at, was at], ...]."""
+    back, skipped, emptied = 0, [], set()
+    for now_at, was_at in moves[:2000]:
+        src, dest = _path(now_at), _path(was_at)
+        _guard(src, protected)
+        _guard(dest, protected)
+        if not src.exists() or dest.exists():
+            skipped.append(src.name)
+            continue
+        shutil.move(str(src), str(dest))
+        back += 1
+        emptied.add(src.parent)
+    for folder in emptied:  # the subfolders the sort made, if nothing else is in them now
+        try:
+            folder.rmdir()
+        except OSError:
+            pass
+    return {"moved_back": back, "skipped": skipped[:20] or None}
+
+
+def remove_empty_folder(path: str, *, protected: list[str], **_: object) -> dict:
+    folder = _path(path)
+    _guard(folder, protected)
+    if not folder.is_dir():
+        raise ActionError(f"{folder} isn't there any more")
+    if any(folder.iterdir()):
+        raise ActionError(f"{folder.name} isn't empty any more, so Custodian left it")
+    folder.rmdir()
+    return {"removed": str(folder)}
+
+
+def recycle_created(path: str, *, protected: list[str], **_: object) -> dict:
+    """Move a file or folder Custodian created (a copy, a new file) to the Recycle Bin."""
+    from send2trash import send2trash
+
+    target = _path(path)
+    _guard(target, protected)
+    if not target.exists():
+        raise ActionError(f"{target} isn't there any more")
+    send2trash(str(target))
     return {"moved_to_recycle_bin": str(target)}
+
+
+def restore_backup(backup: str, path: str, *, protected: list[str], **_: object) -> dict:
+    saved, target = Path(backup).resolve(), _path(path)
+    _guard(target, protected)
+    if UNDO_DIR.resolve() not in saved.parents or not saved.is_file():
+        raise ActionError("the saved copy is gone")
+    shutil.copy2(saved, target)
+    return {"restored": str(target)}
 
 
 def set_clipboard(text: str, **_: object) -> dict:
@@ -568,21 +707,33 @@ def set_brightness(level: int, **_: object) -> dict:
     try:
         import screen_brightness_control as sbc
 
+        before = sbc.get_brightness()
         sbc.set_brightness(level)
     except Exception as exc:  # noqa: BLE001 - e.g. an external monitor without DDC/CI
         raise ActionError(f"this screen's brightness can't be set from Windows ({exc})") from None
-    return {"brightness": level}
+    out: dict = {"brightness": level}
+    if before:
+        out["undo"] = {"function": "set_brightness", "args": {"level": int(before[0])},
+                       "label": f"put the brightness back to {int(before[0])}%"}
+    return out
 
 
 def set_theme(mode: str, **_: object) -> dict:
     import winreg
 
-    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
-                         0, winreg.KEY_SET_VALUE)
-    with key:
+    path = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path) as key:
+            before = "light" if winreg.QueryValueEx(key, "AppsUseLightTheme")[0] else "dark"
+    except OSError:
+        before = None
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path, 0, winreg.KEY_SET_VALUE) as key:
         for name in ("AppsUseLightTheme", "SystemUsesLightTheme"):
             winreg.SetValueEx(key, name, 0, winreg.REG_DWORD, 0 if mode == "dark" else 1)
-    return {"theme": mode}
+    out: dict = {"theme": mode}
+    if before and before != mode:
+        out["undo"] = {"function": "set_theme", "args": {"mode": before}, "label": f"switch back to {before} mode"}
+    return out
 
 
 def open_settings(page: str, **_: object) -> dict:
@@ -590,26 +741,170 @@ def open_settings(page: str, **_: object) -> dict:
     return {"opened": f"Settings: {page}"}
 
 
-def timer(seconds: int, label: str = "Timer", **_: object) -> dict:
+_clocks: dict[str, object] = {}  # timer or alarm id -> threading.Timer
+ALARMS_FILE = Path(os.environ.get("APPDATA", Path.home())) / "Custodian" / "alarms.json"
+
+
+def _ring(label: str) -> None:
+    if on_timer is not None:
+        on_timer(label)
+        return
+    try:
+        import winsound
+
+        for _ in range(3):
+            winsound.Beep(988, 300)
+    except (ImportError, RuntimeError):
+        pass
+
+
+def _start_clock(clock_id: str, seconds: float, label: str, *, alarm: bool = False) -> None:
     import threading
 
-    def ring() -> None:
-        if on_timer is not None:
-            on_timer(label)
-        else:
-            try:
-                import winsound
+    def fire() -> None:
+        _clocks.pop(clock_id, None)
+        if alarm:
+            _save_alarms([a for a in _load_alarms() if a["id"] != clock_id])
+        _ring(label)
 
-                for _ in range(3):
-                    winsound.Beep(988, 300)
-            except (ImportError, RuntimeError):
-                pass
-
-    clock = threading.Timer(seconds, ring)
+    clock = threading.Timer(max(0.0, seconds), fire)
     clock.daemon = True
     clock.start()
+    _clocks[clock_id] = clock
+
+
+def timer(seconds: int, label: str = "Timer", **_: object) -> dict:
+    clock_id = f"timer-{time.time_ns()}"
+    _start_clock(clock_id, seconds, label)
     ends = dt.datetime.now() + dt.timedelta(seconds=seconds)
-    return {"timer": label, "rings_at": ends.strftime("%H:%M:%S"), "seconds": seconds}
+    return {"timer": label, "rings_at": ends.strftime("%H:%M:%S"), "seconds": seconds,
+            "undo": {"function": "cancel_timer", "args": {"id": clock_id}, "label": f"cancel the {label.lower()}"}}
+
+
+def _load_alarms() -> list[dict]:
+    import json
+
+    try:
+        return json.loads(ALARMS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+
+def _save_alarms(alarms: list[dict]) -> None:
+    import json
+
+    ALARMS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    ALARMS_FILE.write_text(json.dumps(alarms), encoding="utf-8")
+
+
+def alarm(time: str, label: str = "Alarm", **_: object) -> dict:  # noqa: A002 - the action's argument name
+    """An alarm at the next `time` (HH:MM) - today if it's still to come, else tomorrow. Kept in
+    alarms.json, so it rings even if the app restarts before then (restore_alarms)."""
+    hour, minute = (int(part) for part in time.split(":"))
+    now = dt.datetime.now()
+    when = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if when <= now:
+        when += dt.timedelta(days=1)
+    clock_id = f"alarm-{when:%Y%m%d%H%M}-{abs(hash(label)) % 10000}"
+    _save_alarms([a for a in _load_alarms() if a["id"] != clock_id] + [{"id": clock_id, "at": when.isoformat(), "label": label}])
+    _start_clock(clock_id, (when - now).total_seconds(), label, alarm=True)
+    day = "today" if when.date() == now.date() else "tomorrow"
+    return {"alarm": label, "label": label, "rings_at": f"{when:%H:%M} {day}", "id": clock_id,
+            "undo": {"function": "cancel_timer", "args": {"id": clock_id}, "label": f"cancel the {when:%H:%M} alarm"}}
+
+
+def restore_alarms() -> int:
+    """At start-up: set again every saved alarm still to come (one missed by less than 10 minutes rings now)."""
+    now, kept = dt.datetime.now(), []
+    for saved in _load_alarms():
+        when = dt.datetime.fromisoformat(saved["at"])
+        if when < now - dt.timedelta(minutes=10):
+            continue
+        kept.append(saved)
+        _start_clock(saved["id"], (when - now).total_seconds(), saved["label"], alarm=True)
+    _save_alarms(kept)
+    return len(kept)
+
+
+def cancel_timer(id: str, **_: object) -> dict:  # noqa: A002
+    clock = _clocks.pop(id, None)
+    _save_alarms([a for a in _load_alarms() if a["id"] != id])
+    if clock is None:
+        raise ActionError("that timer or alarm already rang or was cancelled")
+    clock.cancel()
+    return {"cancelled": id}
+
+
+# Do Not Disturb ----------------------------------------------------------------------------------
+# Windows 11 has no supported API for it, so this uses its own switch the way a screen reader
+# would: the "Do not disturb" button in the notification centre (Win+N), read and toggled through
+# UI Automation, then the centre is closed again.
+
+def _dnd_toggle():  # noqa: ANN202 - (UIA element, its TogglePattern, the notification centre's handle)
+    from pywinauto.uia_defines import IUIA
+
+    iuia, ids = IUIA().iuia, IUIA().UIA_dll
+    root = iuia.GetRootElement()
+    centre = iuia.CreatePropertyConditionEx(ids.UIA_NamePropertyId, "Notification", 3)  # "Notification Center", any case
+    condition = iuia.CreateAndCondition(iuia.CreatePropertyCondition(ids.UIA_NamePropertyId, "Do not disturb"),
+                                        iuia.CreatePropertyCondition(ids.UIA_IsTogglePatternAvailablePropertyId, True))
+    for _ in range(25):
+        window = root.FindFirst(ids.TreeScope_Children, centre)  # the centre's own window: a small tree to search
+        found = window.FindFirst(ids.TreeScope_Descendants, condition) if window else None
+        if found:
+            pattern = found.GetCurrentPattern(ids.UIA_TogglePatternId).QueryInterface(ids.IUIAutomationTogglePattern)
+            return found, pattern
+        time.sleep(0.1)
+    return None, None
+
+
+def dnd_state() -> bool | None:
+    """Whether Do Not Disturb is on, or None if it couldn't be read."""
+    _keystroke(VK_LWIN, VK_N)
+    try:
+        _element, pattern = _dnd_toggle()
+        return None if pattern is None else pattern.CurrentToggleState == 1
+    finally:
+        _keystroke(VK_ESCAPE)
+
+
+def do_not_disturb(on: bool = True, **_: object) -> dict:
+    _keystroke(VK_LWIN, VK_N)
+    try:
+        _element, pattern = _dnd_toggle()
+        if pattern is None:
+            raise ActionError("couldn't find Windows' Do not disturb switch; it's in the notification centre (Win+N)")
+        before = pattern.CurrentToggleState == 1
+        if before != on:
+            pattern.Toggle()
+            time.sleep(0.3)
+        now = pattern.CurrentToggleState == 1
+    finally:
+        _keystroke(VK_ESCAPE)
+    if now != on:
+        raise ActionError("Windows didn't change Do not disturb")
+    out: dict = {"do_not_disturb": now}
+    if before != now:
+        out["undo"] = {"function": "do_not_disturb", "args": {"on": before},
+                       "label": "turn Do Not Disturb " + ("on" if before else "off") + " again"}
+    return out
+
+
+# Speaking and routines ---------------------------------------------------------------------------
+
+on_say = None  # set by the app: speaks a sentence with the reply voice
+
+
+def say(text: str, **_: object) -> dict:
+    if on_say is None:
+        raise ActionError("this desktop app can't speak")
+    on_say(text)
+    return {"said": text}
+
+
+def confirm_plan(title: str, steps: list[str], **_: object) -> dict:
+    """Nothing to do by itself: the dialog that asked about the whole list was the point."""
+    return {"approved": True, "steps": len(steps)}
 
 
 # Apps --------------------------------------------------------------------------------------------
@@ -659,8 +954,11 @@ def close_app(name: str, **_: object) -> dict:
     time.sleep(3)
     still = [t for t, p, pid, _h in _windows() if pid in {pid for _t, _p, pid, _h in targets}]
     pids = {pid for _t, _p, pid, _h in targets}
-    return {"closed": targets[0][1].removesuffix(".exe"), "windows_closed": len(targets) - len(still),
-            "still_open": still or None, "running": any(psutil.pid_exists(p) for p in pids) if still else False}
+    out = {"closed": targets[0][1].removesuffix(".exe"), "windows_closed": len(targets) - len(still),
+           "still_open": still or None, "running": any(psutil.pid_exists(p) for p in pids) if still else False}
+    if len(still) < len(targets):
+        out["undo"] = {"function": "open", "args": {"target": name}, "label": f"open {name} again"}
+    return out
 
 
 # Files -------------------------------------------------------------------------------------------
@@ -679,7 +977,8 @@ def copy_file(source: str, destination: str, *, protected: list[str], **_: objec
     else:
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
-    return {"copied": str(src), "to": str(dest)}
+    return {"copied": str(src), "to": str(dest),
+            "undo": {"function": "recycle_created", "args": {"path": str(dest)}, "label": f"move the copy {dest.name} to the Recycle Bin"}}
 
 
 def create_folder(path: str, *, protected: list[str], **_: object) -> dict:
@@ -687,7 +986,10 @@ def create_folder(path: str, *, protected: list[str], **_: object) -> dict:
     _guard(folder, protected)
     existed = folder.exists()
     folder.mkdir(parents=True, exist_ok=True)
-    return {"folder": str(folder), "already_existed": existed}
+    out: dict = {"folder": str(folder), "already_existed": existed}
+    if not existed:
+        out["undo"] = {"function": "remove_empty_folder", "args": {"path": str(folder)}, "label": f"remove the new folder {folder.name}"}
+    return out
 
 
 def organize_folder(path: str, *, protected: list[str], **_: object) -> dict:
@@ -696,6 +998,7 @@ def organize_folder(path: str, *, protected: list[str], **_: object) -> dict:
     if not folder.is_dir():
         raise ActionError(f"{folder} isn't a folder")
     moved: dict[str, int] = {}
+    moves: list[list[str]] = []  # [now at, was at], for undo
     for entry in folder.iterdir():
         if not entry.is_file() or entry.name.startswith(".") or entry.suffix.lower() in (".crdownload", ".part", ".tmp", ".lnk", ".ini"):
             continue
@@ -708,7 +1011,12 @@ def organize_folder(path: str, *, protected: list[str], **_: object) -> dict:
             target, n = target_dir / f"{entry.stem} ({n}){entry.suffix}", n + 1
         shutil.move(str(entry), str(target))
         moved[kind] = moved.get(kind, 0) + 1
-    return {"folder": str(folder), "moved": moved, "files_moved": sum(moved.values())}
+        moves.append([str(target), str(entry)])
+    out: dict = {"folder": str(folder), "moved": moved, "files_moved": sum(moved.values())}
+    if moves and len(moves) <= 2000:
+        out["undo"] = {"function": "undo_moves", "args": {"moves": moves},
+                       "label": f"put the {len(moves)} sorted files back in {folder.name}"}
+    return out
 
 
 # Writing into apps -------------------------------------------------------------------------------
@@ -906,7 +1214,7 @@ def _keystroke(*keys: int) -> None:
     time.sleep(0.05)
 
 
-VK_CONTROL, VK_RETURN, VK_V, VK_A, VK_ESCAPE = 0x11, 0x0D, 0x56, 0x41, 0x1B
+VK_CONTROL, VK_RETURN, VK_V, VK_A, VK_ESCAPE, VK_LWIN, VK_N = 0x11, 0x0D, 0x56, 0x41, 0x1B, 0x5B, 0x4E
 
 
 def _paste_into_focus(text: str) -> None:
@@ -1039,9 +1347,14 @@ ACTIONS = {
     "list_apps": list_apps, "close_app": close_app, "copy_file": copy_file, "create_folder": create_folder,
     "organize_folder": organize_folder, "write_in_app": write_in_app, "read_screen": read_screen,
     "click_element": click_element, "fill_field": fill_field, "send_message": send_message,
+    "do_not_disturb": do_not_disturb, "alarm": alarm, "say": say, "confirm_plan": confirm_plan,
+    # Undo steps: the server sends these only from a record one of the actions above returned.
+    "restore_deleted": restore_deleted, "undo_moves": undo_moves, "remove_empty_folder": remove_empty_folder,
+    "recycle_created": recycle_created, "restore_backup": restore_backup, "cancel_timer": cancel_timer,
 }
 SELF_CONFIRMING = {"send_message"}  # they ask once they know exactly what they'll do
-NEEDS_PROTECTED = {"write_file", "move_file", "delete_file", "copy_file", "create_folder", "organize_folder"}
+NEEDS_PROTECTED = {"write_file", "move_file", "delete_file", "copy_file", "create_folder", "organize_folder",
+                   "restore_deleted", "undo_moves", "remove_empty_folder", "recycle_created", "restore_backup"}
 
 
 def run(function: str, args: dict, protected: list[str]) -> object:
@@ -1106,5 +1419,6 @@ def describe(function: str, args: dict) -> str:
         "write_in_app": lambda a: f"Open {a.get('app', 'notepad')} and write:\n\n{a['text'][:500]}",
         "click_element": lambda a: f"Click \u201c{a['name']}\u201d in \u201c{_window_title(a.get('window', ''))}\u201d",
         "fill_field": lambda a: f"Type into \u201c{a['name']}\u201d in \u201c{_window_title(a.get('window', ''))}\u201d:\n\n{a['text'][:300]}",
+        "confirm_plan": lambda a: "\n".join(f"\u2022 {step}" for step in a["steps"][:12]),
     }
     return shown.get(function, lambda a: f"{function}: {a}")(args)
