@@ -363,6 +363,76 @@ def test_an_allowed_action_runs_and_reports_back(tmp_path):
     assert action_id == 8 and ok and result["items"][0]["name"] == "a.txt" and app.window.asked == []
 
 
+class _Announcer:
+    """The window, speaker, listener and client an announcement touches."""
+
+    def __init__(self):
+        self.shown, self.said, self.triggered = [], [], 0
+        self.paused = False
+
+    def announce(self, title, body, button=None, on_button=None, **_):
+        self.shown.append((title, body, button))
+        self.on_button = on_button
+
+    def show(self, *args, **kwargs):
+        self.shown.append(args)
+
+    def say(self, text):
+        self.said.append(text)
+
+    def pause(self, _paused):
+        pass
+
+    def trigger(self):
+        self.triggered += 1
+
+    def transcribe(self, _wav):
+        return self.heard
+
+
+def _announcing_app(monkeypatch) -> tuple[App, _Announcer]:
+    fake = _Announcer()
+    app = App.__new__(App)
+    app.window = app.speaker = app.listener = app.client = fake
+    app.settings = type("S", (), {"speak_announcements": True, "protected": PROTECTED})()
+    app.paused, app.awaiting = False, None
+    opened = []
+    monkeypatch.setattr(actions, "open", lambda target: opened.append(target))
+    fake.opened = opened
+    return app, fake
+
+
+def test_a_meeting_heads_up_is_said_and_yes_opens_its_link(monkeypatch):
+    app, fake = _announcing_app(monkeypatch)
+    app.handle_action({"id": 3, "function": "announce", "reply": False, "args": {
+        "kind": "meeting", "title": "“Design review” starts in 10 minutes", "body": "https://meet.google.com/abc",
+        "say": "“Design review” starts in 10 minutes. Shall I open the meeting link?", "link": "https://meet.google.com/abc"}})
+    assert fake.shown[0][2] == "Open the link" and fake.said == ["“Design review” starts in 10 minutes. Shall I open the meeting link?"]
+    assert fake.triggered == 1  # listening for the answer, no wake word needed
+    fake.heard = "Yes please"
+    app.on_speech(b"wav")
+    assert fake.opened == ["https://meet.google.com/abc"]
+    fake.on_button()  # pressing the button too doesn't open it twice
+    assert fake.opened == ["https://meet.google.com/abc"]
+
+
+def test_no_to_the_offer_opens_nothing_and_isnt_sent_as_a_chat(monkeypatch):
+    app, fake = _announcing_app(monkeypatch)
+    app.announce({"kind": "meeting", "title": "Standup in 10 minutes", "say": "...", "link": "https://zoom.us/j/1"})
+    fake.heard = "no, not now"
+    app.on_speech(b"wav")
+    assert fake.opened == [] and app.awaiting is None
+
+
+def test_a_reminder_is_said_without_any_offer(monkeypatch):
+    app, fake = _announcing_app(monkeypatch)
+    app.announce({"kind": "reminder", "title": "Call mum", "say": "Reminder: Call mum."})
+    assert fake.said == ["Reminder: Call mum."] and fake.triggered == 0 and fake.shown[0][2] is None
+    app.settings.speak_announcements = False
+    app.announce({"kind": "reminder", "title": "Pay rent", "say": "Reminder: Pay rent."})
+    assert fake.said == ["Reminder: Call mum."]  # shown, not spoken
+
+
 def test_speech_is_cleaned_before_it_is_spoken():
     text = "Canberra is the capital.\nSource: https://en.wikipedia.org/wiki/Canberra\n\nCustodian check: **no** event was added."
     assert Speaker.clean(text) == "Canberra is the capital. Note: no event was added."

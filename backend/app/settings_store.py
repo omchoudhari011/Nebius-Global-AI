@@ -114,6 +114,27 @@ def update(user_id: int, **changes: Any) -> dict:
     return get(user_id)
 
 
+def internal(user_id: int, key: str) -> Any:
+    """Something Custodian keeps for itself next to your settings (when it last briefed you)."""
+    with db.connect() as conn:
+        row = conn.execute("SELECT prefs FROM user_settings WHERE user_id = ?", (user_id,)).fetchone()
+    return (json.loads(row["prefs"]) if row and row["prefs"] else {}).get(f"_{key}")
+
+
+def set_internal(user_id: int, key: str, value: Any) -> None:
+    with db.connect() as conn:
+        row = conn.execute("SELECT prefs FROM user_settings WHERE user_id = ?", (user_id,)).fetchone()
+        stored = json.loads(row["prefs"]) if row and row["prefs"] else {}
+        stored[f"_{key}"] = value
+        conn.execute(
+            """
+            INSERT INTO user_settings (user_id, prefs) VALUES (?, ?)
+            ON CONFLICT (user_id) DO UPDATE SET prefs = excluded.prefs, updated_at = datetime('now')
+            """,
+            (user_id, json.dumps(stored)),
+        )
+
+
 def in_quiet_hours(prefs: dict, now_hhmm: str) -> bool:
     """Whether `now_hhmm` ('22:15') falls in the quiet hours, which may run past midnight."""
     start, end = prefs["quiet_from"], prefs["quiet_until"]

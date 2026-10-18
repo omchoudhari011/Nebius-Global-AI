@@ -8,7 +8,9 @@ microphone listener (wake word "Hey Jarvis"), the global hotkey, and the tray ic
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
+import re
 import threading
 import time
 import webbrowser
@@ -24,6 +26,11 @@ from .voice import Listener, Speaker
 log = logging.getLogger("custodian.desktop")
 CONVERSATION_MINUTES = 15  # voice turns this close together continue the same chat
 ACTS_ON_FRONT_WINDOW = {"type_text", "press_keys", "click", "click_element", "fill_field"}
+AWAY_SECONDS = 3 * 3600  # this long without a key or mouse touch, and the next touch is "arriving"
+MORNING = range(5, 12)  # hours when arriving gets the morning briefing
+# A spoken "yes" to an offer ("Shall I open the meeting link?"), in English, Hindi or Marathi.
+AFFIRMATIVE = re.compile(r"^\W*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|please|go\s+ahead|open\s+it|do\s+it|haan?|ha|ho|hoy|ji|chalo|kholo"
+                         r"|हाँ|हां|हा|हो|होय|जी|खोलो|उघड)\b", re.IGNORECASE)
 
 
 def _foreground() -> int:
@@ -31,6 +38,26 @@ def _foreground() -> int:
         return actions.foreground()[1]
     except Exception:  # noqa: BLE001 - not on Windows (tests)
         return 0
+
+
+def idle_seconds() -> float:
+    """Seconds since the last key press or mouse move on this PC."""
+    import ctypes
+
+    class LastInput(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+
+    info = LastInput(ctypes.sizeof(LastInput), 0)
+    if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
+        return 0.0
+    return ((ctypes.windll.kernel32.GetTickCount() - info.dwTime) & 0xFFFFFFFF) / 1000
+
+
+def uptime_seconds() -> float:
+    import ctypes
+
+    ctypes.windll.kernel32.GetTickCount64.restype = ctypes.c_ulonglong
+    return ctypes.windll.kernel32.GetTickCount64() / 1000
 
 
 def _icon() -> Image.Image:
@@ -55,6 +82,7 @@ class App:
         actions.on_timer = self.timer_rang
         actions.on_say = self.say_aloud
         self.indexer = Indexer(lambda: self.client)  # search inside your files, when it's switched on
+        self.awaiting = None  # (callback, deadline) while listening for the answer to an offer
         self.paused = False
         self.stopping = threading.Event()
         self.tray = None
@@ -139,8 +167,83 @@ class App:
         """Things the server tells the app without waiting: index now, or say something."""
         if function == "index_now":
             self.indexer.index_now()
+        elif function == "announce":
+            self.announce(args)
         else:
             log.info("ignored an unknown notice from the server: %s", function)
+
+    # Speaking first ---------------------------------------------------------------------------------
+
+    def speak(self, text: str) -> None:
+        if not self.settings.speak_announcements:
+            return
+        self.listener.pause(True)  # don't hear itself
+        try:
+            self.speaker.say(text)
+        finally:
+            self.listener.pause(self.paused)
+
+    def announce(self, notice: dict) -> None:
+        """A reminder, a meeting about to start, a watcher's alert: show it, say it, and for a
+        meeting with a link, offer to open it - by button, or by saying "yes"."""
+        link = notice.get("link")
+        opened = threading.Event()
+
+        def open_link() -> None:
+            if link and not opened.is_set():
+                opened.set()
+                actions.open(link)  # you pressed the button or said yes: that's the go-ahead
+                self.window.show("Opening the meeting link", hide_after=4)
+
+        self.window.announce(notice.get("title") or "Custodian", notice.get("body"),
+                             "Open the link" if link else None, open_link if link else None)
+        self.speak(notice.get("say") or notice.get("title") or "")
+        if link and not self.paused and not opened.is_set() and self.settings.speak_announcements:
+            self.expect_reply(lambda said: open_link() if AFFIRMATIVE.search(said) else None)
+
+    def expect_reply(self, callback, seconds: float = 8) -> None:  # noqa: ANN001
+        """Listen once, without the wake word, for an answer to what was just asked."""
+        self.awaiting = (callback, time.monotonic() + seconds)
+        self.listener.trigger()
+
+    def morning_briefing(self) -> None:
+        try:
+            result = self.client.briefing()
+        except Exception as exc:  # noqa: BLE001 - the server isn't up yet: no briefing today, no harm
+            log.info("no morning briefing: %s", exc)
+            return
+        text = result.get("text")
+        if not text:
+            return
+        self.window.show("Your morning", reply=text, hide_after=45)
+        self.speak(text)
+
+    def brief_now(self) -> None:
+        try:
+            text = self.client.briefing(force=True).get("text")
+        except Exception as exc:  # noqa: BLE001
+            self.window.show("No briefing", reply=str(exc)[:200], hide_after=6)
+            return
+        if text:
+            self.window.show("Your briefing", reply=text, hide_after=45)
+            self.speak(text)
+
+    def watch_presence(self) -> None:
+        """Brief you when you arrive in the morning: the first touch of the keyboard or mouse after
+        AWAY_SECONDS away, or the first minutes after the PC starts. The server says it once a day."""
+        away = uptime_seconds() < 15 * 60
+        while not self.stopping.is_set():
+            try:
+                idle = idle_seconds()
+            except Exception:  # noqa: BLE001 - not on Windows
+                return
+            if idle >= AWAY_SECONDS:
+                away = True
+            elif away and idle < 30:
+                away = False
+                if dt.datetime.now().hour in MORNING:
+                    threading.Thread(target=self.morning_briefing, daemon=True).start()
+            self.stopping.wait(15)
 
     # Talking ------------------------------------------------------------------------------------
 
@@ -152,6 +255,13 @@ class App:
             self.window.show("Didn't catch that", hide_after=2)
 
     def on_speech(self, wav: bytes) -> None:
+        awaiting, self.awaiting = self.awaiting, None
+        if awaiting is not None and time.monotonic() < awaiting[1]:  # the answer to an offer, not a new request
+            try:
+                awaiting[0](self.client.transcribe(wav))
+            except Exception as exc:  # noqa: BLE001
+                log.info("couldn't hear the answer: %s", exc)
+            return
         try:
             self.window.show("Transcribing…")
             text = self.client.transcribe(wav)
@@ -217,6 +327,10 @@ class App:
             self.settings.speak_replies = not self.settings.speak_replies
             self.settings.save()
 
+        def toggle_announcements(_icon, _item) -> None:  # noqa: ANN001
+            self.settings.speak_announcements = not self.settings.speak_announcements
+            self.settings.save()
+
         def sign_out(_icon, _item) -> None:  # noqa: ANN001
             config.set_token(self.settings.server, None)
             self.client.token = None
@@ -226,6 +340,9 @@ class App:
             pystray.MenuItem("Talk now  (Ctrl+Alt+Space)", lambda *_: self.talk_now(), default=True),
             pystray.MenuItem("Microphone off", toggle_pause, checked=lambda _i: self.paused),
             pystray.MenuItem("Speak replies", toggle_speech, checked=lambda _i: self.settings.speak_replies),
+            pystray.MenuItem("Speak reminders and alerts", toggle_announcements,
+                             checked=lambda _i: self.settings.speak_announcements),
+            pystray.MenuItem("Brief me now", lambda *_: threading.Thread(target=self.brief_now, daemon=True).start()),
             pystray.MenuItem("Open Custodian", lambda *_: webbrowser.open(self.settings.server)),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Sign out", sign_out),
@@ -257,6 +374,7 @@ class App:
             threading.Thread(target=self.bridge, daemon=True, name="bridge").start()
             threading.Thread(target=self.listener.run, daemon=True, name="listener").start()
             threading.Thread(target=self.indexer.run, daemon=True, name="indexer").start()
+            threading.Thread(target=self.watch_presence, daemon=True, name="presence").start()
             self.start_hotkey()
             hint = "Say “Hey Jarvis” or press Ctrl+Alt+Space" if self.settings.wake_word else "Press Ctrl+Alt+Space"
             self.window.show("Custodian is ready", reply=hint, hide_after=5)

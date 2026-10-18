@@ -22,6 +22,7 @@ class Settings:
     wake_threshold: float = 0.5  # openWakeWord score that counts as the wake word
     hotkey: str = "<ctrl>+<alt>+<space>"
     speak_replies: bool = True
+    speak_announcements: bool = True  # reminders, meeting heads-ups, alerts and the morning briefing, out loud
     voice: str = "en_US-lessac-medium"  # Piper voice in APP_DIR/voices; falls back to Windows' own voice
     microphone: int | None = None  # sounddevice input index; None = the default microphone
     protected: list[str] = field(default_factory=lambda: [

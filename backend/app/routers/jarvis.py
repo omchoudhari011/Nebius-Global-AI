@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 
-from .. import activity, desktop, orchestrator, pc_index, routines, settings_store
+from .. import activity, desktop, orchestrator, pc_index, proactive, routines, settings_store, watchers
 from ..auth import require_session
 
 router = APIRouter(tags=["jarvis"])
@@ -109,6 +109,27 @@ def run_routine(routine_id: int, user_id: int = Depends(require_session)) -> dic
     if routine is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Routine not found")
     return orchestrator.handle(user_id, routine["name"])
+
+
+# Proactive -------------------------------------------------------------------------------------
+
+@router.post("/briefing")
+def morning_briefing(force: bool = False, user_id: int = Depends(require_session)) -> dict:
+    """Today's briefing to read out (the desktop app asks the first time you use the PC in the
+    morning; the app's "Brief me" button sends force=true). At most once a day otherwise."""
+    return proactive.briefing(user_id, force=force)
+
+
+@router.get("/watches")
+def list_watches(user_id: int = Depends(require_session)) -> list[dict]:
+    return watchers.list_for(user_id)
+
+
+@router.delete("/watches/{watch_id}", status_code=status.HTTP_204_NO_CONTENT)
+def stop_watch(watch_id: int, user_id: int = Depends(require_session)) -> Response:
+    if not watchers.stop(user_id, watch_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="No such watch")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # Activity and undo ---------------------------------------------------------------------------

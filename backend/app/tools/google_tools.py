@@ -60,13 +60,17 @@ def _text(value: str, limit: int = MAX_TEXT) -> str:
 
 def _event(item: dict) -> dict:
     start, end = item.get("start", {}), item.get("end", {})
-    return {
+    video = next((e.get("uri") for e in (item.get("conferenceData") or {}).get("entryPoints", []) if e.get("entryPointType") == "video"), None)
+    out = {
         "id": item.get("id"),
         "title": item.get("summary") or "(no title)",
         "start": start.get("dateTime") or start.get("date"),
         "end": end.get("dateTime") or end.get("date"),
         "location": item.get("location"),
     }
+    if item.get("hangoutLink") or video:
+        out["link"] = item.get("hangoutLink") or video  # the meeting's video link, for the heads-up before it
+    return out
 
 
 def list_events(ctx: dict, start_date: str | None = None, days: int = 1) -> dict:

@@ -64,6 +64,9 @@ from .schemas import (
     ReadPageArgs,
     RoutineNameArgs,
     SaveRoutineArgs,
+    WatchEmailArgs,
+    WatchIdArgs,
+    WatchPageArgs,
 
     WebSearchArgs,
     ToolArgs,
@@ -336,6 +339,40 @@ FUNCTIONS: tuple[ToolFunction, ...] = (
         module="app.tools.pc_files_tool",
         group="files",
         query_vector=True,
+    ),
+    ToolFunction(
+        tool="watchers",
+        function="watch_page",
+        scope="write",
+        description=("Keep an eye on a web page and tell the user when something happens: a price drops below or goes "
+                     "above a number, the page changes, or some words appear or go ('In stock'). Needs the page's link "
+                     "(find it with web_search first)."),
+        args_model=WatchPageArgs,
+        module="app.tools.watchers_tool",
+    ),
+    ToolFunction(
+        tool="watchers",
+        function="watch_email",
+        scope="write",
+        description="Tell the user when an email from someone arrives (needs Gmail connected and Gmail · read on).",
+        args_model=WatchEmailArgs,
+        module="app.tools.watchers_tool",
+    ),
+    ToolFunction(
+        tool="watchers",
+        function="list_watches",
+        scope="read",
+        description="List what Custodian is watching for the user.",
+        args_model=NoArgs,
+        module="app.tools.watchers_tool",
+    ),
+    ToolFunction(
+        tool="watchers",
+        function="stop_watch",
+        scope="write",
+        description="Stop watching something, by its id from list_watches.",
+        args_model=WatchIdArgs,
+        module="app.tools.watchers_tool",
     ),
     ToolFunction(
         tool="routines",

@@ -32,7 +32,7 @@ def test_unknown_scope(user_id, tool_ids):
 def test_skills_are_synced_once(user_id):
     names = {s["name"]: s for s in skills.list_skills()}
     assert set(names) == {"general", "calendar", "notes", "daily-summary", "reminders", "files", "email", "web", "pc",
-                          "routines"}
+                          "routines", "watchers", "morning-briefing"}
     assert all(s["version"] == 1 for s in names.values())
     assert "calendar:read" in names["daily-summary"]["tools"]
     assert "calendar:write" not in names["daily-summary"]["tools"]

@@ -38,6 +38,12 @@ class Window:
     def show(self, status: str, heard: str | None = None, reply: str | None = None, *, hide_after: float | None = None) -> None:
         self.call(self._show, status, heard, reply, hide_after)
 
+    def announce(self, title: str, body: str | None, button: str | None = None, on_button=None, *,  # noqa: ANN001
+                 hide_after: float = 25) -> None:
+        """Something Custodian says first (a reminder, a meeting about to start), with an optional
+        button - "Open the link" - that does the one thing offered."""
+        self.call(self._announce, title, body, button, on_button, hide_after)
+
     def confirm(self, title: str, details: str) -> bool:
         """Ask before a PC action; blocks the calling thread. No answer in a minute = no."""
         answer: dict = {}
@@ -83,7 +89,9 @@ class Window:
         self.heard.pack(fill="x", pady=(4, 0))
         self.reply = tk.Label(panel, text="", bg=BG, fg=FG, font=("Segoe UI", 11), anchor="w", justify="left", wraplength=380)
         self.reply.pack(fill="x", pady=(6, 0))
-        panel.bind("<Button-1>", lambda _e: panel.withdraw())
+        self.action = tk.Button(panel, text="", bg=ACCENT, fg=ON_ACCENT, relief="flat", padx=12, pady=4)  # packed when offered
+        for widget in (panel, self.status, self.heard, self.reply):
+            widget.bind("<Button-1>", lambda _e: panel.withdraw())
 
     def _place(self) -> None:
         self.panel.update_idletasks()
@@ -92,7 +100,21 @@ class Window:
         y = self.panel.winfo_screenheight() - h - 72
         self.panel.geometry(f"{w}x{h}+{x}+{y}")
 
-    def _show(self, status: str, heard: str | None, reply: str | None, hide_after: float | None) -> None:
+    def _announce(self, title: str, body: str | None, button: str | None, on_button, hide_after: float) -> None:  # noqa: ANN001
+        if button and on_button is not None:
+            def pressed() -> None:
+                self.action.pack_forget()
+                self.panel.withdraw()
+                on_button()
+
+            self.action.config(text=button, command=pressed)
+            self.action.pack(anchor="e", pady=(10, 0))
+        self._show(title, "", body or "", hide_after, keep_action=True)
+
+    def _show(self, status: str, heard: str | None, reply: str | None, hide_after: float | None, *,
+              keep_action: bool = False) -> None:
+        if not keep_action:
+            self.action.pack_forget()  # anything new replaces an offer that wasn't taken
         self.status.config(text=status)
         if heard is not None:
             self.heard.config(text=f"“{heard}”" if heard else "")

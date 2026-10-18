@@ -36,7 +36,10 @@ def _reminders_dir():  # noqa: ANN202 - a Path
     return get_settings().tool_data_dir / "reminders"
 
 
-def add(user_id: int, kind: str, title: str, body: str | None = None, ref: str | None = None, *, push: bool = True) -> int:
+def add(user_id: int, kind: str, title: str, body: str | None = None, ref: str | None = None, *, push: bool = True,
+        link: str | None = None) -> int:
+    """Store a notification, push it to the phone, and - for a reminder, a meeting about to start or
+    a watcher's alert - say it on the PC (app/proactive.py). `link` is a meeting's link to offer."""
     with db.connect() as conn:
         note_id = conn.execute(
             "INSERT INTO notifications (user_id, kind, title, body, ref) VALUES (?, ?, ?, ?, ?)",
@@ -44,6 +47,13 @@ def add(user_id: int, kind: str, title: str, body: str | None = None, ref: str |
         ).lastrowid
     if push:
         _push(kind, title, body)
+    if push and kind in ("reminder", "meeting", "watch"):
+        try:
+            from . import proactive  # here: proactive uses this module
+
+            proactive.announce(user_id, kind, title, body, link=link)
+        except Exception:  # noqa: BLE001 - saying it out loud is extra; the notification is stored
+            log.warning("couldn't announce a notification on the PC", exc_info=True)
     return note_id
 
 
@@ -52,7 +62,8 @@ def _push(kind: str, title: str, body: str | None) -> None:
     if not url:
         return
     show = os.getenv("NTFY_SHOW_TEXT", "").strip().lower() in ("1", "true", "yes")
-    generic = {"reminder": "Reminder from Custodian", "task": "Custodian finished a scheduled task"}.get(kind, "Custodian")
+    generic = {"reminder": "Reminder from Custodian", "task": "Custodian finished a scheduled task",
+               "meeting": "A meeting starts soon", "watch": "Something you asked Custodian to watch happened"}.get(kind, "Custodian")
     try:
         with httpx.Client(timeout=10, transport=_transport) as http:
             http.post(url, content=(f"{title}\n{body}" if body else title) if show else generic,

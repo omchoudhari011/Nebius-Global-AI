@@ -24,18 +24,22 @@ import json
 import logging
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from . import auth, db, memory, notifications, orchestrator, plans, privacy, tasks, usage
+from . import auth, db, memory, notifications, orchestrator, plans, privacy, proactive, tasks, usage, watchers
 
 log = logging.getLogger(__name__)
 
 PURGE_JOB_ID = "purge-expired-memories"
 REMINDERS_JOB_ID = "deliver-reminders"
+MEETINGS_JOB_ID = "meeting-heads-up"
+WATCHERS_JOB_ID = "check-watches"
+GRAPH_JOB_ID = "memory-graph"
+LEARNING_JOB_ID = "overnight-learning"
 MAX_RUNS_PER_DAY = 48
 SKIPPED = "skipped:"
 
@@ -75,6 +79,17 @@ def _purge() -> None:
     auth.purge_expired_sessions()
 
 
+def _safe(job):  # noqa: ANN001, ANN202
+    """A background job that logs its failures instead of raising them into APScheduler."""
+    def run() -> None:
+        try:
+            job()
+        except Exception:  # noqa: BLE001
+            log.exception("%s failed", getattr(job, "__name__", "a background job"))
+    run.__name__ = getattr(job, "__name__", "job")
+    return run
+
+
 def start() -> None:
     global _scheduler
     with _lock:
@@ -101,6 +116,12 @@ def start() -> None:
             next_run_time=datetime.now(timezone.utc),
             replace_existing=True,
         )
+        # Proactive (app/proactive.py, app/watchers.py): meeting heads-ups every minute, watches
+        # every five (each at its own pace).
+        for job, minutes, job_id in ((_safe(proactive.meeting_heads_up), 1, MEETINGS_JOB_ID),
+                                     (_safe(watchers.check_due), 5, WATCHERS_JOB_ID)):
+            sched.add_job(job, IntervalTrigger(minutes=minutes, timezone=timezone.utc), id=job_id,
+                          next_run_time=datetime.now(timezone.utc) + timedelta(seconds=30), replace_existing=True)
     with db.connect() as conn:
         task_ids = [r["id"] for r in conn.execute("SELECT id FROM tasks WHERE status = 'active'").fetchall()]
     for task_id in task_ids:

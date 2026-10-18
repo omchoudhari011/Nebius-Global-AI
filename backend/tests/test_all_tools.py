@@ -29,6 +29,11 @@ LOCAL = [
     ("routines_list_routines", {}, lambda r: r["routines"][0]["name"] == "Work mode"),
     ("routines_delete_routine", {"name": "work mode"}, lambda r: r["deleted"] == "work mode"),
     ("pc_search_file_contents", {"query": "rent agreement"}, lambda r: r["files"] == [] and "note" in r),
+    ("watchers_watch_page", {"url": "https://www.flipkart.com/p/123", "what": "Pixel 9", "condition": "below", "value": 50000},
+     lambda r: r["watching"]["what"] == "Pixel 9"),
+    ("watchers_watch_email", {"sender": "priya@example.com"}, lambda r: r["watching"]["what"] == "an email from priya@example.com"),
+    ("watchers_list_watches", {}, lambda r: len(r["watches"]) == 2),
+    ("watchers_stop_watch", {"id": 1}, lambda r: r["stopped"] == 1),
 ]
 # The Google functions need a connected account and Google's servers; tests/test_everyday.py
 # runs them in the sandbox against a local fake API, and the gate's handling is checked here.

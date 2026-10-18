@@ -79,6 +79,22 @@ def _page_text(html: str) -> tuple[str, str]:
     return (unescape(" ".join(title.group(1).split())) if title else ""), "\n".join(line for line in lines if len(line.split()) >= 5)
 
 
+def page_snapshot(ctx: dict, url: str) -> dict:
+    """Every line of a page's text, short ones too - prices and "In stock" are one or two words -
+    for watching a page (app/watchers.py). Not a model tool: the watcher calls it in the sandbox."""
+    if not url.lower().startswith(("http://", "https://")):
+        raise ValueError("only http and https pages can be watched")
+    body, content_type, final = _get(url, accept="text/html,text/plain;q=0.9,*/*;q=0.1")
+    charset = re.search(r"charset=([\w-]+)", content_type)
+    raw = body.decode(charset.group(1) if charset else "utf-8", "replace")
+    title = re.search(r"(?is)<title[^>]*>(.*?)</title>", raw)
+    html = re.sub(r"(?is)<(script|style|svg|noscript|head|iframe)\b.*?</\1>", " ", raw)
+    html = re.sub(r"(?i)<br\s*/?>|</(p|div|li|h[1-6]|tr|td|span|section|article|header|pre|blockquote|button|a)>", "\n", html)
+    lines = (" ".join(line.split()) for line in unescape(re.sub(r"<[^>]+>", " ", html)).splitlines())
+    return {"url": final, "title": unescape(" ".join(title.group(1).split())) if title else "",
+            "text": "\n".join(line for line in lines if line)[:40_000]}
+
+
 def read_page(ctx: dict, url: str) -> dict:
     if not url.lower().startswith(("http://", "https://")):
         raise ValueError("only http and https pages can be read")

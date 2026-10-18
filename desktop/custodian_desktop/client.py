@@ -75,6 +75,11 @@ class Client:
         self._http.post(f"/desktop/results/{action_id}", headers=self._headers(), timeout=60,
                         json={"ok": ok, "result": result, "error": error})
 
+    def briefing(self, force: bool = False) -> dict:
+        """Today's morning briefing to read out ({"text"}), or {"skipped": why} (once a day unless forced)."""
+        return self._check(self._http.post("/briefing", params={"force": "true"} if force else None,
+                                           headers=self._headers(), timeout=300)).json()
+
     def index_config(self) -> dict:
         """Whether to index the PC's files for search, which folders, and what the server has."""
         return self._check(self._http.get("/desktop/index/config", headers=self._headers(), timeout=60)).json()

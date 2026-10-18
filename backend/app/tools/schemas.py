@@ -359,3 +359,26 @@ class SaveRoutineArgs(ToolArgs):
 
 class RoutineNameArgs(ToolArgs):
     name: SafeLine = Field(min_length=1, max_length=60, description="The routine's name.")
+
+
+# Watchers -----------------------------------------------------------------------------------
+
+class WatchPageArgs(ToolArgs):
+    url: SafeLine = Field(min_length=8, max_length=2000, pattern=r"^https?://", description="The page to watch.")
+    what: SafeLine = Field(min_length=1, max_length=200, description="What it's about, e.g. 'iPhone 16 128GB price'.")
+    condition: Literal["below", "above", "changes", "appears", "disappears"] = Field(
+        description="below/above: a price or number crosses `value`; changes: anything on the page changes; "
+                    "appears/disappears: the words in `text` show up or go.")
+    value: float | None = Field(default=None, ge=0, le=1e12, description="For below/above: the number, e.g. 60000.")
+    text: SafeLine | None = Field(default=None, max_length=200, description="For appears/disappears, e.g. 'In stock'.")
+    every_minutes: int = Field(default=60, ge=15, le=1440, description="How often to check.")
+
+
+class WatchEmailArgs(ToolArgs):
+    sender: SafeLine = Field(min_length=1, max_length=200, description="Who it's from: a name or email address.")
+    subject: SafeLine | None = Field(default=None, max_length=200, description="Words the subject must have (optional).")
+    every_minutes: int = Field(default=15, ge=5, le=1440)
+
+
+class WatchIdArgs(ToolArgs):
+    id: int = Field(ge=1, description="The watch's id, from list_watches.")
