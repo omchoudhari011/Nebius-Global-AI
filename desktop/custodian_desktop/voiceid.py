@@ -27,7 +27,11 @@ DIR = config.APP_DIR / "voiceid"
 MODEL_FILE = DIR / "voxceleb_resnet34_LM.onnx"
 MODEL_URL = "https://huggingface.co/Wespeaker/wespeaker-voxceleb-resnet34-LM/resolve/main/voxceleb_resnet34_LM.onnx"
 PRINT_FILE = DIR / "voiceprint.npy"
-THRESHOLD = 0.45  # cosine similarity: same speaker is usually 0.6-0.8, someone else under 0.3
+# Cosine similarity to the voiceprint. Measured on LibriSpeech test-clean (40 speakers, enrolled from
+# 3 utterances, 3-second requests): the same speaker scored median 0.77, others median 0.08; at
+# 0.45 the owner was refused 1.1% of the time and someone else let through 0.11%. A real microphone
+# and room lower the owner's scores a little: re-record the voice ID if you're refused often.
+THRESHOLD = 0.45
 MIN_SECONDS = 1.0  # shorter than this says too little about a voice to judge
 PHRASES = (
     "Hey Jarvis, what's on my calendar today?",

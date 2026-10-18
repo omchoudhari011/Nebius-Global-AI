@@ -220,3 +220,16 @@ def test_cutting_a_reply_off_leaves_no_speech_thread_behind():
     thread.join(timeout=3)
     time.sleep(0.3)
     assert threading.active_count() <= before
+
+
+def test_filterbank_features_match_kaldis_which_the_speaker_model_was_trained_on():
+    knf = pytest.importorskip("kaldi_native_fbank")
+    t = np.arange(RATE * 2) / RATE
+    samples = (np.sin(2 * np.pi * 220 * t) * 6000 + np.random.default_rng(0).normal(0, 500, len(t))).astype(np.int16)
+    opts = knf.FbankOptions()
+    opts.frame_opts.dither, opts.frame_opts.window_type, opts.mel_opts.num_bins, opts.use_energy = 0.0, "hamming", 80, False
+    reference = knf.OnlineFbank(opts)
+    reference.accept_waveform(RATE, samples.astype(np.float32).tolist())  # WeSpeaker feeds int16-scale samples
+    reference.input_finished()
+    kaldi = np.stack([reference.get_frame(i) for i in range(reference.num_frames_ready)])
+    assert np.abs(fbank(samples) - (kaldi - kaldi.mean(axis=0))).max() < 1e-3
