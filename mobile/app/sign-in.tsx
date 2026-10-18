@@ -7,10 +7,11 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, View } f
 import { Text } from "../components/Typography";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Button, Crest, Field, GoldRule, Notice, ScreenGradient } from "../components/ui";
+import { Orb } from "../components/Orb";
+import { Button, Field, Notice, ScreenGradient } from "../components/ui";
 import { errorMessage } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { fonts, radius, space, themed, useTokens } from "../lib/tokens";
+import { fonts, radius, softShadow, space, themed, useTokens } from "../lib/tokens";
 
 const useStyles = themed((t) => ({
   page: { flexGrow: 1, justifyContent: "center", padding: space.xl, backgroundColor: "transparent" },
@@ -19,22 +20,17 @@ const useStyles = themed((t) => ({
     maxWidth: 420,
     alignSelf: "center",
     backgroundColor: t.surface,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: t.hairline,
     padding: space.xl,
-    paddingTop: 36,
+    paddingTop: 40,
     gap: space.lg,
-    shadowColor: "#000",
-    shadowOpacity: t.scheme === "dark" ? 0.45 : 0.1,
-    shadowRadius: 30,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 4,
+    ...softShadow(t, 2),
   },
-  mark: { fontSize: 12, fontWeight: "700", letterSpacing: 4, color: t.scheme === "dark" ? t.gold : t.accent2, textAlign: "center" },
-  title: { fontFamily: fonts.display, fontSize: 40, lineHeight: 46, color: t.ink, textAlign: "center" },
-  text: { fontSize: 15, color: t.inkSoft, lineHeight: 22, textAlign: "center" },
-  hint: { fontSize: 13, color: t.inkSoft },
+  title: { fontFamily: fonts.display, fontSize: 32, lineHeight: 38, color: t.ink, textAlign: "center", marginTop: space.sm },
+  text: { fontSize: 16, color: t.inkSoft, lineHeight: 23, textAlign: "center" },
+  hint: { fontSize: 13, lineHeight: 18, color: t.inkSoft },
 }));
 
 export default function SignIn() {
@@ -80,14 +76,15 @@ export default function SignIn() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={s.card}>
-          <View style={{ gap: space.md, alignItems: "center" }}>
-            <Crest size={84} />
-            <Text style={s.mark}>CUSTODIAN</Text>
+          <View style={{ gap: space.sm, alignItems: "center" }}>
+            <Orb size={88} mood={busy ? "thinking" : "idle"} />
             <Text accessibilityRole="header" style={s.title}>
               Welcome back
             </Text>
-            <GoldRule style={{ alignSelf: "stretch" }} />
-            <Text style={s.text}>Your private steward. It remembers what you tell it, and uses your tools and your PC only with your permission.</Text>
+            <Text style={s.text}>
+              It's good to see you. Everything you tell me stays on your own server, and I only use your tools and your PC
+              when you say so.
+            </Text>
           </View>
 
           {error || startupError ? <Notice message={error ?? startupError ?? ""} /> : null}
@@ -122,7 +119,7 @@ export default function SignIn() {
             autoFocus={!native}
           />
           <Button label="Sign in" onPress={submit} loading={busy} disabled={!passcode} />
-          <Text style={s.hint}>The passcode is set on the server as CUSTODIAN_PASSCODE.</Text>
+          <Text style={[s.hint, { textAlign: "center" }]}>Forgot it? It's CUSTODIAN_PASSCODE in the server's settings.</Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

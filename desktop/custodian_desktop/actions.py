@@ -228,6 +228,26 @@ def _start_menu_shortcut(name: str) -> Path | None:
     return best
 
 
+KNOWN_FOLDERS = {"downloads": "Downloads", "download": "Downloads", "documents": "Documents", "docs": "Documents",
+                 "desktop": "Desktop", "pictures": "Pictures", "photos": "Pictures", "music": "Music", "videos": "Videos",
+                 "home": "", "user folder": ""}
+
+
+def known_folder(name: str) -> Path | None:
+    """'downloads', 'my pcs download folder', 'the documents folder' -> that folder in the home
+    directory (or its OneDrive copy, where Windows has moved it). None for anything else."""
+    words = re.sub(r"\b(my|the|pc'?s|pcs|computer'?s|laptop'?s|folder|directory)\b", " ", name.lower())
+    key = " ".join(words.split())
+    if key not in KNOWN_FOLDERS:
+        return None
+    home = Path.home()
+    sub = KNOWN_FOLDERS[key]
+    for candidate in (home / sub, home / "OneDrive" / sub):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
 def open(target: str, **_: object) -> dict:  # noqa: A001 - the action's name
     target = target.strip()
     domain = re.fullmatch(r"[\w-]+(?:\.[\w-]+)*\.([a-z]{2,})(?:/\S*)?", target.lower())
@@ -241,6 +261,10 @@ def open(target: str, **_: object) -> dict:  # noqa: A001 - the action's name
         os.startfile(str(path))  # noqa: S606 - the user asked to open it
         return {"opened": str(path), "kind": "folder" if path.is_dir() else "file"}
     name = target.lower().removesuffix(".exe")
+    folder = known_folder(name)
+    if folder is not None:  # "Downloads", "my documents folder": the folder, not an app called that
+        os.startfile(str(folder))  # noqa: S606
+        return {"opened": str(folder), "kind": "folder"}
     page = name.removesuffix(" settings").removeprefix("the ").strip()
     if name.endswith(" settings") and page.replace("-", "").replace(" ", "") in SETTINGS_PAGES:  # "sound settings"
         os.startfile(f"ms-settings:{SETTINGS_PAGES[page.replace('-', '').replace(' ', '')]}")  # noqa: S606
@@ -952,6 +976,13 @@ def _open_chat(ui: _Uia, contact: str) -> str | None:
         return _composer_chat(ui)  # already open
     # While it holds a search, the box loses its name; the message box always has one.
     search = ui.first("Search or start a new chat", "Edit") or ui.first("", "Edit")
+    if not search:  # WhatsApp is showing Status, Calls or Settings: close any popup, go back to Chats
+        _keystroke(VK_ESCAPE)
+        chats = ui.first("Chats", "Button")
+        if chats is not None:
+            ui.press(chats)
+        time.sleep(0.8)
+        search = ui.first("Search or start a new chat", "Edit") or ui.first("", "Edit")
     if not search:
         raise ActionError("couldn't find WhatsApp's search box (is WhatsApp signed in?)")
     ui.set_value(search, contact)

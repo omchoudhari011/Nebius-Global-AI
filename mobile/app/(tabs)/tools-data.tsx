@@ -241,9 +241,15 @@ export default function ToolsDataScreen() {
         <SectionTitle title="Your PC" hint="The Custodian desktop app lets Custodian open apps, control media and volume, and work with files on your Windows PC - only with PC · read and PC · write on, and anything risky asks you on the PC first." />
         <Card>
           {pc?.connected ? (
-            <Text style={s.toolName}>Connected: {pc.device ?? "your PC"}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: t.success }} />
+              <Text style={[s.toolName, { flex: 1 }]}>I'm connected to your PC ({pc.device ?? "this computer"})</Text>
+            </View>
           ) : (
-            <Text style={s.meta}>Not connected. On your PC, run desktop\run-desktop.ps1 and sign in; say “Hey Jarvis” or press Ctrl+Alt+Space to talk.</Text>
+            <Text style={s.meta}>
+              I can't reach your PC right now. Start the Custodian desktop app (desktop\run-desktop.ps1), then say “Hey Jarvis” or
+              press Ctrl+Alt+Space to talk to me.
+            </Text>
           )}
         </Card>
 

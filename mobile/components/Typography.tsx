@@ -1,6 +1,6 @@
-// Text and TextInput in the app's typeface. Custom fonts on Android ignore `fontWeight`, so a
-// weight is turned into the matching Inter file; a style that names its own font (an icon, a
-// Cormorant heading) is left alone.
+// Text and TextInput in the app's typeface (Nunito). Custom fonts on Android ignore
+// `fontWeight`, so a weight is turned into the matching Nunito file; a style that names its
+// own font (an icon) is left alone.
 
 import { forwardRef } from "react";
 import {
@@ -15,7 +15,7 @@ import {
 import { fonts } from "../lib/tokens";
 
 const BY_WEIGHT: Record<string, string> = {
-  "700": fonts.bodyBold, bold: fonts.bodyBold, "800": fonts.bodyBold, "900": fonts.bodyBold,
+  "900": fonts.bodyExtraBold, "800": fonts.bodyExtraBold, "700": fonts.bodyBold, bold: fonts.bodyBold,
   "600": fonts.bodySemibold, "500": fonts.bodyMedium,
 };
 

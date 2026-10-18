@@ -208,6 +208,11 @@ def match(message: str | None) -> Intent | None:
     if m and m.group(1) not in ("music", "the music", "it", "something", "a song", "some music", "songs", "again", "that"):
         args = {"query": m.group(1)} | ({"service": "spotify"} if m.group(2) == "spotify" else {})
         return Intent("pc_play", args, _play_reply)
+    m = re.fullmatch(r"(?:open|show\s+me|go\s+to)\s+(?:my\s+|the\s+)?(?:pc'?s\s+|pcs\s+|computer'?s\s+|laptop'?s\s+)?"
+                     r"(downloads?|documents|desktop|pictures|photos|music|videos)(?:\s+folder)?", text)
+    if m:  # the folder, not an app called "Downloads" (the desktop app knows where each one is)
+        folder = {"download": "downloads", "photos": "pictures"}.get(m.group(1), m.group(1))
+        return Intent("pc_open", {"target": folder}, lambda r, f=folder: f"Opened your {f.capitalize()} folder.")
     m = re.fullmatch(r"(?:open|launch|start|fire\s+up|bring\s+up)\s+(?:the\s+|my\s+)?(.+?)(?:\s+app)?", text)
     if m:
         target = m.group(1)

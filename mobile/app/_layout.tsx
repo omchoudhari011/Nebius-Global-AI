@@ -2,11 +2,12 @@
 // app/(tabs)/_layout.tsx sends signed-out users to app/sign-in.tsx.
 
 import {
-  CormorantGaramond_500Medium_Italic,
-  CormorantGaramond_600SemiBold,
-  CormorantGaramond_700Bold,
-} from "@expo-google-fonts/cormorant-garamond";
-import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from "@expo-google-fonts/inter";
+  Nunito_400Regular,
+  Nunito_500Medium,
+  Nunito_600SemiBold,
+  Nunito_700Bold,
+  Nunito_800ExtraBold,
+} from "@expo-google-fonts/nunito";
 import { useFonts } from "expo-font";
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -20,8 +21,7 @@ import { useTokens } from "../lib/tokens";
 export default function RootLayout() {
   const t = useTokens();
   const [fontsReady, fontError] = useFonts({
-    CormorantGaramond_500Medium_Italic, CormorantGaramond_600SemiBold, CormorantGaramond_700Bold,
-    Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold,
+    Nunito_400Regular, Nunito_500Medium, Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold,
   });
   const navTheme = useMemo(() => {
     const base = t.scheme === "dark" ? DarkTheme : DefaultTheme;

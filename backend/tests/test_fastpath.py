@@ -47,6 +47,9 @@ from app.model_backends.base import ModelBackend
         ("switch to chrome", "pc_focus_window", {"title": "chrome"}),
         ("bring up the calculator", "pc_open", {"target": "calculator"}),
         ("open youtube and play kalyani", "pc_play", {"query": "kalyani"}),
+        ("open my pcs download folder", "pc_open", {"target": "downloads"}),
+        ("show me my documents folder", "pc_open", {"target": "documents"}),
+        ("open desktop", "pc_open", {"target": "desktop"}),
     ],
 )
 def test_exact_everyday_commands_are_recognised(said, function, args):

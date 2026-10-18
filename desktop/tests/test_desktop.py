@@ -193,6 +193,20 @@ def test_the_mouse_in_a_corner_stops_an_action_with_a_clear_message(monkeypatch)
         actions.run("press_keys", {"keys": "enter"}, PROTECTED)
 
 
+def test_folder_names_open_the_folder_not_an_app(monkeypatch, tmp_path):
+    (tmp_path / "Downloads").mkdir()
+    (tmp_path / "OneDrive" / "Documents").mkdir(parents=True)
+    monkeypatch.setattr(actions.Path, "home", staticmethod(lambda: tmp_path))
+    assert actions.known_folder("Downloads") == tmp_path / "Downloads"
+    assert actions.known_folder("my pcs download folder") == tmp_path / "Downloads"
+    assert actions.known_folder("the documents folder") == tmp_path / "OneDrive" / "Documents"  # moved by OneDrive
+    assert actions.known_folder("notepad") is None and actions.known_folder("downloads manager") is None
+    opened = []
+    monkeypatch.setattr(actions.os, "startfile", lambda p: opened.append(p), raising=False)
+    assert actions.run("open", {"target": "Downloads"}, PROTECTED) == {"opened": str(tmp_path / "Downloads"), "kind": "folder"}
+    assert opened == [str(tmp_path / "Downloads")]
+
+
 def test_unknown_actions_and_keys_are_refused():
     with pytest.raises(actions.ActionError, match="doesn't know"):
         actions.run("format_disk", {}, PROTECTED)
@@ -273,6 +287,38 @@ def test_silence_after_the_wake_word_records_nothing():
     for _ in range(100):
         frames.put(np.zeros(FRAME, dtype=np.int16))
     assert listener._record(frames, floor=100.0) is None and states[-1] == "didn't catch that"
+
+
+def test_enter_denies_and_allow_cannot_be_reached_by_keyboard_or_a_stray_click():
+    import threading
+
+    from custodian_desktop import ui
+
+    window = ui.Window(on_quit=lambda: None)
+    answers, seen = [], {}
+
+    def widgets(root):
+        for child in root.winfo_children():
+            yield child
+            yield from widgets(child)
+
+    def poke():
+        dialogs = [w for w in widgets(window.root) if isinstance(w, ui.tk.Toplevel) and w.title() == "Custodian wants to…"]
+        if not dialogs:
+            window.root.after(100, poke)
+            return
+        allow = next(w for w in widgets(dialogs[0]) if isinstance(w, ui.tk.Button) and w.cget("text") == "Allow once")
+        seen.update(state=str(allow.cget("state")), takefocus=str(allow.cget("takefocus")))
+        dialogs[0].event_generate("<Return>")  # a stray Enter
+
+    worker = threading.Thread(target=lambda: (answers.append(window.confirm("Close a window", "details")), window.quit()))
+    worker.start()
+    window.root.after(200, poke)
+    window.mainloop()
+    worker.join(timeout=10)
+    window.root.destroy()
+    assert answers == [False]
+    assert seen == {"state": "disabled", "takefocus": "0"}  # not yet clickable, never focusable
 
 
 def test_the_real_dialog_denies_when_nobody_answers(monkeypatch):

@@ -6,7 +6,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Switch, View, type TextInputProps } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { fonts, radius, space, themed, useTokens, type Tokens } from "../lib/tokens";
+import { fonts, radius, softShadow, space, themed, useTokens, type Tokens } from "../lib/tokens";
+import { Orb, type OrbMood } from "./Orb";
 import { Text, TextInput } from "./Typography";
 import type { TaskRunStatus, ToolStatus } from "../lib/types";
 
@@ -38,22 +39,22 @@ export function statusTone(status: ToolStatus | TaskRunStatus | string): Tone {
 
 const useButtonStyles = themed((t) => ({
   base: {
-    minHeight: 44,
-    paddingHorizontal: space.lg,
-    borderRadius: radius.md,
+    minHeight: 46,
+    paddingHorizontal: space.xl,
+    borderRadius: radius.pill,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: space.sm,
   },
-  compact: { minHeight: 34, paddingHorizontal: space.md },
-  primary: { backgroundColor: t.accent, borderWidth: 1, borderColor: t.scheme === "dark" ? "#e6c97f" : t.accent },
-  secondary: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.hairline },
+  compact: { minHeight: 36, paddingHorizontal: space.lg },
+  primary: { backgroundColor: t.accent, ...softShadow(t) },
+  secondary: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
   danger: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.danger },
   ghost: { backgroundColor: "transparent" },
-  label: { fontSize: 15, fontWeight: "600", letterSpacing: 0.3 },
-  labelCompact: { fontSize: 13 },
-  pressed: { opacity: 0.75 },
+  label: { fontSize: 15, fontWeight: "700" },
+  labelCompact: { fontSize: 14 },
+  pressed: { opacity: 0.8, transform: [{ scale: 0.98 }] },
   disabled: { opacity: 0.5 },
 }));
 
@@ -112,9 +113,9 @@ export function ToggleSwitch({
       value={value}
       disabled={disabled}
       onValueChange={onValueChange}
-      trackColor={{ false: t.scheme === "dark" ? "#4a5163" : t.border, true: t.accent }}
+      trackColor={{ false: t.scheme === "dark" ? "#5A4D44" : t.border, true: t.accent }}
       thumbColor="#ffffff"
-      ios_backgroundColor={t.scheme === "dark" ? "#4a5163" : t.border}
+      ios_backgroundColor={t.scheme === "dark" ? "#5A4D44" : t.border}
       {...webOnly}
     />
   );
@@ -139,9 +140,9 @@ export function Chip({ label, tone = "neutral", icon }: { label: string; tone?: 
   const t = useTokens();
   const { fg, bg } = toneColors(t, tone);
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: bg, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3, alignSelf: "flex-start" }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: bg, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4, alignSelf: "flex-start" }}>
       {icon ? <Ionicons name={icon} size={12} color={fg} /> : null}
-      <Text style={{ color: fg, fontSize: 12, fontWeight: "600" }}>{label}</Text>
+      <Text style={{ color: fg, fontSize: 12, fontWeight: "700" }}>{label}</Text>
     </View>
   );
 }
@@ -154,14 +155,10 @@ const useCardStyles = themed((t) => ({
     borderColor: t.hairline,
     padding: space.lg,
     gap: space.md,
-    shadowColor: "#000",
-    shadowOpacity: t.scheme === "dark" ? 0.35 : 0.08,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
+    ...softShadow(t),
   },
-  title: { fontSize: 12, fontWeight: "700", letterSpacing: 1.8, textTransform: "uppercase", color: t.scheme === "dark" ? t.gold : t.accent2 },
-  sectionHint: { fontSize: 13, color: t.inkSoft, marginTop: -space.sm },
+  title: { fontSize: 18, fontWeight: "800", color: t.ink },
+  sectionHint: { fontSize: 14, lineHeight: 20, color: t.inkSoft, marginTop: -space.xs },
 }));
 
 export function Card({ children }: { children: ReactNode }) {
@@ -185,10 +182,10 @@ export function SectionTitle({ title, hint, right }: { title: string; hint?: str
 }
 
 const useHeaderStyles = themed((t) => ({
-  wrap: { backgroundColor: "transparent", paddingHorizontal: space.lg, paddingBottom: space.md, gap: space.md },
-  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.md, minHeight: 44 },
-  title: { fontFamily: fonts.display, fontSize: 32, lineHeight: 36, color: t.ink, letterSpacing: 0.3 },
-  subtitle: { fontSize: 13, color: t.inkSoft, marginTop: 2, letterSpacing: 0.2 },
+  wrap: { backgroundColor: "transparent", paddingHorizontal: space.lg, paddingBottom: space.md },
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.md, minHeight: 48 },
+  title: { fontFamily: fonts.display, fontSize: 26, lineHeight: 32, color: t.ink },
+  subtitle: { fontSize: 14, color: t.inkSoft, marginTop: 1 },
 }));
 
 /** The theme's gradient, filling the screen it's the first child of. The screen itself keeps an
@@ -199,44 +196,16 @@ export function ScreenGradient() {
   return <LinearGradient colors={[t.bgTop, t.bgBottom]} style={StyleSheet.absoluteFill} />;
 }
 
-/** A fine gold rule that fades out at both ends. */
-export function GoldRule({ style }: { style?: object }) {
-  const t = useTokens();
-  return (
-    <LinearGradient
-      colors={["transparent", t.gold, "transparent"]}
-      start={{ x: 0, y: 0.5 }}
-      end={{ x: 1, y: 0.5 }}
-      style={[{ height: 1, opacity: t.scheme === "dark" ? 0.55 : 0.45 }, style]}
-    />
-  );
-}
-
-/** Custodian's monogram: a serif "C" in a gold ring. */
-export function Crest({ size = 40 }: { size?: number }) {
-  const t = useTokens();
-  return (
-    <LinearGradient
-      colors={t.scheme === "dark" ? ["#f0d68f", "#b8892f"] : ["#c9a24c", "#8a6418"]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={{ width: size, height: size, borderRadius: size / 2, padding: Math.max(1.5, size / 22) }}
-    >
-      <View style={{ flex: 1, borderRadius: size / 2, backgroundColor: t.surface, alignItems: "center", justifyContent: "center" }}>
-        <Text style={{ fontFamily: fonts.displayBold, fontSize: size * 0.56, lineHeight: size * 0.66, color: t.gold, marginTop: -size * 0.04 }}>C</Text>
-      </View>
-    </LinearGradient>
-  );
-}
-
-export function ScreenHeader({ title, subtitle, right, crest }: { title: string; subtitle?: ReactNode; right?: ReactNode; crest?: boolean }) {
+/** A screen's title, with Custodian's orb beside it when `orb` is set (its mood: breathing
+ * slowly, or quickly while a reply is on its way). */
+export function ScreenHeader({ title, subtitle, right, orb }: { title: string; subtitle?: ReactNode; right?: ReactNode; orb?: OrbMood }) {
   const s = useHeaderStyles();
   const insets = useSafeAreaInsets();
   return (
     <View style={[s.wrap, { paddingTop: insets.top + space.md }]}>
       <View style={s.row}>
         <View style={{ flexShrink: 1, flexDirection: "row", alignItems: "center", gap: space.md }}>
-          {crest ? <Crest size={42} /> : null}
+          {orb ? <Orb size={38} mood={orb} /> : null}
           <View style={{ flexShrink: 1 }}>
             <Text accessibilityRole="header" style={s.title}>
               {title}
@@ -246,7 +215,6 @@ export function ScreenHeader({ title, subtitle, right, crest }: { title: string;
         </View>
         {right ? <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>{right}</View> : null}
       </View>
-      <GoldRule />
     </View>
   );
 }
@@ -267,10 +235,10 @@ export function Notice({
   return (
     <View
       accessibilityRole="alert"
-      style={{ backgroundColor: bg, borderRadius: radius.md, padding: space.md, flexDirection: "row", alignItems: "center", gap: space.md }}
+      style={{ backgroundColor: bg, borderRadius: radius.md, paddingVertical: space.md, paddingHorizontal: space.lg, flexDirection: "row", alignItems: "center", gap: space.md }}
     >
       <Ionicons name={tone === "danger" ? "alert-circle-outline" : "information-circle-outline"} size={18} color={fg} />
-      <Text style={{ color: fg, flex: 1, fontSize: 14 }}>{message}</Text>
+      <Text style={{ color: fg, flex: 1, fontSize: 14, lineHeight: 20 }}>{message}</Text>
       {actionLabel && onAction ? (
         <Pressable accessibilityRole="button" onPress={onAction} hitSlop={8}>
           <Text style={{ color: fg, fontWeight: "700" }}>{actionLabel}</Text>
@@ -281,18 +249,18 @@ export function Notice({
 }
 
 const useFieldStyles = themed((t) => ({
-  label: { fontSize: 13, fontWeight: "600", color: t.inkSoft, marginBottom: 6 },
+  label: { fontSize: 14, fontWeight: "700", color: t.ink, marginBottom: 6 },
   input: {
-    minHeight: 44,
+    minHeight: 48,
     borderWidth: 1,
-    borderColor: t.hairline,
+    borderColor: t.border,
     borderRadius: radius.md,
-    paddingHorizontal: space.md,
-    paddingVertical: 10,
+    paddingHorizontal: space.lg,
+    paddingVertical: 12,
     backgroundColor: t.surface,
     color: t.ink,
     fontSize: 16,
-    outlineColor: t.gold,
+    outlineColor: t.accent,
   },
 }));
 
@@ -328,8 +296,8 @@ export function Segmented<T extends string>({
             accessibilityState={{ selected }}
             onPress={() => onChange(option.value)}
             style={{
-              paddingHorizontal: space.md,
-              minHeight: 34,
+              paddingHorizontal: space.lg,
+              minHeight: 38,
               justifyContent: "center",
               borderRadius: radius.pill,
               borderWidth: 1,
@@ -337,7 +305,7 @@ export function Segmented<T extends string>({
               backgroundColor: selected ? t.accent : t.surface,
             }}
           >
-            <Text style={{ color: selected ? t.onAccent : t.ink, fontSize: 13, fontWeight: "600" }}>{option.label}</Text>
+            <Text style={{ color: selected ? t.onAccent : t.ink, fontSize: 14, fontWeight: "700" }}>{option.label}</Text>
           </Pressable>
         );
       })}

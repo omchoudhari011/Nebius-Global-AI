@@ -17,57 +17,54 @@ import { InboxButton } from "../../components/Inbox";
 import { StatusPill } from "../../components/StatusPill";
 import { Button, IconButton, Notice, ScreenGradient, ScreenHeader } from "../../components/ui";
 import { VoiceButton } from "../../components/VoiceButton";
+import { Welcome } from "../../components/Welcome";
 import * as api from "../../lib/api";
 import { useInbox } from "../../lib/inbox";
 import { pickFile } from "../../lib/media";
-import { radius, space, themed, useTokens } from "../../lib/tokens";
-import type { DocumentFile, Feedback, Used } from "../../lib/types";
+import { radius, softShadow, space, themed, useTokens } from "../../lib/tokens";
+import type { DocumentFile, Feedback, Memory, Used } from "../../lib/types";
 
 const MAX_LENGTH = 8000;
 
 const useStyles = themed((t) => ({
   screen: { flex: 1, backgroundColor: t.bg },
   body: { flex: 1 },
-  composer: {
+  composer: { paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.lg },
+  composerCard: {
     flexDirection: "row",
     alignItems: "flex-end",
-    gap: space.sm,
-    paddingHorizontal: space.lg,
-    paddingVertical: space.md,
-    backgroundColor: "transparent",
-    borderTopWidth: 1,
-    borderTopColor: t.hairline,
+    gap: 2,
+    backgroundColor: t.surface,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: t.hairline,
+    padding: 6,
+    ...softShadow(t, 2),
   },
   input: {
     flex: 1,
     minHeight: 44,
     maxHeight: 140,
-    borderWidth: 1,
-    borderColor: t.hairline,
-    borderRadius: 22,
-    paddingHorizontal: space.lg,
+    paddingHorizontal: space.sm,
     paddingTop: 11,
     paddingBottom: 11,
-    backgroundColor: t.surface,
     color: t.ink,
     fontSize: 16,
-    outlineColor: t.gold,
+    outlineWidth: 0, // the card around it shows focus instead
   },
-  send: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: t.accent,
-    borderWidth: 1, borderColor: t.scheme === "dark" ? "#e6c97f" : t.accent, shadowColor: t.gold, shadowOpacity: 0.35,
-    shadowRadius: 10, shadowOffset: { width: 0, height: 2 } },
-  sendDisabled: { opacity: 0.4 },
+  send: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: t.accent },
+  sendDisabled: { opacity: 0.35 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   notice: { paddingHorizontal: space.lg, paddingTop: space.sm },
-  tool: { width: 40, height: 44, alignItems: "center", justifyContent: "center" },
-  deep: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", marginLeft: space.lg,
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, borderWidth: 1, borderColor: t.border },
-  deepOn: { borderColor: t.gold, backgroundColor: t.surface2 },
-  deepText: { color: t.inkSoft, fontSize: 12, fontWeight: "600" },
+  tool: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 22 },
+  deep: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", marginLeft: space.lg + 4, marginBottom: 2,
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill, borderWidth: 1, borderColor: t.border, backgroundColor: t.surface },
+  deepOn: { borderColor: t.accent, backgroundColor: t.accentSoft },
+  deepText: { color: t.inkSoft, fontSize: 13, fontWeight: "700" },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.sm },
-  chip: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 260, paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: radius.pill, borderWidth: 1, borderColor: t.gold, backgroundColor: t.surface2 },
-  chipText: { color: t.ink, fontSize: 13, flexShrink: 1 },
+  chip: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 260, paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: radius.pill, backgroundColor: t.accentSoft },
+  chipText: { color: t.ink, fontSize: 13, fontWeight: "600", flexShrink: 1 },
 }));
 
 export default function ChatScreen() {
@@ -89,8 +86,17 @@ export default function ChatScreen() {
   const [uploading, setUploading] = useState(false);
   const [attached, setAttached] = useState<DocumentFile[]>([]);
   const [composerNotice, setComposerNotice] = useState<{ tone: "danger" | "success" | "warning"; text: string } | null>(null);
+  const [memories, setMemories] = useState<Memory[]>([]);
+  const [focused, setFocused] = useState(false); // the message box: its card shows focus in the accent colour
+  const [inputHeight, setInputHeight] = useState(44); // one line, growing with what you type (up to 140)
   const { features, refresh: refreshInbox } = useInbox();
   const router = useRouter();
+
+  // What the Welcome screen remembers about you (and your name, for the greeting).
+  const loadMemories = useCallback(() => {
+    api.getMemories().then(setMemories).catch(() => undefined);
+  }, []);
+  useEffect(loadMemories, [loadMemories]);
 
   const loadLatest = useCallback(async () => {
     setLoading(true);
@@ -148,6 +154,7 @@ export default function ChatScreen() {
         ]);
         setLastUsed(res.used);
         setDeep(false);
+        if (res.used.remembered.length) loadMemories();
         if (res.used.tools.some((tool) => tool.tool === "reminders")) void refreshInbox(); // schedule it on this phone now
       } catch (err) {
         let message = api.errorMessage(err);
@@ -161,7 +168,7 @@ export default function ChatScreen() {
         setSending(false);
       }
     },
-    [conversationId, offTheRecord, deep, refreshInbox],
+    [conversationId, offTheRecord, deep, refreshInbox, loadMemories],
   );
 
   const setFeedback = useCallback((messageId: number, feedback: Feedback | null) => {
@@ -195,6 +202,7 @@ export default function ChatScreen() {
     const text = input;
     const files = attached;
     setInput("");
+    setInputHeight(44);
     setAttached([]);
     void send(text, undefined, files);
   }
@@ -221,7 +229,7 @@ export default function ChatScreen() {
     <View style={s.screen}>
       <ScreenGradient />
       <ScreenHeader
-        crest
+        orb={sending ? "thinking" : "idle"}
         title="Custodian"
         subtitle={<StatusPill />}
         right={
@@ -244,7 +252,7 @@ export default function ChatScreen() {
               <View style={s.notice}>
                 <Notice
                   tone="accent"
-                  message="Off the record: nothing here is saved to memory or recalled in other chats, and this chat is deleted 24 hours after your last message."
+                  message="Off the record: I won't remember anything from this chat or bring it up in others, and it's deleted 24 hours after your last message."
                 />
               </View>
             ) : null}
@@ -261,8 +269,15 @@ export default function ChatScreen() {
               <ChatThread
                 items={items}
                 pending={sending}
+                empty={
+                  <Welcome
+                    memories={memories}
+                    offTheRecord={offTheRecord}
+                    onSuggestion={(text) => void send(text)}
+                    onSeeMemories={() => router.navigate("/tools-data")}
+                  />
+                }
                 onRetry={(item) => void send(item.content, item.key)}
-                onSuggestion={(text) => void send(text)}
                 onFeedback={setFeedback}
               />
             )}
@@ -299,38 +314,46 @@ export default function ChatScreen() {
               </View>
             ) : null}
             <View style={s.composer}>
-              <Pressable accessibilityRole="button" accessibilityLabel="Attach a file" style={s.tool} disabled={uploading || sending} onPress={() => void attach()}>
-                {uploading ? <ActivityIndicator size="small" color={t.accent2} /> : <Ionicons name="attach" size={24} color={t.inkSoft} />}
-              </Pressable>
-              <TextInput
-                style={s.input}
-                value={input}
-                onChangeText={setInput}
-                onFocus={() => void api.warm().catch(() => undefined)}
-                placeholder="Message Custodian…"
-                placeholderTextColor={t.inkSoft}
-                multiline
-                maxLength={MAX_LENGTH}
-                onKeyPress={onKeyPress}
-                accessibilityLabel="Message"
-              />
-              {features?.voice ? (
-                <VoiceButton
-                  disabled={sending}
-                  onText={(text) => setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))}
-                  onError={(message) => setComposerNotice({ tone: "danger", text: message })}
+              <View style={[s.composerCard, focused && { borderColor: t.accent }]}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Attach a file" style={s.tool} disabled={uploading || sending} onPress={() => void attach()}>
+                  {uploading ? <ActivityIndicator size="small" color={t.accent2} /> : <Ionicons name="add-circle-outline" size={26} color={t.inkSoft} />}
+                </Pressable>
+                <TextInput
+                  style={[s.input, { height: inputHeight }]}
+                  value={input}
+                  onChangeText={setInput}
+                  numberOfLines={1}
+                  onContentSizeChange={(e) => setInputHeight(Math.min(140, Math.max(44, Math.ceil(e.nativeEvent.contentSize.height))))}
+                  onFocus={() => {
+                    setFocused(true);
+                    void api.warm().catch(() => undefined);
+                  }}
+                  onBlur={() => setFocused(false)}
+                  placeholder={offTheRecord ? "Off the record - talk freely…" : "Talk to me…"}
+                  placeholderTextColor={t.inkSoft}
+                  multiline
+                  maxLength={MAX_LENGTH}
+                  onKeyPress={onKeyPress}
+                  accessibilityLabel="Message"
                 />
-              ) : null}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Send"
-                accessibilityState={{ disabled: !canSend }}
-                disabled={!canSend}
-                onPress={submit}
-                style={[s.send, !canSend && s.sendDisabled]}
-              >
-                {sending ? <ActivityIndicator size="small" color={t.onAccent} /> : <Ionicons name="arrow-up" size={22} color={t.onAccent} />}
-              </Pressable>
+                {features?.voice ? (
+                  <VoiceButton
+                    disabled={sending}
+                    onText={(text) => setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))}
+                    onError={(message) => setComposerNotice({ tone: "danger", text: message })}
+                  />
+                ) : null}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Send"
+                  accessibilityState={{ disabled: !canSend }}
+                  disabled={!canSend}
+                  onPress={submit}
+                  style={({ pressed }) => [s.send, !canSend && s.sendDisabled, pressed && { transform: [{ scale: 0.94 }] }]}
+                >
+                  {sending ? <ActivityIndicator size="small" color={t.onAccent} /> : <Ionicons name="arrow-up" size={22} color={t.onAccent} />}
+                </Pressable>
+              </View>
             </View>
           </View>
           {wide ? <ContextRail used={lastUsed} wide /> : null}

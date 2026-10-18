@@ -25,9 +25,11 @@ the volume down" - and speaks its replies ([Jarvis: your PC and the web](#jarvis
 - **Backend** (`backend/`): FastAPI, SQLite with FTS5, NumPy for vector search, APScheduler.
   Message text, tool arguments and results, memories and their embeddings are encrypted with
   Fernet before they are saved.
-- **App** (`mobile/`): Expo SDK 57 (React Native) for iOS, Android and the web. Dark mode is
-  midnight navy and antique gold, light mode ivory and royal blue, with Cormorant Garamond
-  headings and Inter text (every text colour meets WCAG AA).
+- **App** (`mobile/`): Expo SDK 57 (React Native) for iOS, Android and the web, designed as
+  a warm companion: it greets you by name for the time of day, shows a few things it
+  remembers about you, and has a soft orb that breathes while it listens and thinks (still
+  when the system asks for reduced motion). Light mode is cream and coral, dark mode warm
+  charcoal and amber, set in Nunito; every text colour meets WCAG AA.
 - **One Docker image** serves the API and the web app from the same origin.
 
 ```

@@ -1,5 +1,4 @@
-// Privacy notice at the top of Tools & Data. The tint is a translucent background colour,
-// not opacity on the container, so the text keeps full contrast.
+// Privacy notice at the top of Tools & Data, on the soft accent wash (full-contrast text).
 
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { View } from "react-native";
@@ -12,17 +11,18 @@ export function Banner() {
   return (
     <View
       style={{
-        backgroundColor: t.scheme === "dark" ? "rgba(79, 193, 181, 0.14)" : "rgba(31, 122, 114, 0.10)",
+        backgroundColor: t.accentSoft,
         borderRadius: radius.md,
-        padding: space.md,
+        paddingVertical: space.md,
+        paddingHorizontal: space.lg,
         flexDirection: "row",
         gap: space.sm,
         alignItems: "center",
       }}
     >
-      <Ionicons name="shield-checkmark-outline" size={18} color={t.accent2} />
-      <Text style={{ color: t.ink, fontSize: 14, flex: 1 }}>
-        Nothing is shared until you switch it on. Revoke anytime — the next tool call is blocked.
+      <Ionicons name="shield-checkmark" size={18} color={t.accentText} />
+      <Text style={{ color: t.ink, fontSize: 14, lineHeight: 20, flex: 1 }}>
+        I only use what you switch on here, and you can switch anything off again at any time - I'll stop straight away.
       </Text>
     </View>
   );
