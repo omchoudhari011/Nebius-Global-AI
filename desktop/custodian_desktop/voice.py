@@ -1,11 +1,18 @@
 """Listening and speaking.
 
-Listener: the microphone streams 16 kHz audio into openWakeWord on this PC; when it hears
-"Hey Jarvis" (or you press the hotkey), it records until you stop talking - about a second of
-quiet - and hands the WAV to a callback. Nothing is recorded or sent before the wake word.
+Listener: the microphone streams 16 kHz audio into openWakeWord on this PC; when it hears the
+wake word - "Hey Jarvis", or your own ("Hey Custodian": any openWakeWord model in
+%APPDATA%\\Custodian\\wakewords) - or you press the hotkey, it records until you stop talking and
+hands the WAV to a callback. Nothing is recorded or sent before the wake word.
+- Faster: the moment you pause, what you said so far is handed to `on_early` (the app starts
+  transcribing it); if you don't go on, that transcription is used and about half a second is saved.
+- Barge-in: while Custodian is speaking it still listens for the wake word (a stricter score, so
+  its own voice doesn't trigger it); saying it cuts the reply off and starts listening.
 
 Speaker: replies are spoken with a Piper voice on this PC when one is installed in
-%APPDATA%\\Custodian\\voices, otherwise with Windows' built-in voice.
+%APPDATA%\\Custodian\\voices, otherwise with Windows' built-in voice - sentence by sentence, the
+next one made while the last is playing, so it starts talking after the first sentence rather
+than after the whole reply. Hindi and Marathi (Devanagari) get the Hindi voice when it's there.
 """
 
 from __future__ import annotations
@@ -29,7 +36,10 @@ RATE = 16_000
 FRAME = 1280  # 80 ms, what openWakeWord expects
 MAX_SECONDS = 20
 SILENCE_SECONDS = 1.0
+EARLY_SILENCE = 0.45  # a pause this long starts transcribing what's been said so far
 MIN_SECONDS = 0.6
+BARGE_IN_SCORE = 0.75  # the wake word's score needed while Custodian is speaking
+DEVANAGARI = re.compile(r"[ऀ-ॿ]")
 
 
 def to_wav(samples: np.ndarray) -> bytes:
@@ -42,6 +52,11 @@ def to_wav(samples: np.ndarray) -> bytes:
     return buffer.getvalue()
 
 
+def from_wav(data: bytes) -> np.ndarray:
+    with wave.open(io.BytesIO(data), "rb") as w:
+        return np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16)
+
+
 def _beep(freq: int, ms: int) -> None:
     try:
         import winsound
@@ -51,18 +66,29 @@ def _beep(freq: int, ms: int) -> None:
         pass
 
 
-class Listener:
-    """Runs on its own thread. on_speech(wav bytes) is called after the wake word or a
-    trigger(); on_state(text) reports "listening", "recording", ... for the window."""
+def _loudness(frame: np.ndarray) -> float:
+    return float(np.sqrt(np.mean(frame.astype(np.float32) ** 2)))
 
-    def __init__(self, on_speech: Callable[[bytes], None], on_state: Callable[[str], None], *,
-                 wake_word: bool = True, threshold: float = 0.5, device: int | None = None) -> None:
+
+class Listener:
+    """Runs on its own thread. on_speech(wav bytes, early) is called after the wake word or a
+    trigger() - `early` is what on_early returned for the same words, or None; on_state(text)
+    reports "listening", "recording", ... for the window."""
+
+    def __init__(self, on_speech: Callable[..., None], on_state: Callable[[str], None], *,
+                 wake_word: bool = True, threshold: float = 0.5, device: int | None = None,
+                 wake_model: str = "hey_jarvis", on_early: Callable[[bytes], object] | None = None,
+                 barge_in: bool = True, on_barge: Callable[[], None] | None = None) -> None:
         self.on_speech, self.on_state = on_speech, on_state
         self.wake_word, self.threshold, self.device = wake_word, threshold, device
+        self.wake_model, self.on_early, self.barge_in, self.on_barge = wake_model, on_early, barge_in, on_barge
         self._triggered = threading.Event()
         self._paused = threading.Event()
+        self._speaking = threading.Event()
         self._stop = threading.Event()
         self._model = None
+        self.early = None  # what on_early returned for the last recording's words, when they're all of them
+        self._early_frames = 0
 
     def trigger(self) -> None:
         """Start recording now (the hotkey or the tray's "Talk now")."""
@@ -70,6 +96,10 @@ class Listener:
 
     def pause(self, paused: bool) -> None:
         (self._paused.set if paused else self._paused.clear)()
+
+    def speaking(self, speaking: bool) -> None:
+        """Custodian is talking: hear only the wake word (for barge-in) or the hotkey."""
+        (self._speaking.set if speaking else self._speaking.clear)()
 
     def stop(self) -> None:
         self._stop.set()
@@ -81,11 +111,23 @@ class Listener:
             from openwakeword import utils
             from openwakeword.model import Model
 
-            utils.download_models(model_names=["hey_jarvis"])
-            self._model = Model(wakeword_models=["hey_jarvis"], inference_framework="onnx")
+            path = Path(self.wake_model)
+            if path.suffix in (".onnx", ".tflite") and path.exists():  # your own wake word
+                framework = "onnx" if path.suffix == ".onnx" else "tflite"
+                self._model = Model(wakeword_models=[str(path)], inference_framework=framework)
+            else:
+                utils.download_models(model_names=[self.wake_model])
+                self._model = Model(wakeword_models=[self.wake_model], inference_framework="onnx")
         except Exception as exc:  # noqa: BLE001 - keep working with the hotkey alone
             log.warning("wake word unavailable (%s); use the hotkey", exc)
             self.wake_word = False
+
+    def heard_wake_word(self, frame: np.ndarray, speaking: bool) -> bool:
+        if self._model is None:
+            return False
+        scores = self._model.predict(frame)
+        score = max(scores.values()) if scores else 0.0
+        return score >= (max(BARGE_IN_SCORE, self.threshold) if speaking else self.threshold)
 
     def run(self) -> None:
         import sounddevice as sd
@@ -106,23 +148,36 @@ class Listener:
                     frame = frames.get(timeout=0.5)
                 except queue.Empty:
                     continue
-                if self._paused.is_set():
-                    self._triggered.clear()
-                    continue
-                noise.append(float(np.sqrt(np.mean(frame.astype(np.float32) ** 2))))
-                heard = False
-                if self._model is not None:
-                    score = self._model.predict(frame).get("hey_jarvis", 0.0)
-                    heard = score >= self.threshold
-                if heard or self._triggered.is_set():
-                    self._triggered.clear()
-                    floor = float(np.median(noise)) if noise else 200.0
-                    audio = self._record(frames, floor)
-                    if self._model is not None:
-                        self._model.reset()
-                    if audio is not None:
-                        self.on_speech(to_wav(audio))
+                if self.step(frame, frames, noise):
                     self.on_state("listening" if self.wake_word else "ready")
+
+    def step(self, frame: np.ndarray, frames: queue.Queue, noise: deque) -> bool:
+        """One 80 ms frame: True when a recording was made (and handed on)."""
+        if self._paused.is_set():
+            self._triggered.clear()
+            return False
+        speaking = self._speaking.is_set()
+        if speaking and not self.barge_in:
+            self._triggered.clear()
+            return False
+        if not speaking:  # Custodian's own voice would raise the floor
+            noise.append(_loudness(frame))
+        heard = self.heard_wake_word(frame, speaking)
+        if not (heard or self._triggered.is_set()):
+            return False
+        self._triggered.clear()
+        if speaking and self.on_barge is not None:
+            self.on_barge()  # cut the reply off; what follows is a new request
+        floor = float(np.median(noise)) if noise else 200.0
+        audio = self._record(frames, floor)
+        if self._model is not None:
+            self._model.reset()
+        if audio is not None:
+            if self.on_early is not None:
+                self.on_speech(to_wav(audio), self.early)
+            else:
+                self.on_speech(to_wav(audio))
+        return True
 
     def _record(self, frames: queue.Queue, floor: float) -> np.ndarray | None:
         _beep(880, 120)
@@ -131,15 +186,23 @@ class Listener:
             frames.get_nowait()
         threshold = max(floor * 2.5, 350.0)
         chunks, quiet, started, spoke = [], 0.0, time.monotonic(), False
+        self.early = None
         while time.monotonic() - started < MAX_SECONDS and not self._stop.is_set():
             try:
                 frame = frames.get(timeout=1)
             except queue.Empty:
                 break
             chunks.append(frame)
-            loud = float(np.sqrt(np.mean(frame.astype(np.float32) ** 2))) > threshold
+            loud = _loudness(frame) > threshold
             spoke = spoke or loud
-            quiet = 0.0 if loud else quiet + FRAME / RATE
+            if loud:
+                quiet = 0.0
+                self.early = None  # they went on: what was transcribed early is out of date
+            else:
+                quiet += FRAME / RATE
+            if spoke and quiet >= EARLY_SILENCE and self.early is None and self.on_early is not None:
+                self.early = self.on_early(to_wav(np.concatenate(chunks)))
+                self._early_frames = len(chunks)
             if spoke and quiet >= SILENCE_SECONDS:
                 break
             if not spoke and time.monotonic() - started > 6:  # nothing said after the wake word
@@ -148,23 +211,32 @@ class Listener:
         audio = np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.int16)
         if not spoke or len(audio) < RATE * MIN_SECONDS:
             self.on_state("didn't catch that")
+            self.early = None
             return None
+        if self.early is not None:  # nothing loud since: the early words are all the words
+            audio = audio[: self._early_frames * FRAME]
         return audio
+
+
+def sentences(text: str) -> list[str]:
+    """Pieces to speak one at a time: sentences, with very short ones joined to the next."""
+    parts = [p.strip() for p in re.split(r"(?<=[.!?।])\s+|\n+", text) if p.strip()]
+    out: list[str] = []
+    for part in parts:
+        if out and len(out[-1]) < 25:
+            out[-1] = f"{out[-1]} {part}"
+        else:
+            out.append(part)
+    return out
 
 
 class Speaker:
     """Speaks one reply at a time; speaking again (or stop()) cuts the current one off."""
 
-    def __init__(self, voices_dir: Path, voice: str) -> None:
-        self._piper = None
-        model = voices_dir / f"{voice}.onnx"
-        if model.exists():
-            try:
-                from piper import PiperVoice
-
-                self._piper = PiperVoice.load(str(model))
-            except Exception as exc:  # noqa: BLE001
-                log.warning("Piper voice unavailable (%s); using the Windows voice", exc)
+    def __init__(self, voices_dir: Path, voice: str, hindi_voice: str = "hi_IN-pratham-medium") -> None:
+        self.voices_dir = voices_dir
+        self._names = {"en": voice, "hi": hindi_voice}
+        self._voices: dict[str, object] = {}
         self._lock = threading.Lock()
         self._stop = threading.Event()
 
@@ -177,6 +249,19 @@ class Speaker:
         text = text.replace("Custodian check:", "Note:")
         return " ".join(text.split())
 
+    def _piper(self, language: str):  # noqa: ANN202 - a PiperVoice, or None
+        if language not in self._voices:
+            model = self.voices_dir / f"{self._names[language]}.onnx"
+            self._voices[language] = None
+            if model.exists():
+                try:
+                    from piper import PiperVoice
+
+                    self._voices[language] = PiperVoice.load(str(model))
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("Piper voice %s unavailable (%s)", model.name, exc)
+        return self._voices[language]
+
     def say(self, text: str) -> None:
         text = self.clean(text)
         if not text:
@@ -184,32 +269,77 @@ class Speaker:
         self.stop()
         with self._lock:
             self._stop.clear()
-            if self._piper is not None:
-                self._say_piper(text)
+            language = "hi" if DEVANAGARI.search(text) else "en"
+            voice = self._piper(language)
+            if voice is not None:
+                self._say_piper(voice, sentences(text))
             else:
-                self._say_windows(text)
+                self._say_windows(sentences(text), language)
 
-    def _say_piper(self, text: str) -> None:
-        import sounddevice as sd
-
+    def _synthesize(self, voice, text: str) -> tuple[np.ndarray, int]:  # noqa: ANN001
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as w:
-            self._piper.synthesize_wav(text, w)
+            voice.synthesize_wav(text, w)
         buffer.seek(0)
         with wave.open(buffer, "rb") as w:
-            rate = w.getframerate()
-            audio = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16)
+            return np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16), w.getframerate()
+
+    def _play(self, audio: np.ndarray, rate: int) -> None:
+        import sounddevice as sd
+
         sd.play(audio, rate)
         while sd.get_stream().active and not self._stop.is_set():
-            time.sleep(0.05)
+            time.sleep(0.03)
         sd.stop()
 
-    def _say_windows(self, text: str) -> None:
+    def _say_piper(self, voice, parts: list[str]) -> None:  # noqa: ANN001
+        """Make the next sentence while this one plays."""
+        ready: queue.Queue = queue.Queue(maxsize=2)
+
+        def hand_over(item) -> bool:  # noqa: ANN001 - False once the reply was cut off
+            while not self._stop.is_set():
+                try:
+                    ready.put(item, timeout=0.1)
+                    return True
+                except queue.Full:
+                    continue
+            return False
+
+        def make() -> None:
+            for part in parts:
+                if self._stop.is_set():
+                    return
+                try:
+                    if not hand_over(self._synthesize(voice, part)):
+                        return
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("couldn't speak %r: %s", part[:40], exc)
+            hand_over(None)
+
+        threading.Thread(target=make, daemon=True, name="speech").start()
+        while not self._stop.is_set():
+            try:
+                item = ready.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            if item is None:
+                break
+            self._play(*item)
+
+    def _say_windows(self, parts: list[str], language: str) -> None:
         import pyttsx3
 
         engine = pyttsx3.init()
-        engine.say(text)
-        engine.runAndWait()
+        if language == "hi":  # a Hindi voice, if Windows has one (Settings > Time & language > Speech)
+            for v in engine.getProperty("voices"):
+                if "hindi" in (v.name or "").lower() or "hi" in [str(x).lower()[:2] for x in (getattr(v, "languages", None) or [])]:
+                    engine.setProperty("voice", v.id)
+                    break
+        for part in parts:
+            if self._stop.is_set():
+                break
+            engine.say(part)
+            engine.runAndWait()
 
     def stop(self) -> None:
         self._stop.set()

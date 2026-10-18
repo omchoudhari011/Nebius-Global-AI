@@ -113,3 +113,36 @@ Ollama keeps `custodian-nemotron-v1` and `-v2`; `custodian-nemotron` is v3.
 | `export_gguf.py` | container | Merge, GGUF and 4-bit quantization -> `out/custodian-nemotron-Q4_K_M.gguf` |
 | `install_ollama.py` | here | `ollama create custodian-nemotron` with the base model's template |
 | `compare.py` | here | Base vs fine-tuned -> `out/compare.md` |
+
+## Learning from the big model (distill.py)
+
+`make_dataset.py`'s conversations come from templates, so the local model learns those phrasings
+and slips on new ones. `distill.py` keeps the same synthetic world and expectations but has the
+larger model (`LARGE_MODEL_ID`, default `nvidia/nemotron-3-super-120b-a12b` on Token Factory)
+rewrite each message eight ways people really talk - Hinglish, typos, voice-transcription,
+indirect, very short, polite and long - and drops a rewrite unless every name, number, time and
+quoted text, and at least half of its other content words, survive. Each rewrite then runs through
+`orchestrator.handle()` with the larger model answering (`--replies scripted` keeps the usual
+answers instead) and is kept only if the accuracy checks pass it unchanged and it called every tool
+the scenario plans.
+
+```powershell
+$env:NEBIUS_API_KEY = "..."
+python finetune\distill.py --per-kind 16 --variants 6     # -> data\distilled.jsonl (+ distilled_valid.jsonl)
+python finetune\compare.py --valid finetune\data\distilled_valid.jsonl   # how a model copes with new phrasings
+```
+
+`train_lora.py` adds `data/distilled.jsonl` to the training set when it exists (`--no-distilled`
+leaves it out); `run_finetune.ps1 -Distill` runs it as part of the usual pipeline.
+
+## Learning overnight (nightly.py)
+
+The desktop app runs `nightly.py` between 01:00 and 06:00 when the PC is idle and plugged in and
+the server has at least three new shared ratings (`GET /learning`). It downloads them
+(`GET /learning/data`: the rated replies, and each correction as a preference pair), continues the
+adapter in `out/adapter` for one epoch on them plus `--replay` usual conversations, with DPO on the
+pairs (`train_lora.py --init-adapter --pairs`; the reference is the adapter as it was before the
+night), exports and installs it as `custodian-nemotron-next`, compares, and switches only if
+`decide()` finds nothing worse. The old model stays as `custodian-nemotron-previous` and the old
+adapter as `out/adapter-previous`. The outcome goes to `POST /learning/result`, which leaves a note
+in the app's inbox. Stopping it (coming back to the PC) leaves the ratings for the next night.

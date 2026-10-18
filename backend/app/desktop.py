@@ -28,6 +28,10 @@ CONFIRM_TIMEOUT = 120  # an action that needs your OK waits this long for an ans
 ACTION_TIMEOUT = 45
 
 
+NOT_CONNECTED = ("The Custodian desktop app isn't running on the PC, so I can't control it right now. "
+                 "Start it (desktop\\run-desktop.ps1) and ask again.")
+
+
 class DesktopUnavailable(RuntimeError):
     """No desktop app is connected; the message is safe to show."""
 
@@ -44,6 +48,7 @@ class _Pending:
     result: dict | None = None
     reply: bool = True  # False: told, not asked - nobody waits for a result (post())
     expires: float | None = None  # monotonic time after which it's dropped undelivered
+    approved: str | None = None  # "remote": you allowed it in the app or on Telegram (app/approvals.py)
 
 
 _lock = threading.Lock()
@@ -71,15 +76,13 @@ def status(user_id: int) -> dict:
     return {"connected": connected, "device": seen.get("device") if seen else None}
 
 
-def run(user_id: int, function: str, args: dict, *, confirm: bool, description: str) -> object:
+def run(user_id: int, function: str, args: dict, *, confirm: bool, description: str, approved: str | None = None) -> object:
     """Hand an action to the desktop app and wait for its result. Raises DesktopUnavailable,
-    TimeoutError, or RuntimeError with the desktop's error (including "the user declined")."""
+    TimeoutError, or RuntimeError with the desktop's error (including "the user declined").
+    `approved="remote"` says it was already allowed in the app: the PC shows that, without asking."""
     if not status(user_id)["connected"]:
-        raise DesktopUnavailable(
-            "The Custodian desktop app isn't running on the PC, so I can't control it right now. "
-            "Start it (desktop\\run-desktop.ps1) and ask again."
-        )
-    action = _Pending(next(_ids), user_id, function, args, confirm, description)
+        raise DesktopUnavailable(NOT_CONNECTED)
+    action = _Pending(next(_ids), user_id, function, args, confirm, description, approved=approved)
     with _lock:
         _pending[action.id] = action
     _queue(user_id).put(action)
@@ -130,8 +133,11 @@ def next_action(user_id: int, device: str | None, wait: float = WAIT_SECONDS) ->
         if alive and action.expires is not None and time.monotonic() > action.expires:
             continue
         if alive:
-            return {"id": action.id, "function": action.function, "args": action.args,
-                    "confirm": action.confirm, "description": action.description, "reply": action.reply}
+            out = {"id": action.id, "function": action.function, "args": action.args,
+                   "confirm": action.confirm, "description": action.description, "reply": action.reply}
+            if action.approved:
+                out["approved"] = action.approved
+            return out
 
 
 def finish(user_id: int, action_id: int, ok: bool, result: object = None, error: str | None = None) -> bool:

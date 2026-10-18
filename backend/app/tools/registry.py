@@ -56,6 +56,14 @@ from .schemas import (
     PcTimerArgs,
     PcWriteInAppArgs,
     PcSendMessageArgs,
+    PcClickOnArgs,
+    PcLookArgs,
+    PcBrowserDownloadArgs,
+    PcBrowserElementArgs,
+    PcBrowserFillArgs,
+    PcBrowserOpenArgs,
+    PcBrowserTabArgs,
+    PcBrowserTabsArgs,
     PcAlarmArgs,
     PcDndArgs,
     PcPlanArgs,
@@ -67,15 +75,26 @@ from .schemas import (
     WatchEmailArgs,
     WatchIdArgs,
     WatchPageArgs,
-
+    HomeControlArgs,
+    HomeListArgs,
+    OutlookCreateEventArgs,
+    OutlookListEventsArgs,
+    OutlookReadMailArgs,
+    OutlookSearchMailArgs,
+    SpotifyControlArgs,
+    SpotifyPlayArgs,
+    SpotifySearchArgs,
     WebSearchArgs,
     ToolArgs,
 )
 
 GOOGLE_HOSTS = ("www.googleapis.com", "gmail.googleapis.com")
+SPOTIFY_HOSTS = ("api.spotify.com",)
+MICROSOFT_HOSTS = ("graph.microsoft.com",)
 # How each tool is named to the user, in switches and in "turn on ..." messages.
 DISPLAY_NAMES = {"gcal": "Google Calendar", "gmail": "Gmail", "gdrive": "Google Drive", "documents": "Files",
-                 "web": "Web", "pc": "PC"}
+                 "web": "Web", "pc": "PC", "outlook": "Outlook",
+                 "home": "Home", "spotify": "Spotify"}
 
 
 def display_name(tool: str) -> str:
@@ -90,8 +109,9 @@ class ToolFunction:
     description: str
     args_model: type[ToolArgs]
     module: str
-    account: str | None = None  # a connected account the tool needs ("google"); the gate passes its token
-    hosts: tuple[str, ...] = ()  # the only hosts the sandbox lets this tool reach ("*": any public host)
+    account: str | None = None  # a connected account the tool needs ("google", "spotify", ...); the gate passes its token
+    hosts: tuple[str, ...] = ()  # the only hosts the sandbox lets this tool reach ("*": any public host,
+    #                              "account": the connected account's own address - Home Assistant's)
     runs_on: str = "sandbox"  # "sandbox" on the server, or "desktop": the Custodian app on your PC
     confirm: bool = False  # the desktop app asks you before doing it (changes or reveals something)
     group: str = ""  # offered only when the message is about this (see GROUPS); "" = always
@@ -319,6 +339,26 @@ FUNCTIONS: tuple[ToolFunction, ...] = (
             ("fill_field", "write", "screen", True, PcFillArgs, "Type into a text field by its name (the user confirms)."),
             ("screenshot", "read", "screen", True, NoArgs, "Take a screenshot and describe what's on the screen (the user confirms)."),
             ("click", "write", "screen", True, PcClickArgs, "Click at screen coordinates (the user confirms)."),
+            ("look", "read", "screen", True, PcLookArgs,
+             "Look at the screen and answer a question about it - 'what's on my screen?', 'what does this error say?' - "
+             "for any app or image (the user confirms)."),
+            ("click_on", "write", "screen", True, PcClickOnArgs,
+             "Click something on the screen by how it looks - 'the blue Sign in button' - when pc_read_screen doesn't "
+             "list it. It looks, clicks, then checks the screen changed (the user confirms once)."),
+            # Custodian's own browser, driven directly (desktop browser.py): reliable web tasks.
+            ("browser_open", "write", "browser", False, PcBrowserOpenArgs,
+             "Open a page in Custodian's own browser, to read it or work on it with the other pc_browser tools."),
+            ("browser_read", "read", "browser", False, PcBrowserTabArgs,
+             "Read the page in Custodian's browser: its text, and its links, buttons and fields numbered by `ref`."),
+            ("browser_click", "write", "browser", False, PcBrowserElementArgs,
+             "Click a link or button in Custodian's browser by its ref (or name) from pc_browser_read. Anything that "
+             "submits, buys, pays, sends, books or deletes asks the user first."),
+            ("browser_fill", "write", "browser", False, PcBrowserFillArgs,
+             "Type into a field (or pick in a list) in Custodian's browser by its ref or name; submit=true presses "
+             "Enter to send it (the user confirms). Never passwords."),
+            ("browser_download", "write", "browser", True, PcBrowserDownloadArgs,
+             "Download a file - a link on the page, or an address - into Downloads (the user confirms)."),
+            ("browser_tabs", "write", "browser", False, PcBrowserTabsArgs, "List, switch to or close tabs in Custodian's browser."),
             ("do_not_disturb", "write", "system", False, PcDndArgs,
              "Turn Windows' Do Not Disturb on (silence notifications) or off."),
             ("alarm", "write", "system", False, PcAlarmArgs,
@@ -399,6 +439,112 @@ FUNCTIONS: tuple[ToolFunction, ...] = (
         args_model=RoutineNameArgs,
         module="app.tools.routines_tool",
     ),
+    ToolFunction(
+        tool="spotify",
+        function="search",
+        scope="read",
+        description="Search Spotify for songs, albums, artists or playlists; returns names and spotify: links.",
+        args_model=SpotifySearchArgs,
+        module="app.tools.spotify_tool",
+        account="spotify",
+        hosts=SPOTIFY_HOSTS,
+        group="media",
+    ),
+    ToolFunction(
+        tool="spotify",
+        function="now_playing",
+        scope="read",
+        description="What's playing on Spotify right now, on which device, and at what volume.",
+        args_model=NoArgs,
+        module="app.tools.spotify_tool",
+        account="spotify",
+        hosts=SPOTIFY_HOSTS,
+        group="media",
+    ),
+    ToolFunction(
+        tool="spotify",
+        function="play",
+        scope="write",
+        description=("Play an exact song, album, artist or playlist on Spotify (wherever Spotify is open: the PC, "
+                     "phone or a speaker). Better than pc_play for Spotify when the account is connected."),
+        args_model=SpotifyPlayArgs,
+        module="app.tools.spotify_tool",
+        account="spotify",
+        hosts=SPOTIFY_HOSTS,
+        group="media",
+    ),
+    ToolFunction(
+        tool="spotify",
+        function="control",
+        scope="write",
+        description="Pause, resume, skip, go back, set the volume, or turn shuffle or repeat on or off in Spotify.",
+        args_model=SpotifyControlArgs,
+        module="app.tools.spotify_tool",
+        account="spotify",
+        hosts=SPOTIFY_HOSTS,
+        group="media",
+    ),
+    ToolFunction(
+        tool="outlook",
+        function="search_mail",
+        scope="read",
+        description="Search the user's Outlook (Microsoft 365) mail; returns sender, subject, date and a snippet.",
+        args_model=OutlookSearchMailArgs,
+        module="app.tools.outlook_tool",
+        account="microsoft",
+        hosts=MICROSOFT_HOSTS,
+    ),
+    ToolFunction(
+        tool="outlook",
+        function="read_mail",
+        scope="read",
+        description="Read one Outlook email by its id (from outlook_search_mail).",
+        args_model=OutlookReadMailArgs,
+        module="app.tools.outlook_tool",
+        account="microsoft",
+        hosts=MICROSOFT_HOSTS,
+    ),
+    ToolFunction(
+        tool="outlook",
+        function="list_events",
+        scope="read",
+        description="List events on the user's Outlook calendar for a day or a range of days.",
+        args_model=OutlookListEventsArgs,
+        module="app.tools.outlook_tool",
+        account="microsoft",
+        hosts=MICROSOFT_HOSTS,
+    ),
+    ToolFunction(
+        tool="outlook",
+        function="create_event",
+        scope="write",
+        description="Add an event to the user's Outlook calendar, optionally with a Teams meeting link.",
+        args_model=OutlookCreateEventArgs,
+        module="app.tools.outlook_tool",
+        account="microsoft",
+        hosts=MICROSOFT_HOSTS,
+    ),
+    ToolFunction(
+        tool="home",
+        function="list_devices",
+        scope="read",
+        description="List the lights, AC, fans, plugs and scenes in Home Assistant with their state and ids.",
+        args_model=HomeListArgs,
+        module="app.tools.home_tool",
+        account="homeassistant",
+        hosts=("account",),
+    ),
+    ToolFunction(
+        tool="home",
+        function="control",
+        scope="write",
+        description=("Control one device in Home Assistant by its id from home_list_devices: turn on or off, "
+                     "brightness, the AC's temperature or mode, a fan's speed, or activate a scene."),
+        args_model=HomeControlArgs,
+        module="app.tools.home_tool",
+        account="homeassistant",
+        hosts=("account",),
+    ),
 )
 
 # Which PC tools a message is offered: a small model picks better from a short list, and a
@@ -425,6 +571,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "screen": ("on my screen", "on the screen", "on screen", "read the screen", "my screen", "click", "button", "fill",
                "form", "field", "screenshot", "you see", "showing", "sign in", "log in", "submit", "tick", "check box"),
     "speak": ("out loud", "aloud", "announce", "speak", "say it", "read it out"),
+    "browser": ("browser", "web page", "webpage", "page", "website", "site", "form", "fill", "sign in", "log in", "login",
+                "download", "tab", "tabs", "order", "book", "booking", "checkout", "cart", "ticket", "tickets", "apply",
+                "register", "irctc", "amazon", "flipkart", "portal", "online", "submit"),
 }
 INTERNAL = "internal"  # never offered to the model; only Custodian's own code calls these
 

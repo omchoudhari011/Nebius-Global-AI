@@ -53,7 +53,8 @@ export function deviceTimeZone(): string {
 }
 
 // Same names as backend/app/tools/registry.py DISPLAY_NAMES.
-const TOOL_NAMES: Record<string, string> = { gcal: "Google Calendar", gmail: "Gmail", gdrive: "Google Drive", documents: "Files", pc: "PC", web: "Web" };
+const TOOL_NAMES: Record<string, string> = { gcal: "Google Calendar", gmail: "Gmail", gdrive: "Google Drive", documents: "Files", pc: "PC", web: "Web",
+  outlook: "Outlook", home: "Home", spotify: "Spotify" };
 
 export function toolLabel(tool: string, scope?: string): string {
   const name = TOOL_NAMES[tool] ?? tool.charAt(0).toUpperCase() + tool.slice(1);

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, field_validator
 
 from .. import conversations, orchestrator, usage
@@ -31,15 +31,22 @@ class ChatRequest(BaseModel):
         return value.strip()
 
 
+def origin_of(request: Request) -> str:
+    """"desktop" for the Custodian desktop app on the PC, "app" for the phone and web apps. A
+    PC action that needs an OK asks where the request came from (app/approvals.py); claiming to
+    be the desktop app only moves that question to the PC's own dialog."""
+    return "desktop" if request.headers.get("X-Custodian-Device", "").startswith("Custodian desktop") else "app"
+
+
 @router.post("/chat")
-def chat(body: ChatRequest, user_id: int = Depends(require_session)) -> dict:
+def chat(body: ChatRequest, request: Request, user_id: int = Depends(require_session)) -> dict:
     """One chat turn. Returns {reply, used, conversation_id, message_id, private}; `used`
     lists the memories recalled, tool calls made (with their gate status), the skill version,
     memories saved during the turn, and the accuracy and privacy checks on the reply."""
     usage.check_allowance(user_id)  # 402 when the plan's monthly model allowance is used up
     return orchestrator.handle(
         user_id, body.message, conversation_id=body.conversation_id, private=body.private, deep=body.deep,
-        attachments=body.document_ids,
+        attachments=body.document_ids, origin=origin_of(request),
     )
 
 

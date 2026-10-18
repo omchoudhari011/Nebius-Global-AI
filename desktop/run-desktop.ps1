@@ -6,10 +6,12 @@
 #   .\run-desktop.ps1 -BrowserAccess   let Custodian read and click web pages in Chrome and Edge
 #                                      (adds --force-renderer-accessibility to their shortcuts;
 #                                      -BrowserAccess:$false takes it out again)
+#   .\run-desktop.ps1 -Hindi     also download the Hindi voice (replies in Hindi and Marathi)
+#   .\run-desktop.ps1 -VoiceId   also download the voice ID model (tray: "Only my voice")
 #
 # Needs Python 3.11+ and a running Custodian server (..\run-local.ps1).
 
-param([switch]$Install, [switch]$Uninstall, [switch]$BrowserAccess)
+param([switch]$Install, [switch]$Uninstall, [switch]$BrowserAccess, [switch]$Hindi, [switch]$VoiceId)
 
 $ErrorActionPreference = "Stop"
 $here = $PSScriptRoot
@@ -72,6 +74,25 @@ if (-not (Test-Path $voice)) {
     Invoke-WebRequest "$base.json" -OutFile "$voice.json" -UseBasicParsing
 }
 
+# Replies in Hindi or Marathi (Devanagari) are spoken with a Hindi Piper voice when it's there.
+$hindiVoice = Join-Path $voices "hi_IN-pratham-medium.onnx"
+if ($Hindi -and -not (Test-Path $hindiVoice)) {
+    Write-Host "Downloading the Hindi voice..." -ForegroundColor Cyan
+    $base = "https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/pratham/medium/hi_IN-pratham-medium.onnx"
+    Invoke-WebRequest $base -OutFile $hindiVoice -UseBasicParsing
+    Invoke-WebRequest "$base.json" -OutFile "$hindiVoice.json" -UseBasicParsing
+}
+
+# Voice ID: a speaker-embedding model (WeSpeaker ResNet34, about 25 MB) that runs on this PC.
+$voiceIdModel = Join-Path $env:APPDATA "Custodian\voiceid\voxceleb_resnet34_LM.onnx"
+if ($VoiceId -and -not (Test-Path $voiceIdModel)) {
+    Write-Host "Downloading the voice ID model..." -ForegroundColor Cyan
+    New-Item -ItemType Directory -Force (Split-Path $voiceIdModel) | Out-Null
+    Invoke-WebRequest "https://huggingface.co/Wespeaker/wespeaker-voxceleb-resnet34-LM/resolve/main/voxceleb_resnet34_LM.onnx" `
+        -OutFile $voiceIdModel -UseBasicParsing
+    Write-Host "Now choose 'Only my voice (voice ID)' in the tray menu and say the three phrases it asks for." -ForegroundColor Green
+}
+
 if ($Install) {
     $shell = New-Object -ComObject WScript.Shell
     $link = $shell.CreateShortcut($startup)
@@ -84,4 +105,4 @@ if ($Install) {
 }
 
 Start-Process -FilePath $pythonw -ArgumentList "-m", "custodian_desktop" -WorkingDirectory $here
-Write-Host "Custodian is starting in the tray. Say 'Hey Jarvis' or press Ctrl+Alt+Space." -ForegroundColor Green
+Write-Host "Custodian is starting in the tray. Say the wake word ('Hey Jarvis' unless you set your own) or press Ctrl+Alt+Space." -ForegroundColor Green

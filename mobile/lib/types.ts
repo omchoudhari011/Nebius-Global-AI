@@ -291,6 +291,9 @@ export type Features = {
   photos: boolean;
   larger_model: string | null;
   google: boolean;
+  spotify?: boolean;
+  microsoft?: boolean;
+  telegram?: boolean;
   phone_push: boolean;
   desktop: boolean;
   unread: number;
@@ -299,7 +302,7 @@ export type Features = {
 
 export type AppNotification = {
   id: number;
-  kind: "reminder" | "task" | "system";
+  kind: "reminder" | "task" | "system" | "watch" | "meeting" | "learning";
   title: string;
   body: string | null;
   ref: string | null;
@@ -321,9 +324,69 @@ export type DocumentFile = {
 };
 
 export type Integration = {
-  provider: "google";
+  provider: "google" | "spotify" | "microsoft" | "homeassistant" | "telegram";
+  label?: string;
   configured: boolean;
   connected: boolean;
   account: string | null;
   connected_at: string | null;
+};
+
+// Jarvis: approvals, the remote, routines, what Custodian did, and its settings ----------------
+
+/** A PC action you asked for from the app or Telegram, waiting for your OK (GET /approvals). */
+export type Approval = {
+  id: number;
+  title: string;
+  details: string;
+  origin: "app" | "telegram";
+  seconds_left: number;
+};
+
+export type RemoteReply = { reply: string; conversation_id: number; desktop: boolean };
+
+export type Routine = {
+  id: number;
+  name: string;
+  phrases: string[];
+  steps: string[];
+  needs_approval: boolean;
+  created_at: string;
+  last_run_at: string | null;
+};
+
+export type Activity = {
+  id: number;
+  tool: string;
+  function: string;
+  status: string;
+  args: unknown;
+  error: string | null;
+  when: string;
+  can_undo: boolean;
+  undo: string | null;
+  undone_at: string | null;
+};
+
+export type VoiceLanguage = "auto" | "en" | "hi" | "mr";
+
+/** GET /settings/prefs: Custodian's other settings (backend/app/settings_store.py). */
+export type Prefs = {
+  announce: boolean;
+  quiet_from: string;
+  quiet_until: string;
+  briefing: boolean;
+  meeting_heads_up: number;
+  pc_index: boolean;
+  pc_index_folders: string[];
+  nightly_learning: boolean;
+  remote_approvals: boolean;
+  telegram_alerts: boolean;
+  voice_language: VoiceLanguage;
+};
+
+export type LearningStatus = {
+  enabled: boolean;
+  new_examples: number;
+  last_run: { at: string; outcome: string; summary: string } | null;
 };

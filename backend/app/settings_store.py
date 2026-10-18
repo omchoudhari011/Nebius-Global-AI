@@ -68,6 +68,8 @@ SETTINGS: dict[str, tuple[Any, Callable[[Any], Any]]] = {
     "nightly_learning": (True, _bool),
     # PC actions asked for from your phone or Telegram can be allowed there, not only on the PC.
     "remote_approvals": (True, _bool),
+    # Reminders, meeting heads-ups, watcher alerts and finished tasks also as Telegram messages, once linked.
+    "telegram_alerts": (True, _bool),
     # The language you speak to the desktop app in ("auto" lets Whisper tell).
     "voice_language": ("auto", _language),
 }

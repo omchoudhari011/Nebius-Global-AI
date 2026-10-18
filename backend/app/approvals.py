@@ -15,12 +15,18 @@ can't approve anything.
 
 from __future__ import annotations
 
+import contextvars
 import itertools
 import threading
 import time
 from dataclasses import dataclass, field
 
 WAIT_SECONDS = 120
+REMOTE_ORIGINS = ("app", "telegram")  # where a turn can come from that isn't the PC itself
+
+# Where the turn now running came from: "desktop" (the desktop app on the PC), "app" (the phone
+# or web app), "telegram", or "task" (a scheduled run). orchestrator.handle() sets it.
+origin: contextvars.ContextVar[str] = contextvars.ContextVar("custodian_origin", default="desktop")
 
 
 @dataclass
@@ -47,6 +53,10 @@ _listeners: list = []  # callables(approval): Telegram sends its buttons
 
 def on_request(callback) -> None:  # noqa: ANN001
     _listeners.append(callback)
+
+
+def listening(callback) -> bool:  # noqa: ANN001
+    return callback in _listeners
 
 
 def request(user_id: int, title: str, details: str, origin: str = "app") -> Approval:
@@ -88,6 +98,27 @@ def pending(user_id: int) -> list[dict]:
 def reset() -> None:
     with _lock:
         _pending.clear()
+    _listeners.clear()
+
+
+def remote_origin(user_id: int) -> str | None:
+    """Where to ask for an OK instead of the PC: the turn's origin when it's remote and the
+    "remote_approvals" setting is on, else None (ask on the PC)."""
+    where = origin.get()
+    if where not in REMOTE_ORIGINS:
+        return None
+    from . import settings_store
+
+    return where if settings_store.get(user_id).get("remote_approvals", True) else None
+
+
+def ask(user_id: int, function: str, args: dict, title: str, where: str) -> None:
+    """Ask in the app or on Telegram and wait. Raises PermissionError when it's declined or
+    nobody answers in time - the action then never reaches the PC."""
+    approval = request(user_id, title, describe(function, args), where)
+    if not wait(approval):
+        raise PermissionError("The user declined this in the app." if approval.allowed is False
+                              else "Nobody allowed it in time, so it wasn't done.")
 
 
 # What it's asking, in plain words (the PC's own dialog says the same, see desktop actions.describe).
@@ -110,6 +141,9 @@ _SHOWN = {
     "fill_field": lambda a: f"Type into “{a['name']}”:\n\n{a['text'][:300]}",
     "send_message": lambda a: f"Send a WhatsApp message\nTo: {a['contact']}\n\n{a['text'][:1500]}",
     "confirm_plan": lambda a: "\n".join(f"• {s}" for s in a["steps"][:12]),
+    "look": lambda a: f"Take a screenshot and have it read to answer:\n{a.get('question', '')}",
+    "click_on": lambda a: f"Look at the screen, click {a['target']}, then check it worked",
+    "browser_download": lambda a: f"Download into Downloads:\n{a.get('url') or a.get('name') or 'link ' + str(a.get('ref'))}",
 }
 
 

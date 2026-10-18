@@ -26,7 +26,11 @@ def configured() -> bool:
     return bool(os.getenv("WHISPER_URL", "").strip())
 
 
-def transcribe(audio: bytes, content_type: str) -> str:
+LANGUAGES = {"en": "English", "hi": "Hindi", "mr": "Marathi"}
+
+
+def transcribe(audio: bytes, content_type: str, language: str | None = None) -> str:
+    """`language` ("en", "hi", "mr") tells Whisper what to expect; None lets it tell by itself."""
     base = os.getenv("WHISPER_URL", "").strip().rstrip("/")
     if not base:
         raise VoiceError("Voice input needs a speech-to-text server: set WHISPER_URL (see README).")
@@ -42,7 +46,8 @@ def transcribe(audio: bytes, content_type: str) -> str:
             resp = http.post(
                 f"{base}/audio/transcriptions",
                 files={"file": (filename, audio, mime)},
-                data={"model": os.getenv("WHISPER_MODEL", "whisper-1"), "response_format": "json"},
+                data={"model": os.getenv("WHISPER_MODEL", "whisper-1"), "response_format": "json",
+                      **({"language": language} if language in LANGUAGES else {})},
                 headers={"Authorization": f"Bearer {key}"} if key else {},
             )
     except httpx.HTTPError as exc:

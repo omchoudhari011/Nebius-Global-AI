@@ -47,6 +47,12 @@ def add(user_id: int, kind: str, title: str, body: str | None = None, ref: str |
         ).lastrowid
     if push:
         _push(kind, title, body)
+        try:
+            from . import telegram  # here: telegram runs chat turns, which add notifications
+
+            telegram.notify(user_id, kind, title, body)
+        except Exception:  # noqa: BLE001 - Telegram is extra; the notification is stored
+            log.warning("couldn't forward a notification to Telegram", exc_info=True)
     if push and kind in ("reminder", "meeting", "watch"):
         try:
             from . import proactive  # here: proactive uses this module

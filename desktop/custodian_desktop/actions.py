@@ -22,6 +22,8 @@ import time
 import webbrowser
 from pathlib import Path
 
+from . import browser
+
 MAX_READ = 8000
 MAX_LIST = 40  # a long list costs the model seconds to write out; it says how many more
 SKIP_DIRS = {"AppData", "node_modules", ".git", "$Recycle.Bin", "Windows", ".venv", "venv", "__pycache__", "site-packages",
@@ -211,6 +213,58 @@ def screenshot(**_: object) -> dict:
     buffer = io.BytesIO()
     small.save(buffer, format="PNG")
     return {"path": str(path), "image_b64": base64.b64encode(buffer.getvalue()).decode()}
+
+
+_last_capture = None  # the screenshot capture() took, to compare with the one after a click
+
+
+def _shot_b64(image) -> tuple[str, int, int]:  # noqa: ANN001 - a PIL image
+    small = image.copy()
+    small.thumbnail((1280, 1280))
+    buffer = io.BytesIO()
+    small.save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode(), small.width, small.height
+
+
+def capture(purpose: str = "", **_: object) -> dict:
+    """A screenshot for the vision model to read (pc_look, pc_click_on): sent, never saved here."""
+    import pyautogui
+
+    global _last_capture
+    image = pyautogui.screenshot()
+    _last_capture = image
+    data, width, height = _shot_b64(image)
+    return {"image_b64": data, "width": width, "height": height, "window": _active_title()}
+
+
+def changed_share(before, after) -> float:  # noqa: ANN001 - PIL images
+    """How much of the screen looks different, 0 to 1, on small greyscale copies (cheap, and
+    blind to a blinking cursor)."""
+    import numpy as np
+
+    size = (160, 90)
+    a, b = (np.asarray(image.convert("L").resize(size), dtype=np.int16) for image in (before, after))
+    return float(np.mean(np.abs(a - b) > 24))
+
+
+def click_at_checked(x: int, y: int, image_width: int, image_height: int, button: str = "left", **_: object) -> dict:
+    """Click where the vision model found the target (in the screenshot's pixels), wait, and
+    capture the screen again so the server can check it worked."""
+    import pyautogui
+
+    screen_w, screen_h = pyautogui.size()
+    real_x, real_y = round(x * screen_w / image_width), round(y * screen_h / image_height)
+    if not (0 <= real_x < screen_w and 0 <= real_y < screen_h):
+        raise ActionError("that point is off the screen; nothing was clicked")
+    before = _last_capture or pyautogui.screenshot()
+    if button == "double":
+        pyautogui.doubleClick(real_x, real_y)
+    else:
+        pyautogui.click(real_x, real_y, button=button)
+    time.sleep(0.9)  # let the page or window react
+    after = pyautogui.screenshot()
+    data, _, _ = _shot_b64(after)
+    return {"clicked": [real_x, real_y], "changed": round(changed_share(before, after), 4), "image_b64": data}
 
 
 # Doing -----------------------------------------------------------------------------------------
@@ -1348,11 +1402,21 @@ ACTIONS = {
     "organize_folder": organize_folder, "write_in_app": write_in_app, "read_screen": read_screen,
     "click_element": click_element, "fill_field": fill_field, "send_message": send_message,
     "do_not_disturb": do_not_disturb, "alarm": alarm, "say": say, "confirm_plan": confirm_plan,
+    # The vision model's eyes and hands (backend app/vision.py): only after you allowed pc_look or pc_click_on.
+    "capture": capture, "click_at_checked": click_at_checked,
+    # Custodian's own browser, over the DevTools protocol (browser.py): risky clicks and sends ask first.
+    "browser_open": lambda **a: browser.browser_open(**a), "browser_read": lambda **a: browser.browser_read(**a),
+    "browser_click": lambda **a: browser.browser_click(**a, confirm_hook=confirm_hook),
+    "browser_fill": lambda **a: browser.browser_fill(**a, confirm_hook=confirm_hook),
+    "browser_download": lambda **a: browser.browser_download(**a), "browser_tabs": lambda **a: browser.browser_tabs(**a),
     # Undo steps: the server sends these only from a record one of the actions above returned.
     "restore_deleted": restore_deleted, "undo_moves": undo_moves, "remove_empty_folder": remove_empty_folder,
     "recycle_created": recycle_created, "restore_backup": restore_backup, "cancel_timer": cancel_timer,
 }
-SELF_CONFIRMING = {"send_message"}  # they ask once they know exactly what they'll do
+SELF_CONFIRMING = {"send_message", "browser_click", "browser_fill"}  # they ask once they know exactly what they'll do
+# Of those, the ones the server doesn't mark "confirm": they ask only when what they found is risky
+# (a submit or "Place order" button, Enter in a form), so following a link never asks.
+ASK_WHEN_RISKY = {"browser_click", "browser_fill"}
 NEEDS_PROTECTED = {"write_file", "move_file", "delete_file", "copy_file", "create_folder", "organize_folder",
                    "restore_deleted", "undo_moves", "remove_empty_folder", "recycle_created", "restore_backup"}
 
@@ -1420,5 +1484,9 @@ def describe(function: str, args: dict) -> str:
         "click_element": lambda a: f"Click \u201c{a['name']}\u201d in \u201c{_window_title(a.get('window', ''))}\u201d",
         "fill_field": lambda a: f"Type into \u201c{a['name']}\u201d in \u201c{_window_title(a.get('window', ''))}\u201d:\n\n{a['text'][:300]}",
         "confirm_plan": lambda a: "\n".join(f"\u2022 {step}" for step in a["steps"][:12]),
+        "browser_download": lambda a: "Download into your Downloads folder:\n"
+        + (a.get("url") or f"the link “{a.get('name') or a.get('ref')}” on the page in Custodian's browser"),
+        "capture": lambda a: (f"Look at your screen to {a['purpose']}" if a.get("purpose") else "Look at your screen")
+        + "\n\nA screenshot goes to Custodian's vision model to be read, and isn't kept.",
     }
     return shown.get(function, lambda a: f"{function}: {a}")(args)

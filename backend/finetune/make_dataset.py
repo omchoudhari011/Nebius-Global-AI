@@ -306,6 +306,9 @@ class Teacher:
         self.calls.append((messages, tools, response))
         return response
 
+    def close(self) -> None:
+        pass
+
 
 # Helpers ----------------------------------------------------------------------------------
 

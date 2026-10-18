@@ -89,5 +89,13 @@ class Client:
                                json={"files": files, "removed": removed})
         return self._check(resp).json()
 
+    def learning_status(self) -> dict:
+        """Whether tonight's learning run has something new ({"due", "new_examples", ...})."""
+        return self._check(self._http.get("/learning", headers=self._headers())).json()
+
+    def learning_result(self, outcome: str, summary: str) -> None:
+        self._check(self._http.post("/learning/result", headers=self._headers(),
+                                    json={"outcome": outcome, "summary": summary}))
+
     def close(self) -> None:
         self._http.close()

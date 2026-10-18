@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import time
@@ -29,7 +30,7 @@ from urllib.parse import urlsplit
 
 from pydantic import ValidationError
 
-from .. import db, permissions
+from .. import approvals, db, permissions
 from ..config import get_settings
 from ..crypto import decrypt, encrypt, encrypt_json
 from . import registry
@@ -103,12 +104,29 @@ class DesktopExecutor(ToolExecutor):
     back as an image and is turned into a description by the vision model, when one is set."""
 
     def run(self, request: ToolRequest, timeout: float) -> Any:
-        from .. import desktop
+        from .. import desktop, vision
 
         ctx = request.context
+        confirm, approved = bool(ctx.get("confirm")), None
         try:
+            if not desktop.status(ctx["user_id"])["connected"]:  # say so now, not after you allowed it
+                raise desktop.DesktopUnavailable(desktop.NOT_CONNECTED)
+            where = approvals.remote_origin(ctx["user_id"]) if confirm else None
+            screen = request.function in vision.SCREEN_ACTIONS  # look, click_on: with the vision model
+            if screen:
+                vision.require()  # no vision model: say what to set up, before anyone is asked to allow it
+            if where:  # asked from the phone or Telegram: allowed there, never reaching the PC otherwise
+                approvals.ask(ctx["user_id"], request.function, request.args, _title(ctx), where)
+                confirm, approved = False, "remote"
+            if screen:
+                return vision.run(ctx["user_id"], request.function, request.args, confirm=confirm, approved=approved,
+                                  description=str(ctx.get("description", "")))
             result = desktop.run(ctx["user_id"], request.function, request.args,
-                                 confirm=bool(ctx.get("confirm")), description=str(ctx.get("description", "")))
+                                 confirm=confirm, description=str(ctx.get("description", "")), approved=approved)
+        except PermissionError as exc:
+            raise ToolFailure(str(exc)) from None
+        except vision.VisionError as exc:
+            raise ToolFailure(str(exc)) from None
         except desktop.DesktopUnavailable as exc:
             raise ToolFailure(str(exc)) from None
         except TimeoutError as exc:
@@ -118,6 +136,12 @@ class DesktopExecutor(ToolExecutor):
         if isinstance(result, dict) and result.get("image_b64"):
             result = _describe_screenshot(result)
         return result
+
+
+def _title(ctx: dict) -> str:
+    """The approval's heading: the action's description, without "(the user confirms)"."""
+    text = re.split(r"\s*\(|,\s*e\.g\.|\.\s", str(ctx.get("description", "")))[0]
+    return text.strip().rstrip(".")[:120] or "Allow this on your PC?"
 
 
 def _describe_screenshot(result: dict) -> dict:
@@ -268,16 +292,24 @@ def execute(
         "timezone": settings.timezone,
     }
     timeout = settings.tool_timeout_seconds
-    if fn.account == "google":
-        from .. import google_account
+    if fn.account:
+        from .. import accounts, google_account
 
         try:
-            context["access_token"] = google_account.access_token(user_id)
-        except google_account.GoogleError as exc:
+            if fn.account == "google":
+                context["access_token"] = google_account.access_token(user_id)
+            else:
+                context["access_token"] = accounts.access_token(fn.account, user_id)
+                base = accounts.api_base(fn.account, user_id)
+                if base:
+                    context["api_base"] = base
+        except (google_account.GoogleError, accounts.AccountError) as exc:
             outcome.status, outcome.error = "denied", str(exc)
             _finish(call_id, outcome.status, error=outcome.error)
             return outcome
-        context["allow_hosts"] = list(fn.hosts)
+        # "account": the connected account's own address (Home Assistant on your network), that one only
+        context["allow_hosts"] = [urlsplit(context.get("api_base", "")).hostname or "" if h == "account" else h
+                                  for h in fn.hosts]
         timeout = max(timeout, NETWORK_TIMEOUT_SECONDS)
     elif fn.hosts:  # the web tools: the local SearXNG, or any public page
         searx = os.getenv("SEARXNG_URL", "").strip() or "http://127.0.0.1:8888"

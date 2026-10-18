@@ -11,6 +11,8 @@
 #
 #   .\finetune\run_finetune.ps1                      everything (from backend\)
 #   .\finetune\run_finetune.ps1 -SkipData            keep the current dataset
+#   .\finetune\run_finetune.ps1 -Distill             also write varied conversations with the larger model
+#                                                   (distill.py; needs NEBIUS_API_KEY; adds ~1 h)
 #
 # Run it when the PC is idle (overnight): training needs almost all of an 8 GB GPU, and a
 # chat, a video or a game at the same time pushes it into system memory and makes it many
@@ -25,6 +27,8 @@ param(
     [string]$Name = "custodian-nemotron-next",
     [string]$Current = "custodian-nemotron",
     [switch]$SkipData,
+    [switch]$Distill,
+    [int]$DistillPerKind = 16,
     [switch]$SkipCompare
 )
 
@@ -48,6 +52,9 @@ try {
         Step "1/5 Building the dataset"
         & $python finetune\make_dataset.py --per-kind $PerKind; Check "make_dataset"
         & $python finetune\from_feedback.py; Check "from_feedback"  # replies you rated and shared in the app
+        if ($Distill) {
+            & $python finetune\distill.py --per-kind $DistillPerKind; Check "distill"  # the larger model's conversations
+        }
     }
 
     Step "2/5 Training (this takes a while; the first run also downloads the base model)"
