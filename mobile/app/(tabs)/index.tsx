@@ -15,7 +15,7 @@ import { ChatThread, type ChatItem } from "../../components/ChatThread";
 import { ContextRail } from "../../components/ContextRail";
 import { InboxButton } from "../../components/Inbox";
 import { StatusPill } from "../../components/StatusPill";
-import { Button, IconButton, Notice, ScreenHeader } from "../../components/ui";
+import { Button, IconButton, Notice, ScreenGradient, ScreenHeader } from "../../components/ui";
 import { VoiceButton } from "../../components/VoiceButton";
 import * as api from "../../lib/api";
 import { useInbox } from "../../lib/inbox";
@@ -26,7 +26,7 @@ import type { DocumentFile, Feedback, Used } from "../../lib/types";
 const MAX_LENGTH = 8000;
 
 const useStyles = themed((t) => ({
-  screen: { flex: 1, backgroundColor: "transparent" },
+  screen: { flex: 1, backgroundColor: t.bg },
   body: { flex: 1 },
   composer: {
     flexDirection: "row",
@@ -219,6 +219,7 @@ export default function ChatScreen() {
 
   return (
     <View style={s.screen}>
+      <ScreenGradient />
       <ScreenHeader
         crest
         title="Custodian"

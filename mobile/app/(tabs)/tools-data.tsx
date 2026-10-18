@@ -8,7 +8,7 @@ import { Text } from "../../components/Typography";
 
 import { Banner } from "../../components/Banner";
 import { PermissionRow } from "../../components/PermissionRow";
-import { Button, Card, Chip, Field, IconButton, Notice, ScreenHeader, SectionTitle, Segmented, statusTone } from "../../components/ui";
+import { Button, Card, Chip, Field, IconButton, Notice, ScreenGradient, ScreenHeader, SectionTitle, Segmented, statusTone } from "../../components/ui";
 import * as api from "../../lib/api";
 import { confirmAction, formatWhen, toolLabel } from "../../lib/format";
 import { space, themed, useTokens } from "../../lib/tokens";
@@ -23,7 +23,7 @@ const MEMORY_TYPES: { value: MemoryType; label: string }[] = [
 const TYPE_LABEL: Record<MemoryType, string> = { semantic: "fact", preference: "preference", episodic: "event" };
 
 const useStyles = themed((t) => ({
-  screen: { flex: 1, backgroundColor: "transparent" },
+  screen: { flex: 1, backgroundColor: t.bg },
   content: { padding: space.lg, paddingTop: 0, gap: space.lg, width: "100%", maxWidth: 760, alignSelf: "center" },
   toolName: { fontSize: 17, fontWeight: "700", color: t.ink },
   divider: { height: 1, backgroundColor: t.border },
@@ -207,6 +207,7 @@ export default function ToolsDataScreen() {
 
   return (
     <View style={s.screen}>
+      <ScreenGradient />
       <ScreenHeader title="Tools & Data" subtitle="What Custodian may use, and what it knows" />
       <ScrollView
         contentContainerStyle={s.content}

@@ -6,7 +6,7 @@ import { useCallback, useState } from "react";
 import { ActivityIndicator, RefreshControl, ScrollView, View } from "react-native";
 import { Text } from "../../components/Typography";
 
-import { Button, Card, Chip, Field, Notice, ScreenHeader, SectionTitle, Segmented, ToggleSwitch, statusTone } from "../../components/ui";
+import { Button, Card, Chip, Field, Notice, ScreenGradient, ScreenHeader, SectionTitle, Segmented, ToggleSwitch, statusTone } from "../../components/ui";
 import * as api from "../../lib/api";
 import { confirmAction, describeCron, deviceTimeZone, formatWhen } from "../../lib/format";
 import { space, themed, useTokens } from "../../lib/tokens";
@@ -20,7 +20,7 @@ const PRESETS = [
 ];
 
 const useStyles = themed((t) => ({
-  screen: { flex: 1, backgroundColor: "transparent" },
+  screen: { flex: 1, backgroundColor: t.bg },
   content: { padding: space.lg, paddingTop: 0, gap: space.lg, width: "100%", maxWidth: 760, alignSelf: "center" },
   name: { fontSize: 17, fontWeight: "700", color: t.ink },
   body: { color: t.ink, fontSize: 15, lineHeight: 21 },
@@ -233,6 +233,7 @@ export default function ScheduledScreen() {
 
   return (
     <View style={s.screen}>
+      <ScreenGradient />
       <ScreenHeader
         title="Scheduled"
         subtitle="Jobs Custodian runs on its own"

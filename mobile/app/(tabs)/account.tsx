@@ -6,7 +6,7 @@ import { useCallback, useState } from "react";
 import { ActivityIndicator, Linking, Platform, RefreshControl, ScrollView, Share, View } from "react-native";
 import { Text } from "../../components/Typography";
 
-import { Button, Card, Chip, Field, Notice, ScreenHeader, SectionTitle, Segmented } from "../../components/ui";
+import { Button, Card, Chip, Field, Notice, ScreenGradient, ScreenHeader, SectionTitle, Segmented } from "../../components/ui";
 import * as api from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { confirmAction, formatDateTime, formatWhen } from "../../lib/format";
@@ -33,7 +33,7 @@ const WHERE: Record<ServiceLocation, string> = {
 };
 
 const useStyles = themed((t) => ({
-  screen: { flex: 1, backgroundColor: "transparent" },
+  screen: { flex: 1, backgroundColor: t.bg },
   content: { padding: space.lg, paddingTop: 0, gap: space.lg, width: "100%", maxWidth: 760, alignSelf: "center" },
   rowBetween: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: space.md },
   planName: { fontSize: 22, fontWeight: "700", color: t.ink },
@@ -271,6 +271,7 @@ export default function AccountScreen() {
 
   return (
     <View style={s.screen}>
+      <ScreenGradient />
       <ScreenHeader title="Account" subtitle="Your plan, your privacy, your data" />
       <ScrollView
         contentContainerStyle={s.content}

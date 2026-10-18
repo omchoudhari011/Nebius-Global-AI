@@ -7,7 +7,7 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, View } f
 import { Text } from "../components/Typography";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Button, Crest, Field, GoldRule, Notice } from "../components/ui";
+import { Button, Crest, Field, GoldRule, Notice, ScreenGradient } from "../components/ui";
 import { errorMessage } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { fonts, radius, space, themed, useTokens } from "../lib/tokens";
@@ -73,7 +73,8 @@ export default function SignIn() {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: t.bg }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <ScreenGradient />
       <ScrollView
         contentContainerStyle={[s.page, { paddingTop: insets.top + space.xl, paddingBottom: insets.bottom + space.xl }]}
         keyboardShouldPersistTaps="handled"

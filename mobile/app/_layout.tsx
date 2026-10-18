@@ -8,11 +8,10 @@ import {
 } from "@expo-google-fonts/cormorant-garamond";
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from "@expo-google-fonts/inter";
 import { useFonts } from "expo-font";
-import { LinearGradient } from "expo-linear-gradient";
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useMemo } from "react";
-import { StyleSheet, View } from "react-native";
+import { View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthProvider } from "../lib/auth";
@@ -28,7 +27,7 @@ export default function RootLayout() {
     const base = t.scheme === "dark" ? DarkTheme : DefaultTheme;
     return {
       ...base,
-      colors: { ...base.colors, primary: t.accentText, background: "transparent", card: t.surface, text: t.ink, border: t.border },
+      colors: { ...base.colors, primary: t.accentText, background: t.bg, card: t.surface, text: t.ink, border: t.border },
     };
   }, [t]);
 
@@ -38,11 +37,12 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <LinearGradient colors={[t.bgTop, t.bgBottom]} style={StyleSheet.absoluteFill} />
       <ThemeProvider value={navTheme}>
         <AuthProvider>
           <StatusBar style={t.scheme === "dark" ? "light" : "dark"} />
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "transparent" } }} />
+          {/* Opaque: a stack keeps screens mounted under the one in front. Each screen paints the
+              theme gradient itself (ScreenGradient in components/ui.tsx). */}
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }} />
         </AuthProvider>
       </ThemeProvider>
     </SafeAreaProvider>

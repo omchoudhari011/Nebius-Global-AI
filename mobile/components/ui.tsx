@@ -2,13 +2,12 @@
 
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { ComponentProps, ReactNode } from "react";
-import { ActivityIndicator, Platform, Pressable, Switch, View, type TextInputProps } from "react-native";
-import { Text, TextInput } from "./Typography";
+import { LinearGradient } from "expo-linear-gradient";
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Switch, View, type TextInputProps } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { LinearGradient } from "expo-linear-gradient";
-
 import { fonts, radius, space, themed, useTokens, type Tokens } from "../lib/tokens";
+import { Text, TextInput } from "./Typography";
 import type { TaskRunStatus, ToolStatus } from "../lib/types";
 
 export type IconName = ComponentProps<typeof Ionicons>["name"];
@@ -191,6 +190,14 @@ const useHeaderStyles = themed((t) => ({
   title: { fontFamily: fonts.display, fontSize: 32, lineHeight: 36, color: t.ink, letterSpacing: 0.3 },
   subtitle: { fontSize: 13, color: t.inkSoft, marginTop: 2, letterSpacing: 0.2 },
 }));
+
+/** The theme's gradient, filling the screen it's the first child of. The screen itself keeps an
+ * opaque background (t.bg): the tab bar keeps other tabs mounted underneath, and a
+ * transparent screen would show them through it. */
+export function ScreenGradient() {
+  const t = useTokens();
+  return <LinearGradient colors={[t.bgTop, t.bgBottom]} style={StyleSheet.absoluteFill} />;
+}
 
 /** A fine gold rule that fades out at both ends. */
 export function GoldRule({ style }: { style?: object }) {

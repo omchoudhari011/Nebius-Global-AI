@@ -37,7 +37,7 @@ export default function TabsLayout() {
           // On the web there's no safe-area inset, and the default height clips stacked labels.
           Platform.OS === "web" ? { height: 60, paddingTop: 4, paddingBottom: 6 } : null,
         ],
-        sceneStyle: { backgroundColor: "transparent" },
+        sceneStyle: { backgroundColor: t.bg },
       }}
     >
       <Tabs.Screen
