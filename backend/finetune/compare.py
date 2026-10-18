@@ -94,12 +94,15 @@ def main() -> int:
     parser.add_argument("--base-url", default="http://127.0.0.1:11434/v1")
     parser.add_argument("--valid", type=Path, default=HERE / "data" / "valid.jsonl")
     parser.add_argument("--skip-evals", action="store_true", help="only the held-out behaviour test")
+    parser.add_argument("--json", type=Path, help="also write the scores here, for finetune/nightly.py to decide")
     args = parser.parse_args()
 
     report = ["# Fine-tuning comparison", ""]
+    scores: dict[str, dict] = {}
     for model in args.models:
         print(f"\n=== {model}", flush=True)
         score, per_kind, failures = behaviour(model, args.base_url, args.valid)
+        scores[model] = {"held_out": score, "per_kind": dict(per_kind), "evals": {}}
         print(f"held-out first step right: {score}")
         print("  " + ", ".join(f"{k} {v}" for k, v in sorted(per_kind.items())))
         for failure in failures[:12]:
@@ -112,11 +115,15 @@ def main() -> int:
                 line = eval_line(script, model, args.base_url)
                 print(f"{label}: {line}", flush=True)
                 report.append(f"- {label}: {line}")
+                scores[model]["evals"][label] = line
         report.append("")
     out = HERE / "out" / "compare.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(report), encoding="utf-8")
     print(f"\nwritten to {out}")
+    if args.json:
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(json.dumps(scores, indent=2), encoding="utf-8")
     return 0
 
 

@@ -330,11 +330,14 @@ class _Client:
 
 class _Window:
     def __init__(self, answer):
-        self.answer, self.asked = answer, []
+        self.answer, self.asked, self.shown = answer, [], []
 
     def confirm(self, title, details):
         self.asked.append((title, details))
         return self.answer
+
+    def show(self, title, **kwargs):
+        self.shown.append((title, kwargs))
 
 
 def _app(answer: bool, tmp_path) -> App:
@@ -361,6 +364,27 @@ def test_an_allowed_action_runs_and_reports_back(tmp_path):
     app.handle_action({"id": 8, "function": "list_files", "args": {"path": str(tmp_path)}, "confirm": False})
     (action_id, ok, result, error), = app.client.results
     assert action_id == 8 and ok and result["items"][0]["name"] == "a.txt" and app.window.asked == []
+
+
+def test_an_action_allowed_in_the_app_runs_without_asking_and_says_so(tmp_path, monkeypatch):
+    app = _app(False, tmp_path)  # the PC dialog would say no: it must not be shown at all
+    done = []
+    monkeypatch.setitem(actions.ACTIONS, "delete_file", lambda path, protected: done.append(path) or {"recycled": path})
+    app.handle_action({"id": 9, "function": "delete_file", "args": {"path": "~/old.txt"}, "confirm": False,
+                       "approved": "remote", "description": "Move a file or folder to the Recycle Bin (the user confirms)."})
+    assert done == ["~/old.txt"] and app.window.asked == []
+    assert app.window.shown[0][0] == "Allowed from your phone"
+    assert app.client.results[0][:2] == (9, True)
+
+
+def test_a_remote_ok_for_a_message_never_carries_over_to_the_next_one(tmp_path, monkeypatch):
+    app = _app(False, tmp_path)
+    hooks = []
+    monkeypatch.setitem(actions.ACTIONS, "send_message", lambda **a: hooks.append(actions.confirm_hook) or {"sent_to": "Mum"})
+    app.handle_action({"id": 10, "function": "send_message", "args": {"contact": "Mum", "text": "hi"}, "confirm": False,
+                       "approved": "remote"})
+    assert hooks[0]("Send a WhatsApp message", "To: Mum") is True
+    assert actions.confirm_hook is None  # the next send asks again (or, with nobody to ask, never sends)
 
 
 class _Announcer:

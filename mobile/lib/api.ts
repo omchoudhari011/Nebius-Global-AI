@@ -12,6 +12,12 @@
 import { Platform } from "react-native";
 
 import type {
+  Activity,
+  Approval,
+  LearningStatus,
+  Prefs,
+  RemoteReply,
+  Routine,
   AppNotification,
   DocumentFile,
   Feedback,
@@ -153,7 +159,7 @@ export const sendMessage = (message: string, conversationId?: number | null, off
   request<ChatResponse>("/chat", {
     method: "POST",
     body: { message, conversation_id: conversationId ?? null, private: offTheRecord, deep, document_ids: documentIds },
-    timeoutMs: 120_000,
+    timeoutMs: 200_000, // a PC action can wait up to two minutes for you to allow it (components/ApprovalPrompt)
   });
 export const listConversations = (channel?: "chat" | "task", limit = 30) =>
   request<ConversationSummary[]>(`/conversations?limit=${limit}${channel ? `&channel=${channel}` : ""}`);
@@ -228,6 +234,31 @@ export const clearRating = (messageId: number) => request<void>(`/messages/${mes
 export const getIntegrations = () => request<Integration[]>("/integrations");
 export const startGoogle = () => request<{ url: string }>("/integrations/google/start");
 export const disconnectGoogle = () => request<void>("/integrations/google", { method: "DELETE" });
+export const startAccount = (provider: "spotify" | "microsoft") => request<{ url: string }>(`/integrations/${provider}/start`);
+export const disconnectAccount = (provider: "spotify" | "microsoft" | "homeassistant" | "telegram") =>
+  request<void>(`/integrations/${provider}`, { method: "DELETE" });
+export const connectHomeAssistant = (url: string, token: string) =>
+  request<{ account: string }>("/integrations/homeassistant", { method: "POST", body: { url, token } });
+export const linkTelegram = () =>
+  request<{ code: string; bot: string | null; expires_in: number; how: string }>("/integrations/telegram/link", { method: "POST" });
+
+// Jarvis ---------------------------------------------------------------------------------------
+
+export const getApprovals = () => request<Approval[]>("/approvals", { timeoutMs: 10_000 });
+export const decideApproval = (id: number, allow: boolean) =>
+  request<{ id: number; allowed: boolean }>(`/approvals/${id}`, { method: "POST", body: { allow } });
+/** One command for the PC from the phone ("lock my pc"); waits while it asks you to allow it. */
+export const remote = (command: string) => request<RemoteReply>("/remote", { method: "POST", body: { command }, timeoutMs: 180_000 });
+export const getPrefs = () => request<Prefs>("/settings/prefs");
+export const setPrefs = (changes: Partial<Prefs>) => request<Prefs>("/settings/prefs", { method: "PATCH", body: changes });
+export const getRoutines = () => request<Routine[]>("/routines");
+export const saveRoutine = (name: string, steps: string[]) => request<Routine>("/routines", { method: "POST", body: { name, steps } });
+export const deleteRoutine = (id: number) => request<void>(`/routines/${id}`, { method: "DELETE" });
+export const runRoutine = (id: number) => request<ChatResponse>(`/routines/${id}/run`, { method: "POST", timeoutMs: 180_000 });
+export const getActivity = (q = "", days = 7) =>
+  request<Activity[]>(`/activity?days=${days}${q.trim() ? `&q=${encodeURIComponent(q.trim())}` : ""}`);
+export const undoActivity = (id: number) => request<{ undone: string }>(`/activity/${id}/undo`, { method: "POST" });
+export const getLearning = () => request<LearningStatus>("/learning");
 
 /** Sends a recording as the raw request body and returns what was said. */
 export async function transcribe(audio: Blob | ArrayBuffer, contentType: string): Promise<string> {

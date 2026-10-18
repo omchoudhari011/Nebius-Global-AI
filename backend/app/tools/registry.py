@@ -67,15 +67,26 @@ from .schemas import (
     WatchEmailArgs,
     WatchIdArgs,
     WatchPageArgs,
-
+    HomeControlArgs,
+    HomeListArgs,
+    OutlookCreateEventArgs,
+    OutlookListEventsArgs,
+    OutlookReadMailArgs,
+    OutlookSearchMailArgs,
+    SpotifyControlArgs,
+    SpotifyPlayArgs,
+    SpotifySearchArgs,
     WebSearchArgs,
     ToolArgs,
 )
 
 GOOGLE_HOSTS = ("www.googleapis.com", "gmail.googleapis.com")
+SPOTIFY_HOSTS = ("api.spotify.com",)
+MICROSOFT_HOSTS = ("graph.microsoft.com",)
 # How each tool is named to the user, in switches and in "turn on ..." messages.
 DISPLAY_NAMES = {"gcal": "Google Calendar", "gmail": "Gmail", "gdrive": "Google Drive", "documents": "Files",
-                 "web": "Web", "pc": "PC"}
+                 "web": "Web", "pc": "PC", "outlook": "Outlook",
+                 "home": "Home", "spotify": "Spotify"}
 
 
 def display_name(tool: str) -> str:
@@ -90,8 +101,9 @@ class ToolFunction:
     description: str
     args_model: type[ToolArgs]
     module: str
-    account: str | None = None  # a connected account the tool needs ("google"); the gate passes its token
-    hosts: tuple[str, ...] = ()  # the only hosts the sandbox lets this tool reach ("*": any public host)
+    account: str | None = None  # a connected account the tool needs ("google", "spotify", ...); the gate passes its token
+    hosts: tuple[str, ...] = ()  # the only hosts the sandbox lets this tool reach ("*": any public host,
+    #                              "account": the connected account's own address - Home Assistant's)
     runs_on: str = "sandbox"  # "sandbox" on the server, or "desktop": the Custodian app on your PC
     confirm: bool = False  # the desktop app asks you before doing it (changes or reveals something)
     group: str = ""  # offered only when the message is about this (see GROUPS); "" = always
@@ -398,6 +410,112 @@ FUNCTIONS: tuple[ToolFunction, ...] = (
         description="Delete one of the user's routines by its name.",
         args_model=RoutineNameArgs,
         module="app.tools.routines_tool",
+    ),
+    ToolFunction(
+        tool="spotify",
+        function="search",
+        scope="read",
+        description="Search Spotify for songs, albums, artists or playlists; returns names and spotify: links.",
+        args_model=SpotifySearchArgs,
+        module="app.tools.spotify_tool",
+        account="spotify",
+        hosts=SPOTIFY_HOSTS,
+        group="media",
+    ),
+    ToolFunction(
+        tool="spotify",
+        function="now_playing",
+        scope="read",
+        description="What's playing on Spotify right now, on which device, and at what volume.",
+        args_model=NoArgs,
+        module="app.tools.spotify_tool",
+        account="spotify",
+        hosts=SPOTIFY_HOSTS,
+        group="media",
+    ),
+    ToolFunction(
+        tool="spotify",
+        function="play",
+        scope="write",
+        description=("Play an exact song, album, artist or playlist on Spotify (wherever Spotify is open: the PC, "
+                     "phone or a speaker). Better than pc_play for Spotify when the account is connected."),
+        args_model=SpotifyPlayArgs,
+        module="app.tools.spotify_tool",
+        account="spotify",
+        hosts=SPOTIFY_HOSTS,
+        group="media",
+    ),
+    ToolFunction(
+        tool="spotify",
+        function="control",
+        scope="write",
+        description="Pause, resume, skip, go back, set the volume, or turn shuffle or repeat on or off in Spotify.",
+        args_model=SpotifyControlArgs,
+        module="app.tools.spotify_tool",
+        account="spotify",
+        hosts=SPOTIFY_HOSTS,
+        group="media",
+    ),
+    ToolFunction(
+        tool="outlook",
+        function="search_mail",
+        scope="read",
+        description="Search the user's Outlook (Microsoft 365) mail; returns sender, subject, date and a snippet.",
+        args_model=OutlookSearchMailArgs,
+        module="app.tools.outlook_tool",
+        account="microsoft",
+        hosts=MICROSOFT_HOSTS,
+    ),
+    ToolFunction(
+        tool="outlook",
+        function="read_mail",
+        scope="read",
+        description="Read one Outlook email by its id (from outlook_search_mail).",
+        args_model=OutlookReadMailArgs,
+        module="app.tools.outlook_tool",
+        account="microsoft",
+        hosts=MICROSOFT_HOSTS,
+    ),
+    ToolFunction(
+        tool="outlook",
+        function="list_events",
+        scope="read",
+        description="List events on the user's Outlook calendar for a day or a range of days.",
+        args_model=OutlookListEventsArgs,
+        module="app.tools.outlook_tool",
+        account="microsoft",
+        hosts=MICROSOFT_HOSTS,
+    ),
+    ToolFunction(
+        tool="outlook",
+        function="create_event",
+        scope="write",
+        description="Add an event to the user's Outlook calendar, optionally with a Teams meeting link.",
+        args_model=OutlookCreateEventArgs,
+        module="app.tools.outlook_tool",
+        account="microsoft",
+        hosts=MICROSOFT_HOSTS,
+    ),
+    ToolFunction(
+        tool="home",
+        function="list_devices",
+        scope="read",
+        description="List the lights, AC, fans, plugs and scenes in Home Assistant with their state and ids.",
+        args_model=HomeListArgs,
+        module="app.tools.home_tool",
+        account="homeassistant",
+        hosts=("account",),
+    ),
+    ToolFunction(
+        tool="home",
+        function="control",
+        scope="write",
+        description=("Control one device in Home Assistant by its id from home_list_devices: turn on or off, "
+                     "brightness, the AC's temperature or mode, a fan's speed, or activate a scene."),
+        args_model=HomeControlArgs,
+        module="app.tools.home_tool",
+        account="homeassistant",
+        hosts=("account",),
     ),
 )
 

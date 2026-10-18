@@ -32,7 +32,8 @@ _CLEARED = (
     "CUSTODIAN_PURCHASE_URL",
     "LARGE_MODEL_ID", "LARGE_MODEL_BASE_URL", "LARGE_MODEL_API_KEY", "WHISPER_URL", "WHISPER_API_KEY", "VISION_MODEL",
     "VISION_BASE_URL", "VISION_API_KEY", "NTFY_URL", "NTFY_SHOW_TEXT", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
-    "GOOGLE_REDIRECT_URI",
+    "GOOGLE_REDIRECT_URI", "SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET", "SPOTIFY_REDIRECT_URI", "MICROSOFT_CLIENT_ID",
+    "MICROSOFT_CLIENT_SECRET", "MICROSOFT_REDIRECT_URI", "TELEGRAM_BOT_TOKEN",
     "CUSTODIAN_PLAN", "CUSTODIAN_LICENSE_KEY", "MODEL_PRICE_INPUT_PER_M", "MODEL_PRICE_OUTPUT_PER_M",
 )
 os.environ.update(_BASE_ENV)
@@ -59,6 +60,10 @@ def isolated_env(tmp_path, monkeypatch):
     embeddings.set_embedder(None)
     vectors.reset()
     login_limiter.reset()
+    from app import approvals, desktop, telegram
+
+    approvals.reset()
+    telegram.reset()
     yield
     from app import scheduler
 

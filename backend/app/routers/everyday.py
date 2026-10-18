@@ -8,6 +8,9 @@ Google connection, and which of these this server has set up.
     POST /voice/transcribe                 raw audio body (Content-Type: audio/...)
     POST /messages/{id}/feedback · DELETE /messages/{id}/feedback
     GET  /integrations · GET /integrations/google/start · DELETE /integrations/google
+    GET  /integrations/{spotify|microsoft}/start · .../callback · DELETE /integrations/{provider}
+    POST /integrations/homeassistant       its address and a long-lived access token
+    POST /integrations/telegram/link       a code to send the Telegram bot, to link your chat
     GET  /desktop/next · POST /desktop/results/{id} · GET /desktop/status   the desktop app's bridge
     POST /warm                             load the local model now ("Hey Jarvis" was heard)
     GET  /integrations/google/callback     Google's redirect after consent (no session: the
@@ -24,7 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from .. import desktop, documents, feedback, google_account, notifications, voice, warmup
+from .. import accounts, desktop, documents, feedback, google_account, notifications, settings_store, telegram, voice, warmup
 from ..auth import require_session
 from ..model_backends import get_large_backend
 
@@ -48,6 +51,9 @@ def features(user_id: int = Depends(require_session)) -> dict:
         "photos": bool(os.getenv("VISION_MODEL", "").strip()),
         "larger_model": large.model_id if large else None,
         "google": google_account.configured(),
+        "spotify": accounts.configured("spotify"),
+        "microsoft": accounts.configured("microsoft"),
+        "telegram": telegram.configured(),
         "phone_push": bool(os.getenv("NTFY_URL", "").strip()),
         "desktop": desktop.status(user_id)["connected"],
         "unread": notifications.unread_count(user_id),
@@ -116,10 +122,13 @@ def delete_document(doc_id: int, user_id: int = Depends(require_session)) -> Res
 # Voice -------------------------------------------------------------------------------------
 
 @router.post("/voice/transcribe")
-async def transcribe(request: Request, user_id: int = Depends(require_session)) -> dict:
+async def transcribe(request: Request, language: str = "", user_id: int = Depends(require_session)) -> dict:
+    """`language` ("en", "hi", "mr") overrides the "voice_language" setting for this recording."""
     audio = await request.body()
+    spoken = language or settings_store.get(user_id)["voice_language"]
     try:
-        return {"text": voice.transcribe(audio, request.headers.get("Content-Type", ""))}
+        return {"text": voice.transcribe(audio, request.headers.get("Content-Type", ""),
+                                         spoken if spoken in voice.LANGUAGES else None)}
     except voice.VoiceError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
 
@@ -157,7 +166,7 @@ def unrate(message_id: int, user_id: int = Depends(require_session)) -> Response
 
 @router.get("/integrations")
 def integrations(user_id: int = Depends(require_session)) -> list[dict]:
-    return [google_account.status(user_id)]
+    return [google_account.status(user_id), *accounts.status(user_id), telegram.status(user_id)]
 
 
 @router.get("/integrations/google/start")
@@ -194,6 +203,62 @@ def google_callback(code: str = "", state: str = "", error: str = "") -> HTMLRes
 @router.delete("/integrations/google", status_code=status.HTTP_204_NO_CONTENT)
 def google_disconnect(user_id: int = Depends(require_session)) -> Response:
     google_account.disconnect(user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# Spotify, Microsoft 365, Home Assistant, Telegram ------------------------------------------------
+
+OAuthProvider = Literal["spotify", "microsoft"]
+
+
+@router.get("/integrations/{provider}/start")
+def account_start(provider: OAuthProvider, user_id: int = Depends(require_session)) -> dict:
+    try:
+        return {"url": accounts.start_url(provider, user_id)}
+    except accounts.AccountError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from None
+
+
+@router.get("/integrations/{provider}/callback", include_in_schema=False)
+def account_callback(provider: OAuthProvider, code: str = "", state: str = "", error: str = "") -> HTMLResponse:
+    label = accounts.PROVIDERS[provider].label
+    if error or not code:
+        return _page(f"{label} wasn't connected", "The request was cancelled or refused. You can try again from Tools & Data.")
+    try:
+        result = accounts.finish(provider, code, state)
+    except accounts.AccountError as exc:
+        return _page(f"{label} wasn't connected", str(exc))
+    who = f" as {result['account']}" if result.get("account") else ""
+    return _page(f"{label} is connected", f"Custodian is connected{who}. Turn on the switches you want in Tools & Data; "
+                 "every switch starts off. You can close this tab.")
+
+
+class HomeAssistantBody(BaseModel):
+    url: str = Field(min_length=8, max_length=300)
+    token: str = Field(min_length=20, max_length=1000)
+
+
+@router.post("/integrations/homeassistant")
+def home_connect(body: HomeAssistantBody, user_id: int = Depends(require_session)) -> dict:
+    try:
+        return accounts.connect_home(user_id, body.url, body.token)
+    except accounts.AccountError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
+
+
+@router.post("/integrations/telegram/link")
+def telegram_link(user_id: int = Depends(require_session)) -> dict:
+    """A one-time code: send "/link <code>" to the bot from your own Telegram account."""
+    try:
+        return telegram.link_code(user_id)
+    except telegram.TelegramError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from None
+
+
+@router.delete("/integrations/{provider}", status_code=status.HTTP_204_NO_CONTENT)
+def account_disconnect(provider: Literal["spotify", "microsoft", "homeassistant", "telegram"],
+                       user_id: int = Depends(require_session)) -> Response:
+    accounts.disconnect(provider, user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

@@ -1,8 +1,8 @@
 ---
 name: calendar
 description: Reads and adds events on the local calendar.
-keywords: calendar, meeting, meetings, event, events, appointment, appointments, schedule, scheduled, reschedule, agenda, busy, free, availability
-tools: calendar:read, calendar:write, gcal:read, gcal:write, reminders:write
+keywords: outlook calendar, teams meeting, calendar, meeting, meetings, event, events, appointment, appointments, schedule, scheduled, reschedule, agenda, busy, free, availability
+tools: calendar:read, calendar:write, gcal:read, gcal:write, outlook:read, outlook:write, reminders:write
 ---
 You are Custodian, a private personal assistant. Right now you are helping with their calendar.
 

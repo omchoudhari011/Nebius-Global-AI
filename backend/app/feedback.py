@@ -129,3 +129,48 @@ def training_examples(user_id: int | None = None) -> list[dict]:
             examples.append({"kind": "feedback_good" if row["rating"] == 1 else "feedback_corrected",
                              "messages": messages, "tools": trace.get("tools") or []})
     return examples
+
+
+def preference_pairs(user_id: int | None = None) -> list[dict]:
+    """Every shared thumbs-down with a correction as {messages, chosen, rejected, tools}: the
+    prompt the model saw, what you said it should have said, and what it said. Training prefers
+    the first over the second (train_lora.py --pairs), so a mistake you corrected doesn't come back.
+    The same skips as training_examples(): off the record, secrets, the check's own note."""
+    sql = """
+        SELECT f.correction, m.content, m.trace, f.updated_at FROM message_feedback f
+        JOIN messages m ON m.id = f.message_id JOIN conversations c ON c.id = m.conversation_id
+        WHERE f.share = 1 AND f.rating = -1 AND f.correction IS NOT NULL AND m.trace IS NOT NULL AND c.private = 0
+    """
+    params: list = []
+    if user_id is not None:
+        sql += " AND c.user_id = ?"
+        params.append(user_id)
+    pairs = []
+    with db.connect() as conn:
+        for row in conn.execute(sql + " ORDER BY f.message_id", params):
+            chosen = decrypt(row["correction"]).strip()
+            rejected = decrypt(row["content"]).split("\n\n" + grounding.NOTE_PREFIX)[0].strip()
+            if not chosen or not rejected or chosen == rejected:
+                continue
+            trace = decrypt_json(row["trace"])
+            messages = _without_repairs(trace.get("messages") or [])
+            texts = [str(m.get("content") or "") for m in messages if m["role"] in ("user", "assistant")] + [chosen, rejected]
+            if not messages or any(sensitive.looks_secret(t) for t in texts):
+                continue
+            pairs.append({"kind": "feedback_pair", "messages": messages, "chosen": chosen, "rejected": rejected,
+                          "tools": trace.get("tools") or [], "rated_at": row["updated_at"]})
+    return pairs
+
+
+def shared_since(user_id: int, since: str | None) -> int:
+    """How many shared ratings were made or changed after `since` (a database time; None = ever)."""
+    with db.connect() as conn:
+        return conn.execute(
+            """
+            SELECT COUNT(*) FROM message_feedback f JOIN messages m ON m.id = f.message_id
+            JOIN conversations c ON c.id = m.conversation_id
+            WHERE c.user_id = ? AND f.share = 1 AND c.private = 0 AND (? IS NULL OR f.updated_at > ?)
+              AND (f.rating = 1 OR f.correction IS NOT NULL)
+            """,
+            (user_id, since, since),
+        ).fetchone()[0]

@@ -382,3 +382,77 @@ class WatchEmailArgs(ToolArgs):
 
 class WatchIdArgs(ToolArgs):
     id: int = Field(ge=1, description="The watch's id, from list_watches.")
+
+
+# Spotify (its Web API, with your connected account) -------------------------------------------
+
+class SpotifySearchArgs(ToolArgs):
+    query: SafeLine = Field(min_length=1, max_length=200, description="What to find, e.g. 'Kesariya Arijit Singh' or 'lofi beats'.")
+    kind: Literal["track", "playlist", "album", "artist"] = Field(default="track")
+    limit: int = Field(default=5, ge=1, le=10)
+
+
+class SpotifyPlayArgs(ToolArgs):
+    query: SafeLine | None = Field(default=None, max_length=200,
+                                   description="A song, album, artist or playlist to find and play. Leave out to resume.")
+    kind: Literal["track", "playlist", "album", "artist"] = Field(default="track")
+    uri: SafeLine | None = Field(default=None, max_length=100, pattern=r"^spotify:(track|album|artist|playlist):[A-Za-z0-9]+$",
+                                 description="An exact spotify: link from spotify_search, instead of a query.")
+
+
+class SpotifyControlArgs(ToolArgs):
+    action: Literal["pause", "resume", "next", "previous", "volume", "shuffle_on", "shuffle_off", "repeat_on", "repeat_off"]
+    volume: int | None = Field(default=None, ge=0, le=100, description="For action 'volume': the level in percent.")
+
+
+# Microsoft 365: Outlook mail and calendar (Microsoft Graph) -----------------------------------
+
+class OutlookSearchMailArgs(ToolArgs):
+    query: SafeLine = Field(default="", max_length=200, description="Words to search for, e.g. 'invoice' or a sender's name. Empty lists the newest.")
+    unread_only: bool = False
+    limit: int = Field(default=5, ge=1, le=20)
+
+
+class OutlookReadMailArgs(ToolArgs):
+    id: SafeLine = Field(min_length=1, max_length=300, pattern=r"^[A-Za-z0-9_=+\-]+$", description="The message id, from outlook_search_mail.")
+
+
+class OutlookListEventsArgs(ListEventsArgs):
+    pass
+
+
+class OutlookCreateEventArgs(CreateEventArgs):
+    online_meeting: bool = Field(default=False, description="Add a Teams meeting link.")
+
+
+# Home Assistant: lights, AC, fans and plugs at home --------------------------------------------
+
+HOME_DOMAINS = ("light", "switch", "fan", "climate", "media_player", "scene", "input_boolean", "humidifier")
+
+
+class HomeListArgs(ToolArgs):
+    kind: Literal["all", *HOME_DOMAINS] = Field(default="all", description="Only this kind of device.")  # type: ignore[valid-type]
+    area: SafeLine = Field(default="", max_length=100, description="Only devices whose name has this, e.g. 'bedroom'.")
+
+
+class HomeControlArgs(ToolArgs):
+    entity_id: SafeLine = Field(min_length=3, max_length=120, pattern=r"^[a-z_]+\.[a-z0-9_]+$",
+                                description="The device's id from home_list_devices, e.g. 'light.bedroom'.")
+    action: Literal["turn_on", "turn_off", "toggle", "set_brightness", "set_temperature", "set_fan_speed", "set_hvac_mode", "activate"]
+    value: float | None = Field(default=None, ge=0, le=100,
+                                description="Brightness or fan speed in percent, or the temperature in degrees.")
+    mode: Literal["off", "heat", "cool", "heat_cool", "auto", "dry", "fan_only"] | None = Field(
+        default=None, description="For set_hvac_mode: the AC's mode.")
+
+    @model_validator(mode="after")
+    def _safe_device(self) -> "HomeControlArgs":
+        domain = self.entity_id.split(".", 1)[0]
+        if domain not in HOME_DOMAINS:  # never locks, alarms, garage doors or covers
+            raise ValueError(f"Custodian controls only {', '.join(HOME_DOMAINS)}, never locks, alarms or doors")
+        if self.action in ("set_brightness", "set_temperature", "set_fan_speed") and self.value is None:
+            raise ValueError(f"{self.action} needs a value")
+        if self.action == "set_temperature" and not 10 <= (self.value or 0) <= 35:
+            raise ValueError("the temperature must be between 10 and 35 degrees")
+        if self.action == "set_hvac_mode" and self.mode is None:
+            raise ValueError("set_hvac_mode needs a mode")
+        return self

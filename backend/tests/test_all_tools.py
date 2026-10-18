@@ -11,7 +11,8 @@ from app import db, documents, permissions
 from app.crypto import encrypt
 from app.tools import registry, sandbox
 
-SOON = (datetime.now() + timedelta(hours=2)).replace(second=0, microsecond=0).isoformat()
+# Far enough ahead to be in the future whatever the machine's and the user's time zones are.
+SOON = (datetime.now() + timedelta(days=2)).replace(second=0, microsecond=0).isoformat()
 
 # (function, arguments, check on the result). Run in order: later cases use earlier results.
 LOCAL = [
@@ -45,10 +46,25 @@ GOOGLE = {
     "gdrive_search_files": {"query": "budget"},
     "gdrive_read_file": {"id": "d1"},
 }
+# Spotify, Outlook and Home Assistant need their accounts too: tests/test_integrations.py runs
+# them against local fakes.
+ACCOUNTS = {
+    "spotify_search": ({"query": "Kesariya"}, "Spotify isn't connected"),
+    "spotify_now_playing": ({}, "Spotify isn't connected"),
+    "spotify_play": ({"query": "Kesariya"}, "Spotify isn't connected"),
+    "spotify_control": ({"action": "next"}, "Spotify isn't connected"),
+    "outlook_search_mail": ({"query": "invoice"}, "Microsoft 365 isn't connected"),
+    "outlook_read_mail": ({"id": "AAMk1"}, "Microsoft 365 isn't connected"),
+    "outlook_list_events": ({}, "Microsoft 365 isn't connected"),
+    "outlook_create_event": ({"title": "Review", "start": "2030-01-02T11:00"}, "Microsoft 365 isn't connected"),
+    "home_list_devices": ({}, "Home Assistant isn't connected"),
+    "home_control": ({"entity_id": "light.bedroom", "action": "turn_off"}, "Home Assistant isn't connected"),
+}
 
 
 def test_every_registered_function_is_checked():
-    assert {f.exposed_name for f in registry.FUNCTIONS} == {name for name, _, _ in LOCAL} | set(GOOGLE) | set(PC) | WEB
+    assert {f.exposed_name for f in registry.FUNCTIONS} == ({name for name, _, _ in LOCAL} | set(GOOGLE) | set(PC) | WEB
+                                                            | set(ACCOUNTS))
 
 
 @pytest.fixture
@@ -78,6 +94,15 @@ def test_google_tools_are_blocked_without_a_connected_account(user_id, tool_ids,
     permissions.set_granted(user_id, tool_ids[fn.tool], fn.scope, True)  # switch on, but no account
     out = sandbox.execute(user_id, name, GOOGLE[name], message_id=message_id, allowed=None)
     assert out.status == "denied" and "Google isn't connected" in out.error
+
+
+@pytest.mark.parametrize("name", sorted(ACCOUNTS))
+def test_account_tools_are_blocked_without_their_account(user_id, tool_ids, message_id, name):
+    fn = registry.find(name)
+    args, error = ACCOUNTS[name]
+    permissions.set_granted(user_id, tool_ids[fn.tool], fn.scope, True)
+    out = sandbox.execute(user_id, name, args, message_id=message_id, allowed=None)
+    assert out.status == "denied" and error in out.error, out.error
 
 
 # The web --------------------------------------------------------------------------------------

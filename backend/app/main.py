@@ -25,7 +25,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from . import __version__, auth, db, licensing, memory, permissions, plans, privacy, scheduler, skills, tasks, vectors
+from . import __version__, auth, db, licensing, memory, permissions, plans, privacy, scheduler, skills, tasks, telegram, vectors
 from .config import BACKEND_DIR, Settings, get_settings
 from .model_backends import ModelError, close_backend
 from .orchestrator import ConversationNotFound, SkillUnavailable
@@ -153,6 +153,7 @@ def create_app() -> FastAPI:
             )
         if settings.scheduler_enabled:
             scheduler.start()
+        telegram.start(poll=settings.scheduler_enabled)  # the bot polls only with TELEGRAM_BOT_TOKEN set
         log.info(
             "Custodian %s ready (%s, plan: %s via %s, model backend: %s, search: %s, database: %s)",
             __version__,
@@ -167,6 +168,7 @@ def create_app() -> FastAPI:
             yield
         finally:
             scheduler.shutdown()
+            telegram.stop()
             close_backend()
 
     production = settings.is_production

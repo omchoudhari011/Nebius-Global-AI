@@ -5,17 +5,22 @@ the proactive and learning features.
     GET  /routines · POST /routines · DELETE /routines/{id} · POST /routines/{id}/run
     GET  /activity?q=&days= · POST /activity/{id}/undo
     GET  /pc-index · GET /desktop/index/config · POST /desktop/index   searching inside the PC's files
+    GET  /approvals · POST /approvals/{id}   PC actions asked for from the app, waiting for your OK here
+    POST /remote                            your phone as a remote: "lock my pc", "next track", "volume 30"
+    GET  /learning · GET /learning/data · POST /learning/result   learning from your corrections overnight
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
-from .. import activity, desktop, memory, memory_graph, orchestrator, pc_index, proactive, routines, settings_store, watchers
+from .. import activity, approvals, desktop, learning, memory, memory_graph, orchestrator, pc_index, proactive, routines, settings_store, watchers
 from ..auth import require_session
+from ..orchestrator import ConversationNotFound
+from .chat import origin_of
 
 router = APIRouter(tags=["jarvis"])
 
@@ -103,12 +108,56 @@ def delete_routine(routine_id: int, user_id: int = Depends(require_session)) -> 
 
 
 @router.post("/routines/{routine_id}/run")
-def run_routine(routine_id: int, user_id: int = Depends(require_session)) -> dict:
+def run_routine(routine_id: int, request: Request, user_id: int = Depends(require_session)) -> dict:
     """Run it as if you had said its name: a chat turn, so it shows up in your history."""
     routine = routines.get(user_id, routine_id)
     if routine is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Routine not found")
-    return orchestrator.handle(user_id, routine["name"])
+    return orchestrator.handle(user_id, routine["name"], origin=origin_of(request))
+
+
+# Approvals and the remote ------------------------------------------------------------------------
+
+class Decision(BaseModel):
+    allow: bool
+
+
+@router.get("/approvals")
+def pending_approvals(user_id: int = Depends(require_session)) -> list[dict]:
+    """PC actions you asked for from the app or Telegram that wait for your OK (the app polls
+    this while a reply is on its way)."""
+    return approvals.pending(user_id)
+
+
+@router.post("/approvals/{approval_id}")
+def decide_approval(approval_id: int, body: Decision, user_id: int = Depends(require_session)) -> dict:
+    if not approvals.decide(user_id, approval_id, body.allow):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="That request is no longer waiting")
+    return {"id": approval_id, "allowed": body.allow}
+
+
+class RemoteCommand(BaseModel):
+    command: str = Field(min_length=1, max_length=300)
+
+
+_remote_chats: dict[int, int] = {}  # user id -> the conversation the remote's commands go into
+
+
+@router.post("/remote")
+def remote(body: RemoteCommand, user_id: int = Depends(require_session)) -> dict:
+    """One command for the PC from the phone - the remote's buttons and its own box. It's a chat
+    turn like any other (same gate, same checks, same history), kept in one "remote" chat; an
+    action that needs your OK asks in the app."""
+    command = body.command.strip()
+    if not command:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Say what to do")
+    try:
+        result = orchestrator.handle(user_id, command, conversation_id=_remote_chats.get(user_id), origin="app")
+    except ConversationNotFound:  # deleted since: start a new one
+        result = orchestrator.handle(user_id, command, origin="app")
+    _remote_chats[user_id] = result["conversation_id"]
+    return {"reply": result["reply"], "conversation_id": result["conversation_id"],
+            "desktop": desktop.status(user_id)["connected"]}
 
 
 # The memory graph --------------------------------------------------------------------------------
@@ -163,3 +212,31 @@ def undo(call_id: int, user_id: int = Depends(require_session)) -> dict:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc)) from None
     except (RuntimeError, desktop.DesktopUnavailable) as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from None
+
+
+# Learning overnight ------------------------------------------------------------------------------
+
+@router.get("/learning")
+def learning_status(user_id: int = Depends(require_session)) -> dict:
+    """Whether tonight's run has anything to learn (the desktop app asks at night, when idle)."""
+    return learning.status(user_id)
+
+
+@router.get("/learning/data")
+def learning_data(user_id: int = Depends(require_session)) -> dict:
+    """The shared ratings to train on, decrypted - for backend/finetune/nightly.py on your PC."""
+    if not learning.status(user_id)["enabled"]:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Learning overnight is switched off in Jarvis → Settings")
+    return learning.training_data(user_id)
+
+
+class LearningResult(BaseModel):
+    outcome: str = Field(pattern="^(switched|kept|skipped|stopped|failed)$")
+    summary: str = Field(default="", max_length=2000)
+    through: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
+    examples: int = Field(default=0, ge=0, le=100_000)
+
+
+@router.post("/learning/result")
+def learning_result(body: LearningResult, user_id: int = Depends(require_session)) -> dict:
+    return learning.record(user_id, body.outcome, body.summary, through=body.through, examples=body.examples)

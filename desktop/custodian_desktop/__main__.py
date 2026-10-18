@@ -20,6 +20,7 @@ from PIL import Image, ImageDraw
 from . import actions, config
 from .client import Client, NotSignedIn
 from .indexer import Indexer
+from .learning import NightlyLearner
 from .ui import Window
 from .voice import Listener, Speaker
 
@@ -82,6 +83,7 @@ class App:
         actions.on_timer = self.timer_rang
         actions.on_say = self.say_aloud
         self.indexer = Indexer(lambda: self.client)  # search inside your files, when it's switched on
+        self.learner = NightlyLearner(lambda: self.client, lambda: self.settings.server, idle_seconds)
         self.awaiting = None  # (callback, deadline) while listening for the answer to an offer
         self.paused = False
         self.stopping = threading.Event()
@@ -139,7 +141,13 @@ class App:
         if action.get("reply") is False:  # the server is telling, not asking: nothing goes back
             self.handle_notice(function, args)
             return
-        if action.get("confirm") and function in actions.SELF_CONFIRMING:
+        if action.get("approved") == "remote":  # you allowed it in the app or on Telegram: show that, don't ask again
+            details = actions.describe(function, args)
+            log.info("ALLOWED REMOTELY %s %s", function, details[:200])
+            self.window.show("Allowed from your phone", reply=details[:300], hide_after=6)
+            if function in actions.SELF_CONFIRMING:  # it still checks what it found (the chat's real name) itself
+                actions.confirm_hook = lambda _title, _details: True
+        elif action.get("confirm") and function in actions.SELF_CONFIRMING:
             def ask(title: str, details: str) -> bool:
                 allowed = self.window.confirm(title, details)
                 log.info("%s %s %s", "ALLOWED" if allowed else "DECLINED", function, details[:200])
@@ -162,6 +170,8 @@ class App:
             self.client.send_result(action["id"], True, result=result)
         except Exception as exc:  # noqa: BLE001 - reported to the model
             self.client.send_result(action["id"], False, error=f"{type(exc).__name__}: {exc}"[:500])
+        finally:
+            actions.confirm_hook = None  # an answer given for this action never carries over to the next
 
     def handle_notice(self, function: str, args: dict) -> None:
         """Things the server tells the app without waiting: index now, or say something."""
@@ -358,6 +368,7 @@ class App:
 
     def quit(self) -> None:
         self.stopping.set()
+        self.learner.stopping.set()
         self.listener.stop()
         self.speaker.stop()
         if self.tray is not None:
@@ -375,6 +386,7 @@ class App:
             threading.Thread(target=self.listener.run, daemon=True, name="listener").start()
             threading.Thread(target=self.indexer.run, daemon=True, name="indexer").start()
             threading.Thread(target=self.watch_presence, daemon=True, name="presence").start()
+            threading.Thread(target=self.learner.run, daemon=True, name="learning").start()
             self.start_hotkey()
             hint = "Say “Hey Jarvis” or press Ctrl+Alt+Space" if self.settings.wake_word else "Press Ctrl+Alt+Space"
             self.window.show("Custodian is ready", reply=hint, hide_after=5)

@@ -12,6 +12,7 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, View, use
 import { Text, TextInput } from "../../components/Typography";
 
 import { ChatThread, type ChatItem } from "../../components/ChatThread";
+import { ApprovalPrompt } from "../../components/ApprovalPrompt";
 import { ContextRail } from "../../components/ContextRail";
 import { InboxButton } from "../../components/Inbox";
 import { StatusPill } from "../../components/StatusPill";
@@ -282,6 +283,7 @@ export default function ChatScreen() {
               />
             )}
             {!wide ? <ContextRail used={lastUsed} wide={false} /> : null}
+            <ApprovalPrompt active={sending} style={s.notice} />
             {composerNotice ? (
               <View style={s.notice}>
                 <Notice tone={composerNotice.tone} message={composerNotice.text} actionLabel="Dismiss" onAction={() => setComposerNotice(null)} />

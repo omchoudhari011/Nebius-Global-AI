@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from . import db, desktop, embeddings, google_account, history_search, memory, memory_graph, notifications, permissions, plans, sensitive, tasks, vectors
+from . import accounts, db, desktop, embeddings, google_account, history_search, memory, memory_graph, notifications, permissions, plans, sensitive, tasks, vectors
 from .config import get_settings
 from .model_backends import large_base_url
 from .crypto import decrypt, decrypt_json
@@ -249,6 +249,8 @@ def _other_services(user_id: int) -> list[dict]:
     if google_account.status(user_id)["connected"]:
         out.append({"name": "Google", "host": "googleapis.com", "location": "internet", "purpose": "Google account",
                     "sends": "requests for the calendar, email or Drive files you let Custodian read"})
+    for item in accounts.where_data_goes(user_id):
+        out.append({**item, "sends": "only the requests the tools you switched on make"})
     return out
 
 
@@ -356,7 +358,7 @@ def export(user_id: int) -> dict:
         "permission_events": permissions.events(user_id, limit=1_000_000),
         **{key: _tool_rows(user_id, tool) for tool, (_, _, key) in TOOL_TABLES.items()},
         "notifications": notifications.list_for(user_id, limit=1_000_000),
-        "connected_accounts": [s for s in [google_account.status(user_id)] if s["connected"]],
+        "connected_accounts": [s for s in [google_account.status(user_id), *accounts.status(user_id)] if s["connected"]],
         "usage": usage_rows,
     }
 
@@ -401,6 +403,8 @@ def erase(user_id: int) -> dict:
         }
         memory.purge_search_index(conn)
     google_account.disconnect(user_id)
+    with db.connect() as conn:  # Spotify, Microsoft, Home Assistant, Telegram: their tokens go too
+        conn.execute("DELETE FROM integrations WHERE user_id = ?", (user_id,))
     for tool, (_, table, key) in TOOL_TABLES.items():
         path = _tool_db(tool)
         counts[key] = 0

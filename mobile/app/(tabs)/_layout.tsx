@@ -1,4 +1,4 @@
-// The signed-in app: Chat, Scheduled, Tools & Data and Account, joined by a bottom tab bar.
+// The signed-in app: Chat, Jarvis, Scheduled, Tools & Data and Account, joined by a bottom tab bar.
 // Anyone not signed in is sent to /sign-in.
 
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -60,6 +60,7 @@ export default function TabsLayout() {
         }}
       >
         <Tabs.Screen name="index" options={{ title: "Chat", tabBarIcon: icon("chatbubble-ellipses") }} />
+        <Tabs.Screen name="jarvis" options={{ title: "Jarvis", tabBarIcon: icon("desktop") }} />
         <Tabs.Screen name="scheduled" options={{ title: "Scheduled", tabBarIcon: icon("alarm") }} />
         <Tabs.Screen name="tools-data" options={{ title: "Tools & Data", tabBarIcon: icon("shield-checkmark") }} />
         <Tabs.Screen name="account" options={{ title: "Account", tabBarIcon: icon("person-circle") }} />
