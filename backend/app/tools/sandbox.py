@@ -287,6 +287,10 @@ def execute(
     if fn.runs_on == "desktop":
         context["confirm"] = fn.confirm and not preapproved
         context["description"] = fn.description
+    if fn.query_vector:  # search by meaning: the vector is made here, the sandbox can't reach the model
+        from .. import pc_index
+
+        context["query_vector"] = pc_index.query_vector(str(getattr(validated, "query", "")))
     request = ToolRequest(module=fn.module, function=fn.function, args=validated.model_dump(mode="json"), context=context)
     executor = DESKTOP if fn.runs_on == "desktop" else EXECUTORS.get(tool["executor"]) or UnavailableExecutor(tool["executor"])
     started = time.perf_counter()

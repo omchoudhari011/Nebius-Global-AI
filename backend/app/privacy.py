@@ -47,6 +47,9 @@ TOOL_TABLES = {
     "notes": ("notes.db", "notes", "notes"),
     "reminders": ("reminders.db", "reminders", "reminders"),
     "documents": ("documents.db", "documents", "documents"),
+    "routines": ("routines.db", "routines", "routines"),
+    "watchers": ("watchers.db", "watches", "watches"),
+    "pc": ("pc_files.db", "files", "pc_files_indexed"),  # deleting a file's row deletes its passages (trigger)
 }
 _UNSET: Any = object()
 
@@ -204,7 +207,8 @@ def summary(user_id: int) -> dict:
         # Messages, memories, tool arguments and results, and embeddings are Fernet-encrypted;
         # the keyword index keeps a plaintext copy of memory text (see app/memory.py).
         "encrypted": ["messages", "memories", "tool calls", "embeddings"],
-        "plaintext": ["memory search index", "notes, calendar events, reminders and uploaded files (in each tool's own database)"],
+        "plaintext": ["memory search index", "notes, calendar events, reminders and uploaded files (in each tool's own database)",
+                      "the text of the PC files you chose to search inside (only while that's switched on)"],
     }
 
 

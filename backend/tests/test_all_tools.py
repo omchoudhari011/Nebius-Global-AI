@@ -28,6 +28,7 @@ LOCAL = [
      lambda r: r["saved"]["steps"] == ["open vs code", "volume 30", "do not disturb on"]),
     ("routines_list_routines", {}, lambda r: r["routines"][0]["name"] == "Work mode"),
     ("routines_delete_routine", {"name": "work mode"}, lambda r: r["deleted"] == "work mode"),
+    ("pc_search_file_contents", {"query": "rent agreement"}, lambda r: r["files"] == [] and "note" in r),
 ]
 # The Google functions need a connected account and Google's servers; tests/test_everyday.py
 # runs them in the sandbox against a local fake API, and the gate's handling is checked here.

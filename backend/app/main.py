@@ -58,7 +58,8 @@ UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 # The largest real request is a chat message (8,000 characters, under 50 KB as escaped JSON).
 MAX_BODY_BYTES = 256 * 1024
 # Uploads: a 10 MB file is ~13.4 MB in base64; a voice message is sent as raw audio.
-LARGE_BODY_PATHS = {"/documents": 15 * 1024 * 1024, "/voice/transcribe": 11 * 1024 * 1024}
+LARGE_BODY_PATHS = {"/documents": 15 * 1024 * 1024, "/voice/transcribe": 11 * 1024 * 1024,
+                    "/desktop/index": 12 * 1024 * 1024}  # a batch of PC files' text, for search by meaning
 LARGE_BODY_PREFIXES = {"/desktop/results/": 12 * 1024 * 1024}  # screenshots come back as images
 
 

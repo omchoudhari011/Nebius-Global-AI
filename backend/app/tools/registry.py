@@ -60,6 +60,7 @@ from .schemas import (
     PcDndArgs,
     PcPlanArgs,
     PcSayArgs,
+    PcSearchContentsArgs,
     ReadPageArgs,
     RoutineNameArgs,
     SaveRoutineArgs,
@@ -91,6 +92,7 @@ class ToolFunction:
     runs_on: str = "sandbox"  # "sandbox" on the server, or "desktop": the Custodian app on your PC
     confirm: bool = False  # the desktop app asks you before doing it (changes or reveals something)
     group: str = ""  # offered only when the message is about this (see GROUPS); "" = always
+    query_vector: bool = False  # the gate embeds the `query` argument for it (search by meaning)
 
     @property
     def exposed_name(self) -> str:
@@ -324,6 +326,18 @@ FUNCTIONS: tuple[ToolFunction, ...] = (
         )
     ),
     ToolFunction(
+        tool="pc",
+        function="search_file_contents",
+        scope="read",
+        description=("Search inside the files on the PC (the folders the user chose to index: Documents, Downloads, "
+                     "Desktop) by what they're about or say - 'the PDF where I wrote about the Pune flat'. Returns the "
+                     "files that match best, with the passage that matched. To find a file by its name, use pc_find_files."),
+        args_model=PcSearchContentsArgs,
+        module="app.tools.pc_files_tool",
+        group="files",
+        query_vector=True,
+    ),
+    ToolFunction(
         tool="routines",
         function="save_routine",
         scope="write",
@@ -366,7 +380,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
              "minimize", "in front", "tab", "tabs"),
     "files": ("file", "files", "folder", "folders", "downloads", "desktop", "documents", "pictures", "my resume", "cv",
               "pdf", "pdfs", "delete", "remove", "move", "copy", "rename", "organize", "organise", "sort", "clean",
-              "tidy", "save a", "save it", "save the", "find", "zip", "photo", "photos"),
+              "tidy", "save a", "save it", "save the", "find", "zip", "photo", "photos", "wrote", "mention", "mentions",
+              "mentioned", "notes", "doc", "docs", "spreadsheet", "presentation"),
     "typing": ("type", "write", "writing", "press", "key", "keys", "shortcut", "ctrl", "alt", "enter", "paste",
                "clipboard", "notepad", "word", "letter", "essay", "draft", "copy", "text"),
     "messaging": ("whatsapp", "message", "messages", "msg", "send", "text", "texting", "tell", "reply", "wish", "ping"),

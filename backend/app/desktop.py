@@ -42,6 +42,8 @@ class _Pending:
     description: str
     done: threading.Event = field(default_factory=threading.Event)
     result: dict | None = None
+    reply: bool = True  # False: told, not asked - nobody waits for a result (post())
+    expires: float | None = None  # monotonic time after which it's dropped undelivered
 
 
 _lock = threading.Lock()
@@ -93,6 +95,20 @@ def run(user_id: int, function: str, args: dict, *, confirm: bool, description: 
     return result.get("result")
 
 
+def post(user_id: int, function: str, args: dict, *, ttl: float = 600) -> bool:
+    """Tell the desktop app something without waiting for an answer - speak an announcement,
+    "index the files now". Dropped if no desktop app is connected, or if it isn't picked up
+    within `ttl` seconds (a reminder read out an hour late is worse than none). Never asks first:
+    only for things that change nothing on the PC."""
+    if not status(user_id)["connected"]:
+        return False
+    action = _Pending(next(_ids), user_id, function, args, False, "", reply=False, expires=time.monotonic() + ttl)
+    with _lock:
+        _pending[action.id] = action
+    _queue(user_id).put(action)
+    return True
+
+
 def next_action(user_id: int, device: str | None, wait: float = WAIT_SECONDS) -> dict | None:
     """For the desktop app's long-poll: the next action, or None after `wait` seconds."""
     touch(user_id, device)
@@ -109,9 +125,13 @@ def next_action(user_id: int, device: str | None, wait: float = WAIT_SECONDS) ->
             continue
         with _lock:
             alive = action.id in _pending  # its caller may have given up already
+            if not action.reply:  # told, not asked: nothing will come back for it
+                _pending.pop(action.id, None)
+        if alive and action.expires is not None and time.monotonic() > action.expires:
+            continue
         if alive:
             return {"id": action.id, "function": action.function, "args": action.args,
-                    "confirm": action.confirm, "description": action.description}
+                    "confirm": action.confirm, "description": action.description, "reply": action.reply}
 
 
 def finish(user_id: int, action_id: int, ok: bool, result: object = None, error: str | None = None) -> bool:

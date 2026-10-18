@@ -75,5 +75,14 @@ class Client:
         self._http.post(f"/desktop/results/{action_id}", headers=self._headers(), timeout=60,
                         json={"ok": ok, "result": result, "error": error})
 
+    def index_config(self) -> dict:
+        """Whether to index the PC's files for search, which folders, and what the server has."""
+        return self._check(self._http.get("/desktop/index/config", headers=self._headers(), timeout=60)).json()
+
+    def index_files(self, files: list[dict], removed: list[str]) -> dict:
+        resp = self._http.post("/desktop/index", headers=self._headers(), timeout=300,
+                               json={"files": files, "removed": removed})
+        return self._check(resp).json()
+
     def close(self) -> None:
         self._http.close()

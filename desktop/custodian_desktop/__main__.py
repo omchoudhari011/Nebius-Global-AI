@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw
 
 from . import actions, config
 from .client import Client, NotSignedIn
+from .indexer import Indexer
 from .ui import Window
 from .voice import Listener, Speaker
 
@@ -53,6 +54,7 @@ class App:
         self.last_turn = 0.0
         actions.on_timer = self.timer_rang
         actions.on_say = self.say_aloud
+        self.indexer = Indexer(lambda: self.client)  # search inside your files, when it's switched on
         self.paused = False
         self.stopping = threading.Event()
         self.tray = None
@@ -106,6 +108,9 @@ class App:
 
     def handle_action(self, action: dict) -> None:
         function, args = action["function"], action["args"]
+        if action.get("reply") is False:  # the server is telling, not asking: nothing goes back
+            self.handle_notice(function, args)
+            return
         if action.get("confirm") and function in actions.SELF_CONFIRMING:
             def ask(title: str, details: str) -> bool:
                 allowed = self.window.confirm(title, details)
@@ -129,6 +134,13 @@ class App:
             self.client.send_result(action["id"], True, result=result)
         except Exception as exc:  # noqa: BLE001 - reported to the model
             self.client.send_result(action["id"], False, error=f"{type(exc).__name__}: {exc}"[:500])
+
+    def handle_notice(self, function: str, args: dict) -> None:
+        """Things the server tells the app without waiting: index now, or say something."""
+        if function == "index_now":
+            self.indexer.index_now()
+        else:
+            log.info("ignored an unknown notice from the server: %s", function)
 
     # Talking ------------------------------------------------------------------------------------
 
@@ -244,6 +256,7 @@ class App:
                 return
             threading.Thread(target=self.bridge, daemon=True, name="bridge").start()
             threading.Thread(target=self.listener.run, daemon=True, name="listener").start()
+            threading.Thread(target=self.indexer.run, daemon=True, name="indexer").start()
             self.start_hotkey()
             hint = "Say “Hey Jarvis” or press Ctrl+Alt+Space" if self.settings.wake_word else "Press Ctrl+Alt+Space"
             self.window.show("Custodian is ready", reply=hint, hide_after=5)

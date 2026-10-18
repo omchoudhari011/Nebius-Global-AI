@@ -4,6 +4,7 @@ the proactive and learning features.
     GET  /settings/prefs · PATCH /settings/prefs
     GET  /routines · POST /routines · DELETE /routines/{id} · POST /routines/{id}/run
     GET  /activity?q=&days= · POST /activity/{id}/undo
+    GET  /pc-index · GET /desktop/index/config · POST /desktop/index   searching inside the PC's files
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 
-from .. import activity, desktop, orchestrator, routines, settings_store
+from .. import activity, desktop, orchestrator, pc_index, routines, settings_store
 from ..auth import require_session
 
 router = APIRouter(tags=["jarvis"])
@@ -29,9 +30,48 @@ def get_prefs(user_id: int = Depends(require_session)) -> dict:
 @router.patch("/settings/prefs")
 def set_prefs(body: dict[str, Any], user_id: int = Depends(require_session)) -> dict:
     try:
-        return settings_store.update(user_id, **body)
+        prefs = settings_store.update(user_id, **body)
     except settings_store.SettingError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
+    if body.get("pc_index") is False:
+        pc_index.clear(user_id)  # switching it off deletes what was indexed
+    elif body.get("pc_index") is True or "pc_index_folders" in body:
+        desktop.post(user_id, "index_now", {})  # start now rather than at the next half hour
+    return prefs
+
+
+# Searching inside the PC's files ----------------------------------------------------------------
+
+class IndexedFile(BaseModel):
+    path: str = Field(min_length=1, max_length=1000)
+    name: str = Field(default="", max_length=300)
+    kind: str = Field(default="", max_length=20)
+    modified: float = 0
+    size: int = Field(default=0, ge=0)
+    chunks: list[str] = Field(default_factory=list, max_length=pc_index.MAX_CHUNKS_PER_FILE)
+
+
+class IndexBatch(BaseModel):
+    files: list[IndexedFile] = Field(default_factory=list, max_length=pc_index.BATCH_FILES)
+    removed: list[str] = Field(default_factory=list, max_length=5000)
+
+
+@router.get("/pc-index")
+def index_status(user_id: int = Depends(require_session)) -> dict:
+    return pc_index.status(user_id)
+
+
+@router.get("/desktop/index/config")
+def index_config(user_id: int = Depends(require_session)) -> dict:
+    return pc_index.config(user_id)
+
+
+@router.post("/desktop/index")
+def index_files(body: IndexBatch, user_id: int = Depends(require_session)) -> dict:
+    try:
+        return pc_index.ingest(user_id, [f.model_dump() for f in body.files], body.removed)
+    except pc_index.IndexOff as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from None
 
 
 # Routines ------------------------------------------------------------------------------------

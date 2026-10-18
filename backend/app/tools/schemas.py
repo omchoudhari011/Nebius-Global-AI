@@ -155,6 +155,12 @@ class PcListFilesArgs(ToolArgs):
     pattern: SafeLine = Field(default="*", max_length=100, description="Name filter such as '*.pdf'.")
 
 
+class PcSearchContentsArgs(ToolArgs):
+    query: SafeLine = Field(min_length=1, max_length=300,
+                            description="What the file is about or says, in their words, e.g. 'rent agreement for the Pune flat'.")
+    limit: int = Field(default=5, ge=1, le=10)
+
+
 class PcFindFilesArgs(ToolArgs):
     query: SafeLine = Field(min_length=1, max_length=200, description="Part of the file name to look for.")
     folder: PcPath = Field(default="~", max_length=500, description="Where to look (searched recursively).")
