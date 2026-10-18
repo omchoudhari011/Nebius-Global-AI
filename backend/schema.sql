@@ -222,6 +222,13 @@ BEGIN
   UPDATE memories SET updated_at = datetime('now') WHERE id = new.id;
 END;
 
+-- Deleting the memory that replaced this one makes this one current again.
+CREATE TRIGGER memories_unsupersede AFTER UPDATE OF superseded_by ON memories
+WHEN new.superseded_by IS NULL AND old.superseded_by IS NOT NULL
+BEGIN
+  UPDATE memories SET valid_until = NULL WHERE id = new.id;
+END;
+
 -- Keyword recall index. Holds a plaintext copy of memory text for FTS5 MATCH queries —
 -- a disclosed tradeoff, see app/memory.py.
 -- rowid = memories.id: memory.write() inserts both rows in one transaction and must replace

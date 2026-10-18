@@ -171,6 +171,11 @@ MIGRATIONS = {
         ALTER TABLE memories ADD COLUMN valid_until TEXT;
         ALTER TABLE memories ADD COLUMN superseded_by INTEGER REFERENCES memories(id) ON DELETE SET NULL;
         ALTER TABLE memories ADD COLUMN linked INTEGER NOT NULL DEFAULT 0 CHECK (linked IN (0, 1));
+        CREATE TRIGGER memories_unsupersede AFTER UPDATE OF superseded_by ON memories
+        WHEN new.superseded_by IS NULL AND old.superseded_by IS NOT NULL
+        BEGIN
+          UPDATE memories SET valid_until = NULL WHERE id = new.id;
+        END;
         ALTER TABLE tool_calls ADD COLUMN undo BLOB;
         ALTER TABLE tool_calls ADD COLUMN undone_at TEXT;
         CREATE TABLE entities (

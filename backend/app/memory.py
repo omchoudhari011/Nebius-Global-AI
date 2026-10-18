@@ -50,6 +50,7 @@ class InvalidMemory(ValueError):
 
 
 def _row(row: sqlite3.Row) -> dict:
+    keys = row.keys()
     return {
         "id": row["id"],
         "type": row["type"],
@@ -58,6 +59,9 @@ def _row(row: sqlite3.Row) -> dict:
         "created_at": db.iso(row["created_at"]),
         "updated_at": db.iso(row["updated_at"]),
         "expires_at": db.iso(row["expires_at"]),
+        # A newer memory replaced this one (app/memory_graph.py): kept as history, no longer true.
+        "superseded_by": row["superseded_by"] if "superseded_by" in keys else None,
+        "valid_until": db.iso(row["valid_until"]) if "valid_until" in keys else None,
     }
 
 
@@ -128,11 +132,13 @@ def update(
             c.execute("UPDATE memories SET type = ? WHERE id = ?", (_check_type(type), memory_id))
         if content is not None:
             text = _clean(content)
-            c.execute("UPDATE memories SET content = ? WHERE id = ?", (encrypt(text), memory_id))
+            c.execute("UPDATE memories SET content = ?, linked = 0 WHERE id = ?", (encrypt(text), memory_id))  # mapped again
             c.execute("DELETE FROM memories_fts WHERE rowid = ?", (memory_id,))
             c.execute("INSERT INTO memories_fts (rowid, content) VALUES (?, ?)", (memory_id, text))
             purge_search_index(c)
             c.execute("DELETE FROM memory_vectors WHERE memory_id = ?", (memory_id,))  # re-embedded next turn
+            c.execute("DELETE FROM memory_entities WHERE memory_id = ?", (memory_id,))
+            c.execute("DELETE FROM entity_links WHERE memory_id = ?", (memory_id,))
             vectors.forget("memory", [memory_id])
         return get(user_id, memory_id, conn=c)
 
@@ -185,7 +191,7 @@ def preferences(user_id: int, limit: int = 3, *, conn: sqlite3.Connection | None
         rows = c.execute(
             """
             SELECT * FROM memories
-            WHERE user_id = ? AND type = 'preference'
+            WHERE user_id = ? AND type = 'preference' AND superseded_by IS NULL
               AND (expires_at IS NULL OR expires_at > datetime('now'))
             ORDER BY updated_at DESC, id DESC LIMIT ?
             """,
@@ -256,10 +262,10 @@ def for_context(
             best = search(user_id, query, k, query_vector=query_vector, conn=c)
         for item in best + preferences(user_id, preferences_k, conn=c):
             take(item, True)
-        rows = c.execute(
+        rows = c.execute(  # a replaced fact comes in only when the question matches it (history)
             """
             SELECT * FROM memories
-            WHERE user_id = ? AND (expires_at IS NULL OR expires_at > datetime('now'))
+            WHERE user_id = ? AND superseded_by IS NULL AND (expires_at IS NULL OR expires_at > datetime('now'))
             ORDER BY updated_at DESC, id DESC
             """,
             (user_id,),
@@ -298,8 +304,19 @@ def delete(user_id: int, memory_id: int, *, conn: sqlite3.Connection | None = No
         cur = c.execute("DELETE FROM memories WHERE id = ? AND user_id = ?", (memory_id, user_id))
         if cur.rowcount:
             purge_search_index(c)
+            # People and places no memory names any more go too (their links went with the memory).
+            c.execute(
+                """
+                DELETE FROM entities WHERE user_id = ? AND id NOT IN (SELECT entity_id FROM memory_entities)
+                  AND id NOT IN (SELECT source_id FROM entity_links) AND id NOT IN (SELECT target_id FROM entity_links)
+                """,
+                (user_id,),
+            )
     if cur.rowcount:
         vectors.forget("memory", [memory_id])  # its stored vector went with it (ON DELETE CASCADE)
+        from . import memory_graph  # here: it reads memories
+
+        memory_graph._cache.pop(user_id, None)  # noqa: SLF001
     return cur.rowcount > 0
 
 

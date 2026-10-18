@@ -30,7 +30,7 @@ from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from . import auth, db, memory, notifications, orchestrator, plans, privacy, proactive, tasks, usage, watchers
+from . import auth, db, memory, memory_graph, notifications, orchestrator, plans, privacy, proactive, tasks, usage, watchers
 
 log = logging.getLogger(__name__)
 
@@ -119,7 +119,8 @@ def start() -> None:
         # Proactive (app/proactive.py, app/watchers.py): meeting heads-ups every minute, watches
         # every five (each at its own pace).
         for job, minutes, job_id in ((_safe(proactive.meeting_heads_up), 1, MEETINGS_JOB_ID),
-                                     (_safe(watchers.check_due), 5, WATCHERS_JOB_ID)):
+                                     (_safe(watchers.check_due), 5, WATCHERS_JOB_ID),
+                                     (_safe(memory_graph.process_pending), 1, GRAPH_JOB_ID)):  # memories saved elsewhere
             sched.add_job(job, IntervalTrigger(minutes=minutes, timezone=timezone.utc), id=job_id,
                           next_run_time=datetime.now(timezone.utc) + timedelta(seconds=30), replace_existing=True)
     with db.connect() as conn:

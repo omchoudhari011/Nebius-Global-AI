@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 
-from .. import activity, desktop, orchestrator, pc_index, proactive, routines, settings_store, watchers
+from .. import activity, desktop, memory, memory_graph, orchestrator, pc_index, proactive, routines, settings_store, watchers
 from ..auth import require_session
 
 router = APIRouter(tags=["jarvis"])
@@ -109,6 +109,17 @@ def run_routine(routine_id: int, user_id: int = Depends(require_session)) -> dic
     if routine is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Routine not found")
     return orchestrator.handle(user_id, routine["name"])
+
+
+# The memory graph --------------------------------------------------------------------------------
+
+@router.get("/memory/graph")
+def memory_map(user_id: int = Depends(require_session)) -> list[dict]:
+    """The people, places, projects and organisations your memories name, with how they relate."""
+    memory_graph.process_pending()  # anything saved a moment ago
+    texts = {m["id"]: m for m in memory.list_memories(user_id, limit=1000)}
+    return [{**e, "memories": [{"id": i, "content": texts[i]["content"], "current": not texts[i]["superseded_by"]}
+                               for i in e["memories"] if i in texts]} for e in memory_graph.graph(user_id)]
 
 
 # Proactive -------------------------------------------------------------------------------------

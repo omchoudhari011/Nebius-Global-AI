@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from . import activity, conversations, db, documents, fastpath, google_account, grounding, history_search, memory, plans, privacy, routines, sensitive, skills, usage, vectors, warmup
+from . import activity, conversations, db, documents, fastpath, google_account, grounding, history_search, memory, memory_graph, plans, privacy, routines, sensitive, skills, usage, vectors, warmup
 from .config import get_settings
 from .crypto import decrypt, encrypt, encrypt_json
 from .model_backends import ModelError, get_backend, get_large_backend, large_base_url
@@ -98,6 +98,10 @@ REMEMBER_TOOL = {
                     "minimum": 1,
                     "maximum": 3650,
                     "description": "Only for facts that stop being true, e.g. a trip next week.",
+                },
+                "replaces": {
+                    "type": "integer",
+                    "description": "When this makes a saved memory no longer true (they moved, changed jobs), that memory's # number.",
                 },
             },
             "required": ["content"],
@@ -254,7 +258,15 @@ def _now_text(tz_name: str) -> str:
 def _format_memories(items: list[tuple[dict, bool]]) -> str:
     if not items:
         return "(nothing saved yet)"
-    return "\n".join(f"- [memory #{m['id']} · {m['type']}] {m['content']}" for m, _ in items)
+
+    def label(m: dict) -> str:
+        if m.get("superseded_by"):  # a fact that changed: history, not the present (app/memory_graph.py)
+            since = (m.get("valid_until") or "")[:10]
+            return f"memory #{m['id']} · {m['type']} · no longer true" + (f" since {since}" if since else "") + \
+                f", replaced by #{m['superseded_by']}"
+        return f"memory #{m['id']} · {m['type']}"
+
+    return "\n".join(f"- [{label(m)}] {m['content']}" for m, _ in items)
 
 
 def _format_earlier(items: list[dict], tz_name: str) -> str:
@@ -298,7 +310,8 @@ def _save_message(conversation_id: int, role: str, content: str, **extra: Any) -
         ).lastrowid
 
 
-def _remember(user_id: int, call: ToolCallRequest, source_message_id: int, said: list[str]) -> tuple[str, int | None, str | None]:
+def _remember(user_id: int, call: ToolCallRequest, source_message_id: int, said: list[str],
+              shown: set[int] | None = None) -> tuple[str, int | None, str | None]:
     """The model's `remember` call: an internal action, not a gated tool (it only touches the
     user's own memory), so it isn't logged in tool_calls; the memory row records its source.
     The memory has to be something the user said (`said`: their words in this turn, this chat
@@ -329,6 +342,10 @@ def _remember(user_id: int, call: ToolCallRequest, source_message_id: int, said:
         days = args.get("expires_in_days")
         expires = datetime.now(timezone.utc) + timedelta(days=int(days)) if days else None
         memory_id = memory.write(user_id, content, kind, source_message_id=source_message_id, expires_at=expires)
+        replaced = args.get("replaces")
+        # Only a memory the model was shown can be marked as replaced (the newer fact keeps the old as history).
+        if isinstance(replaced, int) and replaced != memory_id and replaced in (shown or set()):
+            memory_graph.mark_replaced(user_id, memory_id, replaced)
     except (memory.InvalidMemory, plans.PlanLimit) as exc:  # a secret, or the plan's memory limit
         return refused(str(exc), str(exc))
     except (ValueError, TypeError, json.JSONDecodeError) as exc:
@@ -456,6 +473,10 @@ def handle(
     # made from their words alone, since it is also stored as this message's meaning.
     search_text = f"{query} {NAME_SEARCH_WORDS}" if message is not None and _ASKS_NAME.search(message) else query
     matches = memory.search(user_id, search_text, RECALL_K, query_vector=query_vector)
+    if message is not None:  # and the memories about who and what it names, or "my sister" means (app/memory_graph.py)
+        have = {m["id"] for m in matches}
+        matches += [m for m in (memory.get(user_id, i) for i in memory_graph.related_memory_ids(user_id, message))
+                    if m and m["id"] not in have]
     context_memories = memory.for_context(
         user_id,
         search_text,
@@ -616,7 +637,7 @@ def handle(
                     }
                 )
             elif call.name == "remember":
-                result, memory_id, rejection = _remember(user_id, call, source_id, said)
+                result, memory_id, rejection = _remember(user_id, call, source_id, said, {m["id"] for m, _ in context_memories})
                 if memory_id is not None:
                     evidence.saved_memories += 1
                     evidence.memory_ids.add(memory_id)
@@ -668,6 +689,8 @@ def handle(
         _save_trace(final_id, trace)
     if routine is not None:
         routines.mark_run(routine["id"])
+    if evidence.saved_memories:  # map who and what they're about, and what they replace (instant: plain rules)
+        memory_graph.process_pending()
 
     # 6. Link what the model was given to the reply, and report what shaped it. A memory or
     #    conversation deleted while the model was working is skipped, not linked.

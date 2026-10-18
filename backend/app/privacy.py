@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from . import db, desktop, embeddings, google_account, history_search, memory, notifications, permissions, plans, sensitive, tasks, vectors
+from . import db, desktop, embeddings, google_account, history_search, memory, memory_graph, notifications, permissions, plans, sensitive, tasks, vectors
 from .config import get_settings
 from .model_backends import large_base_url
 from .crypto import decrypt, decrypt_json
@@ -348,6 +348,7 @@ def export(user_id: int) -> dict:
         "settings": settings_for(user_id),
         "plan": {"id": state.plan.id, "name": state.plan.name, "source": state.source},
         "memories": memory.list_memories(user_id, limit=1_000_000),
+        "memory_graph": memory_graph.graph(user_id),
         "conversations": conversations,
         "tool_calls": tool_calls,
         "tasks": task_list,
@@ -391,6 +392,7 @@ def erase(user_id: int) -> dict:
             "messages": len(message_ids),
             "conversations": conn.execute("DELETE FROM conversations WHERE user_id = ?", (user_id,)).rowcount,
             "memories": conn.execute("DELETE FROM memories WHERE user_id = ?", (user_id,)).rowcount,
+            "people_and_places": conn.execute("DELETE FROM entities WHERE user_id = ?", (user_id,)).rowcount,
             "tasks": conn.execute("DELETE FROM tasks WHERE user_id = ?", (user_id,)).rowcount,
             "switch_history": conn.execute(
                 "DELETE FROM permission_events WHERE permission_id IN (SELECT id FROM permissions WHERE user_id = ?)", (user_id,)
