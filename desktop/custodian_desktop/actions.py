@@ -240,12 +240,11 @@ def capture(purpose: str = "", **_: object) -> dict:
 def changed_share(before, after) -> float:  # noqa: ANN001 - PIL images
     """How much of the screen looks different, 0 to 1, on small greyscale copies (cheap, and
     blind to a blinking cursor)."""
-    from PIL import ImageChops
+    import numpy as np
 
     size = (160, 90)
-    a, b = before.convert("L").resize(size), after.convert("L").resize(size)
-    diff = ImageChops.difference(a, b).point(lambda v: 255 if v > 24 else 0)
-    return sum(1 for v in diff.getdata() if v) / (size[0] * size[1])
+    a, b = (np.asarray(image.convert("L").resize(size), dtype=np.int16) for image in (before, after))
+    return float(np.mean(np.abs(a - b) > 24))
 
 
 def click_at_checked(x: int, y: int, image_width: int, image_height: int, button: str = "left", **_: object) -> dict:

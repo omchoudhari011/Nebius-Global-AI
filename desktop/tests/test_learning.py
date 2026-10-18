@@ -45,16 +45,19 @@ def _learner(client, *, hour=2, idle=IDLE_TO_START + 5, plugged=True):
 
 
 def test_it_starts_at_night_when_idle_plugged_in_and_theres_something_new(monkeypatch):
-    monkeypatch.setattr("custodian_desktop.learning.subprocess.run", lambda *a, **k: None)
+    commands = []
+    monkeypatch.setattr("custodian_desktop.learning.subprocess.run", lambda cmd, **k: commands.append(cmd))
     client = _Client()
     learner, state, spawned = _learner(client)
     learner.tick()
     assert len(spawned) == 1
     learner.tick()  # still running, still idle: left alone
-    assert not spawned[0].stopped
+    assert not spawned[0].stopped and commands == []
     state["idle"] = 3  # a key press
     learner.tick()
-    assert spawned[0].stopped and client.results[0][0] == "stopped"
+    assert ["docker", "stop", "-t", "5", "custodian-nightly"] in commands  # the training container
+    killed = ["taskkill", "/T", "/F", "/PID", "123"] in commands  # Windows: the run and everything it started
+    assert (killed or spawned[0].stopped) and client.results[0][0] == "stopped"
     state["idle"] = IDLE_TO_START + 5
     learner.tick()  # once a night, even after being stopped
     assert len(spawned) == 1
