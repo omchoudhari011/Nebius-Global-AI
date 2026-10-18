@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from .. import accounts, desktop, documents, feedback, google_account, notifications, settings_store, telegram, voice, warmup
+from .. import accounts, desktop, documents, feedback, google_account, notifications, settings_store, telegram, vision, voice, warmup
 from ..auth import require_session
 from ..model_backends import get_large_backend
 
@@ -49,6 +49,7 @@ def features(user_id: int = Depends(require_session)) -> dict:
     return {
         "voice": voice.configured(),
         "photos": bool(os.getenv("VISION_MODEL", "").strip()),
+        "screen_vision": vision.configured(),
         "larger_model": large.model_id if large else None,
         "google": google_account.configured(),
         "spotify": accounts.configured("spotify"),

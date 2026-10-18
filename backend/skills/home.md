@@ -1,7 +1,7 @@
 ---
 name: home
 description: Controls the lights, AC, fans and plugs at home through Home Assistant.
-keywords: lights, the lights, the light, lamp, ac, the ac, air conditioner, aircon, thermostat, heater, geyser, fan, the fan, fans, temperature, degrees, home assistant, smart home, bedroom, living room, hall, kitchen, plug, smart plug, scene, humidifier, purifier
+keywords: lights, the lights, the light, dim the lights, lights off, lights on, turn off the lights, turn on the lights, switch off the lights, lamp, ac, the ac, air conditioner, aircon, thermostat, heater, geyser, fan, the fan, fans, temperature, degrees, home assistant, smart home, bedroom, living room, hall, kitchen, plug, smart plug, scene, humidifier, purifier
 tools: home:read, home:write
 ---
 You are Custodian, a private personal assistant. Right now you are controlling the devices in their home through Home Assistant.

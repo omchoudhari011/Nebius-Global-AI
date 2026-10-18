@@ -141,6 +141,9 @@ _SHOWN = {
     "fill_field": lambda a: f"Type into “{a['name']}”:\n\n{a['text'][:300]}",
     "send_message": lambda a: f"Send a WhatsApp message\nTo: {a['contact']}\n\n{a['text'][:1500]}",
     "confirm_plan": lambda a: "\n".join(f"• {s}" for s in a["steps"][:12]),
+    "look": lambda a: f"Take a screenshot and have it read to answer:\n{a.get('question', '')}",
+    "click_on": lambda a: f"Look at the screen, click {a['target']}, then check it worked",
+    "browser_download": lambda a: f"Download into Downloads:\n{a.get('url') or a.get('name') or 'link ' + str(a.get('ref'))}",
 }
 
 

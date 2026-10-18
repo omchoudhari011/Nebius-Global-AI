@@ -64,7 +64,7 @@ ACCOUNTS = {
 
 def test_every_registered_function_is_checked():
     assert {f.exposed_name for f in registry.FUNCTIONS} == ({name for name, _, _ in LOCAL} | set(GOOGLE) | set(PC) | WEB
-                                                            | set(ACCOUNTS))
+                                                            | set(ACCOUNTS) | SCREEN)
 
 
 @pytest.fixture
@@ -165,8 +165,12 @@ PC = {
     "pc_fill_field": {"name": "Search", "text": "hello"}, "pc_send_message": {"contact": "Tanishka", "text": "on my way"},
     "pc_do_not_disturb": {"on": True}, "pc_alarm": {"time": "07:00"}, "pc_say": {"text": "Good morning"},
     "pc_confirm_plan": {"title": "Run “Work mode”", "steps": ["Open vs code"]},
+    "pc_browser_open": {"url": "https://www.irctc.co.in"}, "pc_browser_read": {}, "pc_browser_click": {"ref": "3"},
+    "pc_browser_fill": {"name": "Search", "text": "earbuds"}, "pc_browser_download": {"url": "https://example.com/a.pdf"},
+    "pc_browser_tabs": {},
 }
 WEB = {"web_search", "web_read_page"}
+SCREEN = {"pc_look", "pc_click_on"}  # with the vision model: tests/test_vision.py
 
 
 @pytest.fixture
@@ -207,6 +211,8 @@ def test_every_pc_action_goes_through_the_gate_to_the_desktop_app(user_id, tool_
     assert set(asked) == {name.removeprefix("pc_") for name in PC}
     assert asked["type_text"]["confirm"] is True and asked["open"]["confirm"] is False
     assert asked["delete_file"]["args"] == {"path": "~/b.txt"}
+    assert asked["browser_click"]["confirm"] is False  # it asks on the PC only for a risky button (browser.py)
+    assert asked["browser_download"]["confirm"] is True
 
 
 def test_pc_actions_say_so_when_the_desktop_app_isnt_running(user_id, tool_ids, message_id):

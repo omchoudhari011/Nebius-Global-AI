@@ -286,6 +286,59 @@ class PcFillArgs(PcElementArgs):
     text: PlainText = Field(max_length=5000, description="What to put in the field.")
 
 
+class PcLookArgs(ToolArgs):
+    question: SafeLine = Field(default="Describe what's on the screen.", max_length=300,
+                               description="What to find out from the screen, e.g. 'what does the error say?'.")
+
+
+class PcClickOnArgs(ToolArgs):
+    target: SafeLine = Field(min_length=2, max_length=200,
+                             description="What to click, described as it looks: 'the blue Sign in button', 'the X on the popup'.")
+    button: Literal["left", "right", "double"] = "left"
+
+
+class PcBrowserOpenArgs(ToolArgs):
+    url: SafeLine = Field(min_length=4, max_length=2000, description="The page's address, e.g. 'https://www.irctc.co.in'.")
+    new_tab: bool = True
+
+
+class PcBrowserTabArgs(ToolArgs):
+    tab: int | None = Field(default=None, ge=1, le=50, description="Which tab (1 = the one used last); leave out for that one.")
+
+
+class PcBrowserElementArgs(ToolArgs):
+    ref: str | None = Field(default=None, max_length=8, pattern=r"^\d+$", description="The element's ref from pc_browser_read.")
+    name: SafeLine | None = Field(default=None, max_length=120, description="Or its name as pc_browser_read listed it.")
+
+    @model_validator(mode="after")
+    def _one_element(self) -> "PcBrowserElementArgs":
+        if not self.ref and not self.name:
+            raise ValueError("give the element's ref (from pc_browser_read) or its name")
+        return self
+
+
+class PcBrowserFillArgs(PcBrowserElementArgs):
+    text: PlainText = Field(max_length=5000, description="What to type, or the choice to pick in a list.")
+    submit: bool = Field(default=False, description="Press Enter afterwards to send the form (the user confirms).")
+
+
+class PcBrowserDownloadArgs(ToolArgs):
+    url: SafeLine | None = Field(default=None, max_length=2000, pattern=r"^https?://", description="The file's address.")
+    ref: str | None = Field(default=None, max_length=8, pattern=r"^\d+$", description="Or the download link's ref.")
+    name: SafeLine | None = Field(default=None, max_length=120, description="Or the download link's name.")
+
+    @model_validator(mode="after")
+    def _something(self) -> "PcBrowserDownloadArgs":
+        if not (self.url or self.ref or self.name):
+            raise ValueError("give the file's url, or the link's ref or name")
+        return self
+
+
+class PcBrowserTabsArgs(ToolArgs):
+    action: Literal["list", "switch", "close"] = "list"
+    tab: int | None = Field(default=None, ge=1, le=50)
+
+
 class PcSendMessageArgs(ToolArgs):
     contact: SafeLine = Field(min_length=1, max_length=100, description="The chat's name as saved in WhatsApp, e.g. 'Tanishka' or 'Mum'.")
     text: PlainText = Field(min_length=1, max_length=4000, description="The exact message to send.")

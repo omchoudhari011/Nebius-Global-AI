@@ -104,7 +104,7 @@ class DesktopExecutor(ToolExecutor):
     back as an image and is turned into a description by the vision model, when one is set."""
 
     def run(self, request: ToolRequest, timeout: float) -> Any:
-        from .. import desktop
+        from .. import desktop, vision
 
         ctx = request.context
         confirm, approved = bool(ctx.get("confirm")), None
@@ -112,12 +112,20 @@ class DesktopExecutor(ToolExecutor):
             if not desktop.status(ctx["user_id"])["connected"]:  # say so now, not after you allowed it
                 raise desktop.DesktopUnavailable(desktop.NOT_CONNECTED)
             where = approvals.remote_origin(ctx["user_id"]) if confirm else None
+            screen = request.function in vision.SCREEN_ACTIONS  # look, click_on: with the vision model
+            if screen:
+                vision.require()  # no vision model: say what to set up, before anyone is asked to allow it
             if where:  # asked from the phone or Telegram: allowed there, never reaching the PC otherwise
                 approvals.ask(ctx["user_id"], request.function, request.args, _title(ctx), where)
                 confirm, approved = False, "remote"
+            if screen:
+                return vision.run(ctx["user_id"], request.function, request.args, confirm=confirm, approved=approved,
+                                  description=str(ctx.get("description", "")))
             result = desktop.run(ctx["user_id"], request.function, request.args,
                                  confirm=confirm, description=str(ctx.get("description", "")), approved=approved)
         except PermissionError as exc:
+            raise ToolFailure(str(exc)) from None
+        except vision.VisionError as exc:
             raise ToolFailure(str(exc)) from None
         except desktop.DesktopUnavailable as exc:
             raise ToolFailure(str(exc)) from None

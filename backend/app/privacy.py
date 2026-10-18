@@ -224,6 +224,10 @@ def _other_services(user_id: int) -> list[dict]:
     if os.getenv("VISION_MODEL", "").strip():
         add("Photos", os.getenv("VISION_BASE_URL", "").strip() or get_settings().nebius_base_url,
             os.environ["VISION_MODEL"], "each photo you upload")
+    screen_model = os.getenv("SCREEN_VISION_MODEL", "").strip() or os.getenv("VISION_MODEL", "").strip()
+    if screen_model:
+        add("Seeing the screen", os.getenv("VISION_BASE_URL", "").strip() or get_settings().nebius_base_url, screen_model,
+            "a screenshot each time you allow “look at the screen” or “click on …”; it isn't kept")
     large_id = os.getenv("LARGE_MODEL_ID", "").strip()
     if large_id:
         add("Think harder", large_base_url(), large_id, "the whole conversation, when you ask it to think harder, "

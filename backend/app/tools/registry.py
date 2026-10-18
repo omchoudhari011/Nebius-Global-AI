@@ -56,6 +56,14 @@ from .schemas import (
     PcTimerArgs,
     PcWriteInAppArgs,
     PcSendMessageArgs,
+    PcClickOnArgs,
+    PcLookArgs,
+    PcBrowserDownloadArgs,
+    PcBrowserElementArgs,
+    PcBrowserFillArgs,
+    PcBrowserOpenArgs,
+    PcBrowserTabArgs,
+    PcBrowserTabsArgs,
     PcAlarmArgs,
     PcDndArgs,
     PcPlanArgs,
@@ -331,6 +339,26 @@ FUNCTIONS: tuple[ToolFunction, ...] = (
             ("fill_field", "write", "screen", True, PcFillArgs, "Type into a text field by its name (the user confirms)."),
             ("screenshot", "read", "screen", True, NoArgs, "Take a screenshot and describe what's on the screen (the user confirms)."),
             ("click", "write", "screen", True, PcClickArgs, "Click at screen coordinates (the user confirms)."),
+            ("look", "read", "screen", True, PcLookArgs,
+             "Look at the screen and answer a question about it - 'what's on my screen?', 'what does this error say?' - "
+             "for any app or image (the user confirms)."),
+            ("click_on", "write", "screen", True, PcClickOnArgs,
+             "Click something on the screen by how it looks - 'the blue Sign in button' - when pc_read_screen doesn't "
+             "list it. It looks, clicks, then checks the screen changed (the user confirms once)."),
+            # Custodian's own browser, driven directly (desktop browser.py): reliable web tasks.
+            ("browser_open", "write", "browser", False, PcBrowserOpenArgs,
+             "Open a page in Custodian's own browser, to read it or work on it with the other pc_browser tools."),
+            ("browser_read", "read", "browser", False, PcBrowserTabArgs,
+             "Read the page in Custodian's browser: its text, and its links, buttons and fields numbered by `ref`."),
+            ("browser_click", "write", "browser", False, PcBrowserElementArgs,
+             "Click a link or button in Custodian's browser by its ref (or name) from pc_browser_read. Anything that "
+             "submits, buys, pays, sends, books or deletes asks the user first."),
+            ("browser_fill", "write", "browser", False, PcBrowserFillArgs,
+             "Type into a field (or pick in a list) in Custodian's browser by its ref or name; submit=true presses "
+             "Enter to send it (the user confirms). Never passwords."),
+            ("browser_download", "write", "browser", True, PcBrowserDownloadArgs,
+             "Download a file - a link on the page, or an address - into Downloads (the user confirms)."),
+            ("browser_tabs", "write", "browser", False, PcBrowserTabsArgs, "List, switch to or close tabs in Custodian's browser."),
             ("do_not_disturb", "write", "system", False, PcDndArgs,
              "Turn Windows' Do Not Disturb on (silence notifications) or off."),
             ("alarm", "write", "system", False, PcAlarmArgs,
@@ -543,6 +571,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "screen": ("on my screen", "on the screen", "on screen", "read the screen", "my screen", "click", "button", "fill",
                "form", "field", "screenshot", "you see", "showing", "sign in", "log in", "submit", "tick", "check box"),
     "speak": ("out loud", "aloud", "announce", "speak", "say it", "read it out"),
+    "browser": ("browser", "web page", "webpage", "page", "website", "site", "form", "fill", "sign in", "log in", "login",
+                "download", "tab", "tabs", "order", "book", "booking", "checkout", "cart", "ticket", "tickets", "apply",
+                "register", "irctc", "amazon", "flipkart", "portal", "online", "submit"),
 }
 INTERNAL = "internal"  # never offered to the model; only Custodian's own code calls these
 

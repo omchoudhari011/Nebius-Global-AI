@@ -26,7 +26,7 @@ from .voice import Listener, Speaker
 
 log = logging.getLogger("custodian.desktop")
 CONVERSATION_MINUTES = 15  # voice turns this close together continue the same chat
-ACTS_ON_FRONT_WINDOW = {"type_text", "press_keys", "click", "click_element", "fill_field"}
+ACTS_ON_FRONT_WINDOW = {"type_text", "press_keys", "click", "click_element", "fill_field", "capture"}
 AWAY_SECONDS = 3 * 3600  # this long without a key or mouse touch, and the next touch is "arriving"
 MORNING = range(5, 12)  # hours when arriving gets the morning briefing
 # A spoken "yes" to an offer ("Shall I open the meeting link?"), in English, Hindi or Marathi.
@@ -147,7 +147,7 @@ class App:
             self.window.show("Allowed from your phone", reply=details[:300], hide_after=6)
             if function in actions.SELF_CONFIRMING:  # it still checks what it found (the chat's real name) itself
                 actions.confirm_hook = lambda _title, _details: True
-        elif action.get("confirm") and function in actions.SELF_CONFIRMING:
+        elif function in actions.SELF_CONFIRMING and (action.get("confirm") or function in actions.ASK_WHEN_RISKY):
             def ask(title: str, details: str) -> bool:
                 allowed = self.window.confirm(title, details)
                 log.info("%s %s %s", "ALLOWED" if allowed else "DECLINED", function, details[:200])
