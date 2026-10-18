@@ -285,6 +285,109 @@ Settings are in `%APPDATA%\Custodian\desktop.json` (server, wake word on or off 
 threshold, hotkey, speaking replies, voice, microphone, protected folders); the sign-in is kept
 in Windows Credential Manager. See [desktop/README.md](desktop/README.md).
 
+## More Jarvis
+
+The **Jarvis** tab in the app holds most of these: a remote for the PC, actions waiting for
+your OK, routines, what Custodian did (with undo), the settings below, and the connected accounts.
+
+**Search inside your files by meaning** (Jarvis → Settings → *Search inside my files*). The
+desktop app reads Documents, Downloads and Desktop (text, code, PDF, Word, PowerPoint, Excel,
+OpenDocument), sends only new or changed files' passages, and the server embeds them with the
+memory model: "find the PDF where I wrote about the Pune flat". Files and folders whose names say
+they hold secrets are never read, passages that look like a password or card number are never
+stored, and switching it off deletes the index.
+
+**Learn from the big model** (distillation). `finetune/distill.py` has the larger model on Nebius
+rewrite every training scenario's message the ways real people say it - Hinglish, typos,
+voice-style, indirect, very short - keeps a rewrite only if every name, number, time and quoted
+text survives, and then runs it through the real agent loop with the larger model answering.
+A conversation is kept only if the accuracy checks pass it unchanged and it called the tools the
+scenario expects. Only the synthetic world is sent; none of your conversations.
+
+```powershell
+cd backend; $env:NEBIUS_API_KEY = "..."
+.\finetune\run_finetune.ps1 -Distill        # distil, then train, export, install and compare as usual
+```
+
+**Learn from your corrections, automatically** (Jarvis → Settings → *Learn from my corrections
+overnight*). Each 👎 with "what it should have said" (shared for training) becomes a preference
+pair: your correction preferred over the reply it replaced. Between 01:00 and 06:00, when the PC
+has been idle for half an hour, is plugged in and there are at least three new ratings, the
+desktop app runs `finetune/nightly.py`: it continues the adapter in use with DPO on the pairs
+plus a sample of the usual conversations (so nothing else is forgotten), compares the result with
+your model, and switches only if nothing got worse - no kind of request may fall by more than one
+held-out conversation (v6 lost uploaded files, 4/6 to 1/6), recall may not fall, and no more first
+drafts may make things up. Touching the keyboard or mouse stops it at once; you get a note in the
+morning either way. Needs one full run of `run_finetune.ps1` first.
+
+**See the screen** (`SCREEN_VISION_MODEL`, e.g. `ollama pull qwen2.5vl:7b`). "What's on my screen?",
+"what does this error say?" (`pc_look`), and "click the blue Sign in button" (`pc_click_on`): one
+**Allow once** covers looking, finding it, clicking, and looking again to check the screen
+changed - the reply says so if nothing did. Screenshots are read and never kept.
+
+**Real browser automation.** Custodian drives Chrome or Edge directly over the DevTools protocol,
+in a browser profile of its own (sign in there to the sites you want it to use; your everyday
+profile is never touched; the port listens on this PC only). Pages are read with their links,
+buttons and fields numbered, then filled and clicked by number, several steps in a row, with
+downloads into Downloads. Following a link or typing a search just happens; anything that submits,
+buys, pays, orders, books, sends, posts or deletes asks **Allow once** on the PC naming the button
+and the page, and a password field is never filled.
+
+**A proactive Jarvis.** Reminders, meeting heads-ups ("Design review starts in 10 minutes - open
+the link?", answered by button or by saying yes) and watcher alerts are spoken on the PC, never in
+your quiet hours; the first time you use the PC in the morning it reads out your day. Watchers:
+"tell me when the iPhone 16 on Amazon drops below 60000", a page changing, words appearing
+("In stock"), an email from someone.
+
+**Routines.** "Work mode" = open VS Code, volume 30, Do Not Disturb on; "Good night" = close
+Chrome, alarm at 07:00, lock the PC. Make them by chat ("make a routine called ...") or in the
+Jarvis tab; saying the name runs every step, with one approval on the PC for the whole list when a
+step would ask. A routine can't delete or write files, type, click or send messages.
+
+**Faster, more natural voice** (the desktop app).
+- Replies are spoken sentence by sentence, the next one made while the last plays, so it starts
+  talking after the first sentence; and transcription starts at the first pause in what you say.
+- Barge-in: say the wake word while it's speaking to cut it off and ask something else (tray:
+  *Interrupt by saying ...*).
+- Hindi and Marathi: set the language in Jarvis → Settings (it goes to Whisper), and replies in
+  Devanagari are spoken with a Hindi Piper voice (`run-desktop.ps1 -Hindi`) or Windows' Hindi voice.
+- Your own wake word: train "Hey Custodian" with openWakeWord's
+  [training notebook](https://github.com/dscripka/openWakeWord#training-new-models), put
+  `hey_custodian.onnx` in `%APPDATA%\Custodian\wakewords`, and set `"wake_model": "hey_custodian",
+  "wake_phrase": "Hey Custodian"` in `desktop.json`.
+- Voice ID: `run-desktop.ps1 -VoiceId`, then tray → *Only my voice*, and say three phrases. Each
+  spoken request is compared with your voiceprint on the PC before anything is sent - someone
+  else's words aren't even transcribed - and with voice ID on, a request is refused if it can't
+  be checked. It stops other people talking to your PC, not a recording of you: risky actions
+  still ask.
+
+**Deeper memory.** Memories are read for the people, places, organisations and projects they name
+and how they relate, so "what does my sister do?" finds "Meera works at Infosys". A newer memory
+that changes a fact ("moved from Pune to Mumbai") replaces the old one, which is kept as history.
+Everything Custodian did is a searchable log ("what did I send Tanishka yesterday?") with undo
+where it can: files back from the Recycle Bin, the volume, brightness or theme put back, moves
+reversed.
+
+**Your phone as a remote, and more integrations.**
+- The Jarvis tab's remote: play/pause, next, volume, mute, dark mode, battery, lock the PC, or
+  type any command. When you ask from the phone (or Telegram), a PC action that needs an OK is
+  allowed **there**, for up to two minutes: allowed, it goes to the PC without a second dialog
+  and the PC shows it was allowed remotely; denied or unanswered, it never reaches the PC. Turn
+  *Allow PC actions from here* off to keep every approval on the PC.
+- **Spotify** (`SPOTIFY_CLIENT_ID`/`_SECRET`): exact songs, albums, artists and playlists on any
+  device with Spotify open (Premium), instead of clicking the app.
+- **Microsoft 365** (`MICROSOFT_CLIENT_ID`/`_SECRET`): Outlook mail (read only) and calendar,
+  with Teams links.
+- **Telegram** (`TELEGRAM_BOT_TOKEN` from @BotFather): link your chat with a one-time code from
+  the Jarvis tab; then chat (or send voice notes), allow PC actions with buttons, and get alerts.
+  Any other chat is refused; groups are ignored; the bot polls, so no public address is needed.
+- **Home Assistant**: paste its address and a long-lived access token in the Jarvis tab. Lights,
+  switches, fans, AC (temperature and mode), scenes and media players - never locks, alarms,
+  doors or covers. Its tools may reach that one address on your network and nothing else.
+
+Each integration's tools have their own switches in Tools & Data, all off until you turn them on,
+and each appears under Account → Where your data goes once connected.
+
 ## Plans and licensing
 
 Custodian is open core. Everything about privacy and safety is in every plan; what you pay
@@ -400,6 +503,10 @@ Set in `backend/.env` (see `backend/.env.example` for every option).
 | `VISION_MODEL` / `VISION_BASE_URL` / `VISION_API_KEY` | (unset) / `NEBIUS_BASE_URL` | Vision model that reads uploaded photos, e.g. `llava` |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` | (unset) | Your Google OAuth client, for Calendar, Gmail and Drive |
 | `LARGE_MODEL_ID` / `LARGE_MODEL_BASE_URL` / `LARGE_MODEL_API_KEY` | (unset) / Token Factory / `NEBIUS_API_KEY` | The larger model for **Think harder**, questions about the world, and escalation |
+| `SCREEN_VISION_MODEL` | `VISION_MODEL` | The vision model that reads the screen for `pc_look` and `pc_click_on`, e.g. `qwen2.5vl:7b` |
+| `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` / `SPOTIFY_REDIRECT_URI` | (unset) | Your Spotify app, for the Spotify tools |
+| `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` / `MICROSOFT_REDIRECT_URI` | (unset) | Your Microsoft Entra app, for Outlook mail and calendar |
+| `TELEGRAM_BOT_TOKEN` | (unset) | Your Telegram bot, for chatting, approvals and alerts on Telegram |
 | `SEARXNG_URL` | `http://127.0.0.1:8888` | The SearXNG server for web search |
 | `MODEL_KEEP_WARM_MINUTES` | `60` | Keep a local (Ollama) model loaded this long after the last message, so replies don't start with a 5 s load; `0` frees the GPU right away |
 | `MODEL_PRICE_INPUT_PER_M` / `MODEL_PRICE_OUTPUT_PER_M` | (unset) | USD per million prompt / completion tokens, for cost estimates |
@@ -574,6 +681,15 @@ All routes except `/health` and `/auth/login` need a session (cookie or `Authori
 | `POST /voice/transcribe` | Raw audio body → `{text}` |
 | `POST/DELETE /messages/{id}/feedback` | Rate a reply: `{rating: 1 or -1, correction?, share}` |
 | `GET /integrations` · `GET /integrations/google/start` · `DELETE /integrations/google` | Google connection |
+| `GET /integrations/{spotify,microsoft}/start` · `DELETE /integrations/{provider}` | Spotify and Microsoft 365 connections |
+| `POST /integrations/homeassistant` · `POST /integrations/telegram/link` | Home Assistant `{url, token}`; a Telegram link code |
+| `GET /approvals` · `POST /approvals/{id}` | PC actions asked for from the app or Telegram, waiting for `{allow}` |
+| `POST /remote` | `{command}`: one command for the PC from the phone |
+| `GET/PATCH /settings/prefs` | Proactive, learning, remote-approval and voice-language settings |
+| `GET/POST /routines` · `DELETE /routines/{id}` · `POST /routines/{id}/run` | Routines |
+| `GET /activity?q=&days=` · `POST /activity/{id}/undo` | What Custodian did; undo one |
+| `GET /learning` · `GET /learning/data` · `POST /learning/result` | Overnight learning: due?, its data, its outcome |
+| `POST /briefing` · `GET /watches` · `DELETE /watches/{id}` · `GET /memory/graph` | Morning briefing, watchers, the memory map |
 | `GET /privacy` · `PATCH /privacy/settings` | Where data goes, what's stored; `{retention_days?, redact_secrets?}` |
 | `GET /privacy/export` · `POST /privacy/erase` | Download everything; erase everything (body `{"confirm": "ERASE"}`) |
 | `GET /billing` · `POST/DELETE /billing/license` | Plan, limits and usage; activate (`{key}`) or remove a license |
@@ -595,7 +711,9 @@ cd ../mobile
 npx tsc --noEmit && npx expo export --platform web
 
 cd ../desktop                        # Windows
-.venv\Scripts\python -m pytest       # actions, confirmations, recording (nothing is clicked or typed)
+.venv\Scripts\python -m pytest       # actions, confirmations, recording, voice, voice ID (nothing is clicked or typed)
+$env:CUSTODIAN_TEST_BROWSER = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+.venv\Scripts\python -m pytest tests\test_browser.py   # the browser tools against a real, headless Chrome
 ```
 
 Current results are in [backend/eval/results.md](backend/eval/results.md). CI

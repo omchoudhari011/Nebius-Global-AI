@@ -407,6 +407,9 @@ class _Announcer:
     def pause(self, _paused):
         pass
 
+    def speaking(self, _speaking):
+        pass
+
     def trigger(self):
         self.triggered += 1
 
@@ -418,8 +421,8 @@ def _announcing_app(monkeypatch) -> tuple[App, _Announcer]:
     fake = _Announcer()
     app = App.__new__(App)
     app.window = app.speaker = app.listener = app.client = fake
-    app.settings = type("S", (), {"speak_announcements": True, "protected": PROTECTED})()
-    app.paused, app.awaiting = False, None
+    app.settings = type("S", (), {"speak_announcements": True, "protected": PROTECTED, "voice_id": False})()
+    app.paused, app.awaiting, app.enrolling = False, None, None
     opened = []
     monkeypatch.setattr(actions, "open", lambda target: opened.append(target))
     fake.opened = opened

@@ -14,6 +14,7 @@ import re
 import threading
 import time
 import webbrowser
+from concurrent.futures import Future, ThreadPoolExecutor
 
 from PIL import Image, ImageDraw
 
@@ -22,7 +23,8 @@ from .client import Client, NotSignedIn
 from .indexer import Indexer
 from .learning import NightlyLearner
 from .ui import Window
-from .voice import Listener, Speaker
+from .voice import Listener, Speaker, from_wav
+from .voiceid import PHRASES, VoiceId, VoiceIdUnavailable
 
 log = logging.getLogger("custodian.desktop")
 CONVERSATION_MINUTES = 15  # voice turns this close together continue the same chat
@@ -75,8 +77,14 @@ class App:
         self.settings = config.Settings.load()
         self.window = Window(on_quit=self.quit)
         self.client = Client(self.settings.server, config.get_token(self.settings.server))
-        self.speaker = Speaker(config.APP_DIR / "voices", self.settings.voice)
+        self.speaker = Speaker(config.APP_DIR / "voices", self.settings.voice, self.settings.hindi_voice)
+        self.voiceid = VoiceId(threshold=self.settings.voice_id_threshold)
+        self.enrolling: list | None = None  # recordings so far while setting up voice ID
+        self.hearing = ThreadPoolExecutor(max_workers=2, thread_name_prefix="hearing")
         self.listener = Listener(self.on_speech, self.on_state, wake_word=self.settings.wake_word,
+                                 wake_model=config.wake_model_path(self.settings.wake_model),
+                                 on_early=self.hear_early if self.settings.fast_transcribe else None,
+                                 barge_in=self.settings.barge_in, on_barge=self.speaker.stop,
                                  threshold=self.settings.wake_threshold, device=self.settings.microphone)
         self.conversation_id: int | None = None
         self.last_turn = 0.0
@@ -184,14 +192,18 @@ class App:
 
     # Speaking first ---------------------------------------------------------------------------------
 
-    def speak(self, text: str) -> None:
-        if not self.settings.speak_announcements:
-            return
-        self.listener.pause(True)  # don't hear itself
+    def talk(self, text: str) -> None:
+        """Say it, listening only for the wake word meanwhile (to be interrupted), not to itself."""
+        self.listener.speaking(True)
         try:
             self.speaker.say(text)
         finally:
-            self.listener.pause(self.paused)
+            self.listener.speaking(False)
+
+    def speak(self, text: str) -> None:
+        if not self.settings.speak_announcements:
+            return
+        self.talk(text)
 
     def announce(self, notice: dict) -> None:
         """A reminder, a meeting about to start, a watcher's alert: show it, say it, and for a
@@ -264,17 +276,44 @@ class App:
         elif state == "didn't catch that":
             self.window.show("Didn't catch that", hide_after=2)
 
-    def on_speech(self, wav: bytes) -> None:
+    def hear(self, wav: bytes) -> str:
+        """What was said - only after voice ID (when it's on) says it's you, so nobody else's
+        words are even transcribed. Raises PermissionError for someone else's voice."""
+        if self.settings.voice_id:
+            try:
+                owner, similarity = self.voiceid.is_owner(from_wav(wav))
+            except VoiceIdUnavailable as exc:  # fails closed
+                raise PermissionError(f"Voice ID is on, but {exc}.") from None
+            log.info("voice ID: %.2f (%s)", similarity, "owner" if owner else "refused")
+            if not owner:
+                raise PermissionError("That didn't sound like you, so I didn't act on it.")
+        return self.client.transcribe(wav)
+
+    def hear_early(self, wav: bytes) -> Future:
+        """At the first pause: start hearing what's been said so far (Listener's on_early)."""
+        return self.hearing.submit(self.hear, wav)
+
+    def on_speech(self, wav: bytes, early: Future | None = None) -> None:
+        if self.enrolling is not None:  # setting up voice ID: this is one of the phrases
+            self.enroll_step(wav)
+            return
         awaiting, self.awaiting = self.awaiting, None
         if awaiting is not None and time.monotonic() < awaiting[1]:  # the answer to an offer, not a new request
             try:
-                awaiting[0](self.client.transcribe(wav))
+                awaiting[0](self.client.transcribe(wav))  # "yes" only opens a link, and is too short for voice ID
             except Exception as exc:  # noqa: BLE001
                 log.info("couldn't hear the answer: %s", exc)
             return
         try:
             self.window.show("Transcribing…")
-            text = self.client.transcribe(wav)
+            try:
+                text = early.result() if early is not None else self.hear(wav)
+            except PermissionError as exc:
+                self.window.show("Not your voice" if "sound like you" in str(exc) else "Voice ID", reply=str(exc), hide_after=6)
+                if self.settings.speak_replies:
+                    self.talk("Sorry, I only take requests from my owner's voice." if "sound like you" in str(exc)
+                              else "Voice ID can't check your voice right now.")
+                return
             self.window.show("Thinking…", heard=text, reply="")
             if time.monotonic() - self.last_turn > CONVERSATION_MINUTES * 60:
                 self.conversation_id = None
@@ -283,11 +322,7 @@ class App:
             reply = result["reply"]
             self.window.show("Custodian", heard=text, reply=reply)
             if self.settings.speak_replies:
-                self.listener.pause(True)  # don't hear itself
-                try:
-                    self.speaker.say(reply)
-                finally:
-                    self.listener.pause(self.paused)
+                self.talk(reply)
             self.window.show("Custodian", heard=text, reply=reply, hide_after=10)
         except NotSignedIn:
             self.window.show("Signed out", reply="Sign in again from the tray icon.", hide_after=8)
@@ -313,15 +348,43 @@ class App:
     def say_aloud(self, text: str) -> None:
         """pc_say: speak it, whatever "Speak replies" is set to - it was asked for."""
         self.window.show("Custodian", reply=text, hide_after=8)
-        self.listener.pause(True)
-        try:
-            self.speaker.say(text)
-        finally:
-            self.listener.pause(self.paused)
+        self.talk(text)
 
     def talk_now(self) -> None:
         self.speaker.stop()  # pressing it while it speaks cuts the reply short
         self.listener.trigger()
+
+    # Voice ID -------------------------------------------------------------------------------------
+
+    def start_enrolling(self) -> None:
+        """Record PHRASES, one each time you're asked, then save your voiceprint."""
+        self.enrolling = []
+        self.window.show("Set up voice ID", reply="I'll ask you to say three short phrases, after the beep each time.",
+                         hide_after=4)
+        threading.Timer(3, self._ask_phrase).start()
+
+    def _ask_phrase(self) -> None:
+        if self.enrolling is None:
+            return
+        n = len(self.enrolling)
+        self.window.show(f"Voice ID {n + 1}/{len(PHRASES)}", reply=f"Say: “{PHRASES[n]}”")
+        self.listener.trigger()
+
+    def enroll_step(self, wav: bytes) -> None:
+        assert self.enrolling is not None
+        self.enrolling.append(from_wav(wav))
+        if len(self.enrolling) < len(PHRASES):
+            threading.Timer(1, self._ask_phrase).start()
+            return
+        recordings, self.enrolling = self.enrolling, None
+        try:
+            self.voiceid.enroll(recordings)
+        except (ValueError, VoiceIdUnavailable) as exc:
+            self.window.show("Voice ID wasn't set up", reply=str(exc), hide_after=10)
+            return
+        self.settings.voice_id = True
+        self.settings.save()
+        self.window.show("Voice ID is on", reply="From now on I only take spoken requests in your voice.", hide_after=6)
 
     # Tray, hotkey, lifetime ------------------------------------------------------------------------
 
@@ -331,7 +394,7 @@ class App:
         def toggle_pause(_icon, _item) -> None:  # noqa: ANN001
             self.paused = not self.paused
             self.listener.pause(self.paused)
-            self.window.show("Microphone off" if self.paused else "Listening for “Hey Jarvis”", hide_after=3)
+            self.window.show("Microphone off" if self.paused else f"Listening for “{self.settings.wake_phrase}”", hide_after=3)
 
         def toggle_speech(_icon, _item) -> None:  # noqa: ANN001
             self.settings.speak_replies = not self.settings.speak_replies
@@ -339,6 +402,17 @@ class App:
 
         def toggle_announcements(_icon, _item) -> None:  # noqa: ANN001
             self.settings.speak_announcements = not self.settings.speak_announcements
+            self.settings.save()
+
+        def toggle_voice_id(_icon, _item) -> None:  # noqa: ANN001
+            if not self.settings.voice_id and not self.voiceid.enrolled():
+                self.start_enrolling()  # turns it on when the voice is set up
+                return
+            self.settings.voice_id = not self.settings.voice_id
+            self.settings.save()
+
+        def toggle_barge_in(_icon, _item) -> None:  # noqa: ANN001
+            self.settings.barge_in = self.listener.barge_in = not self.settings.barge_in
             self.settings.save()
 
         def sign_out(_icon, _item) -> None:  # noqa: ANN001
@@ -353,6 +427,10 @@ class App:
             pystray.MenuItem("Speak reminders and alerts", toggle_announcements,
                              checked=lambda _i: self.settings.speak_announcements),
             pystray.MenuItem("Brief me now", lambda *_: threading.Thread(target=self.brief_now, daemon=True).start()),
+            pystray.MenuItem(f"Interrupt by saying “{self.settings.wake_phrase}”", toggle_barge_in,
+                             checked=lambda _i: self.settings.barge_in),
+            pystray.MenuItem("Only my voice (voice ID)", toggle_voice_id, checked=lambda _i: self.settings.voice_id),
+            pystray.MenuItem("Set up voice ID again", lambda *_: self.start_enrolling()),
             pystray.MenuItem("Open Custodian", lambda *_: webbrowser.open(self.settings.server)),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Sign out", sign_out),
@@ -369,6 +447,7 @@ class App:
     def quit(self) -> None:
         self.stopping.set()
         self.learner.stopping.set()
+        self.hearing.shutdown(wait=False, cancel_futures=True)
         self.listener.stop()
         self.speaker.stop()
         if self.tray is not None:
@@ -388,7 +467,7 @@ class App:
             threading.Thread(target=self.watch_presence, daemon=True, name="presence").start()
             threading.Thread(target=self.learner.run, daemon=True, name="learning").start()
             self.start_hotkey()
-            hint = "Say “Hey Jarvis” or press Ctrl+Alt+Space" if self.settings.wake_word else "Press Ctrl+Alt+Space"
+            hint = f"Say “{self.settings.wake_phrase}” or press Ctrl+Alt+Space" if self.settings.wake_word else "Press Ctrl+Alt+Space"
             self.window.show("Custodian is ready", reply=hint, hide_after=5)
 
         self.start_tray()

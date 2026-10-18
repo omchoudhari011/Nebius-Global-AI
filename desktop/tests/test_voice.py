@@ -1,0 +1,222 @@
+"""Faster, more natural voice: speaking sentence by sentence, barge-in, transcribing at the first
+pause, the Hindi voice, and voice ID (nothing here uses a microphone, speaker or real model)."""
+
+import queue
+import threading
+import time
+from collections import deque
+
+import numpy as np
+import pytest
+
+from custodian_desktop import voiceid
+from custodian_desktop.voice import FRAME, RATE, Listener, Speaker, sentences, to_wav
+from custodian_desktop.voiceid import VoiceId, VoiceIdUnavailable, fbank
+
+LOUD = (np.sin(np.linspace(0, 200, FRAME)) * 8000).astype(np.int16)
+QUIET = np.zeros(FRAME, dtype=np.int16)
+
+
+def test_replies_are_split_into_sentences_worth_saying_alone():
+    assert sentences("Done. I've set the volume to 30 percent. Anything else?") == [
+        "Done. I've set the volume to 30 percent.", "Anything else?"]
+    assert sentences("ठीक है। मैंने आवाज़ 30 प्रतिशत कर दी है। और कुछ?") == ["ठीक है। मैंने आवाज़ 30 प्रतिशत कर दी है।", "और कुछ?"]
+
+
+class _Recording(Speaker):
+    def __init__(self):
+        super().__init__(voices_dir=None, voice="en", hindi_voice="hi")
+        self.events, self.windows = [], []
+
+    def _synthesize(self, voice, text):
+        self.events.append(("make", voice, text))
+        time.sleep(0.05)
+        return np.zeros(10, dtype=np.int16), 22050
+
+    def _play(self, audio, rate):
+        self.events.append(("play-start",))
+        time.sleep(0.15)
+        self.events.append(("play-end",))
+
+    def _say_windows(self, parts, language):
+        self.windows.append((language, parts))
+
+
+def test_the_next_sentence_is_made_while_the_first_one_plays():
+    speaker = _Recording()
+    speaker._voices = {"en": "lessac", "hi": None}
+    speaker.say("The meeting is at three o'clock today. It's in the big room on the second floor. Bring the slides.")
+    kinds = [e[0] for e in speaker.events]
+    makes = [i for i, k in enumerate(kinds) if k == "make"]
+    assert kinds[0] == "make" and kinds.index("play-start") < makes[-1]  # it starts talking before all are made
+    assert makes[1] < kinds.index("play-end")  # the second sentence is made while the first plays
+    assert kinds.count("play-start") == 3
+
+
+def test_hindi_and_marathi_get_the_hindi_voice_or_windows_hindi():
+    speaker = _Recording()
+    speaker._voices = {"en": "lessac", "hi": "pratham"}
+    speaker.say("ठीक है, मैंने आवाज़ कम कर दी है।")
+    assert {e[1] for e in speaker.events if e[0] == "make"} == {"pratham"}
+    speaker = _Recording()
+    speaker._voices = {"en": "lessac", "hi": None}  # no Hindi Piper voice installed
+    speaker.say("हो, मी आवाज कमी केला.")
+    assert speaker.windows[0][0] == "hi" and not speaker.events
+
+
+def test_stop_cuts_a_reply_off_between_sentences():
+    speaker = _Recording()
+    speaker._voices = {"en": "lessac", "hi": None}
+    thread = threading.Thread(target=speaker.say, args=("One sentence here, long enough. " * 6,))
+    thread.start()
+    time.sleep(0.1)
+    speaker.stop()
+    thread.join(timeout=3)
+    assert [e[0] for e in speaker.events].count("play-start") < 6
+
+
+def _listener(**kwargs):
+    heard = []
+    listener = Listener(lambda wav, early=None: heard.append((wav, early)), lambda _s: None, wake_word=False, **kwargs)
+    return listener, heard
+
+
+def test_saying_the_wake_word_while_it_speaks_cuts_it_off_and_listens():
+    barged = []
+    listener, heard = _listener(on_barge=lambda: barged.append(True))
+    listener.heard_wake_word = lambda frame, speaking: frame is LOUD and speaking
+    listener.speaking(True)
+    frames: queue.Queue = queue.Queue()
+    for frame in [LOUD] * 15 + [QUIET] * 20:
+        frames.put(frame)
+    assert listener.step(LOUD, frames, deque()) is True
+    assert barged == [True] and len(heard) == 1
+    assert listener.step(QUIET, queue.Queue(), deque()) is False  # its own voice alone doesn't start anything
+
+
+def test_with_barge_in_off_nothing_is_heard_while_it_speaks():
+    listener, heard = _listener(barge_in=False)
+    listener.heard_wake_word = lambda frame, speaking: True
+    listener.speaking(True)
+    listener.trigger()
+    assert listener.step(LOUD, queue.Queue(), deque()) is False and heard == []
+
+
+def test_transcribing_starts_at_the_first_pause_and_is_used_if_nothing_follows():
+    started = []
+    listener, _ = _listener(on_early=lambda wav: started.append(wav) or f"early {len(started)}")
+    frames: queue.Queue = queue.Queue()
+    for frame in [LOUD] * 15 + [QUIET] * 20:
+        frames.put(frame)
+    audio = listener._record(frames, floor=100.0)
+    assert len(started) == 1 and listener.early == "early 1"
+    assert len(audio) < FRAME * 30 and to_wav(audio) == started[0]  # exactly the words transcribed early
+
+
+def test_going_on_after_a_pause_throws_the_early_transcription_away():
+    started = []
+    listener, _ = _listener(on_early=lambda wav: started.append(wav) or f"early {len(started)}")
+    frames: queue.Queue = queue.Queue()
+    for frame in [LOUD] * 10 + [QUIET] * 7 + [LOUD] * 10 + [QUIET] * 20:  # a 0.56 s pause, then more words
+        frames.put(frame)
+    audio = listener._record(frames, floor=100.0)
+    assert len(started) == 2 and listener.early == "early 2"  # the second covers everything said
+    assert to_wav(audio) == started[1]
+
+
+# Voice ID ---------------------------------------------------------------------------------------
+
+def test_filterbank_features_are_the_shape_the_speaker_model_takes():
+    one_second = (np.random.default_rng(1).normal(0, 3000, RATE)).astype(np.int16)
+    feats = fbank(one_second)
+    assert feats.shape == (98, 80) and np.isfinite(feats).all()
+    assert np.allclose(feats.mean(axis=0), 0, atol=1e-4)  # the mean is taken off, as WeSpeaker does
+    with pytest.raises(ValueError):
+        fbank(np.zeros(100, dtype=np.int16))
+
+
+def _speaker(seed):
+    """Stand-in voices: each speaker is a direction; recordings carry it plus a little noise."""
+    return np.random.default_rng(seed).normal(scale=1000, size=64)
+
+
+def _embedder():
+    def embed(samples):
+        vector = samples[:64].astype(np.float64)
+        return vector / np.linalg.norm(vector)
+    return embed
+
+
+def _recording(voice, noise_seed, seconds=2.0):
+    rng = np.random.default_rng(noise_seed)
+    head = voice + rng.normal(scale=300, size=64)
+    tail = np.zeros(int(RATE * seconds) - 64)
+    return np.concatenate([head, tail])
+
+
+def test_voice_id_accepts_the_enrolled_voice_and_refuses_another(tmp_path):
+    me, someone = _speaker(1), _speaker(2)
+    vid = VoiceId(embedder=_embedder, path=tmp_path / "print.npy")
+    with pytest.raises(VoiceIdUnavailable, match="no voice is set up"):  # fails closed before enrolling
+        vid.is_owner(_recording(me, 9))
+    vid.enroll([_recording(me, n) for n in range(3)])
+    assert vid.is_owner(_recording(me, 10))[0] is True
+    assert vid.is_owner(_recording(someone, 11))[0] is False
+    assert vid.is_owner(_recording(me, 12, seconds=0.5)) == (False, 0.0)  # too short to tell
+    with pytest.raises(ValueError):
+        vid.enroll([_recording(me, 1, seconds=0.3)] * 3)
+
+
+def test_a_missing_model_fails_closed(tmp_path, monkeypatch):
+    monkeypatch.setattr(voiceid, "MODEL_FILE", tmp_path / "missing.onnx")
+    vid = VoiceId(path=tmp_path / "print.npy", embedder=lambda: voiceid.Embedder(tmp_path / "missing.onnx"))
+    np.save(tmp_path / "print.npy", np.ones(4) / 2)
+    with pytest.raises(VoiceIdUnavailable, match="isn't installed"):
+        vid.is_owner(np.zeros(RATE * 2, dtype=np.int16))
+
+
+def test_someone_elses_voice_is_never_transcribed_or_sent(tmp_path):
+    from custodian_desktop.__main__ import App
+
+    class Client:
+        def __init__(self):
+            self.heard, self.chats = [], []
+
+        def transcribe(self, wav):
+            self.heard.append(wav)
+            return "lock my pc"
+
+        def chat(self, text, conversation_id=None):
+            self.chats.append(text)
+            return {"conversation_id": 1, "reply": "Locked."}
+
+    class Window:
+        def __init__(self):
+            self.shown = []
+
+        def show(self, title, **kwargs):
+            self.shown.append(title)
+
+    app = App.__new__(App)
+    app.client, app.window = Client(), Window()
+    app.settings = type("S", (), {"voice_id": True, "speak_replies": False})()
+    app.voiceid = VoiceId(embedder=_embedder, path=tmp_path / "print.npy")
+    app.voiceid.enroll([_recording(_speaker(1), n) for n in range(3)])
+    app.awaiting = app.enrolling = None
+    app.conversation_id, app.last_turn = None, 0.0
+    stranger = to_wav(_recording(_speaker(2), 5).astype(np.int16))
+    app.on_speech(stranger)
+    assert app.client.heard == [] and app.client.chats == [] and "Not your voice" in app.window.shown
+
+
+def test_cutting_a_reply_off_leaves_no_speech_thread_behind():
+    speaker = _Recording()
+    speaker._voices = {"en": "lessac", "hi": None}
+    before = threading.active_count()
+    thread = threading.Thread(target=speaker.say, args=("A sentence that is long enough to stand. " * 8,))
+    thread.start()
+    time.sleep(0.08)
+    speaker.stop()
+    thread.join(timeout=3)
+    time.sleep(0.3)
+    assert threading.active_count() <= before
