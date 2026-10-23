@@ -78,11 +78,14 @@ class Listener:
     def __init__(self, on_speech: Callable[..., None], on_state: Callable[[str], None], *,
                  wake_word: bool = True, threshold: float = 0.5, device: int | None = None,
                  wake_model: str = "hey_jarvis", on_early: Callable[[bytes], object] | None = None,
-                 barge_in: bool = True, on_barge: Callable[[], None] | None = None) -> None:
-        self.on_speech, self.on_state = on_speech, on_state
+                 barge_in: bool = True, on_barge: Callable[[], None] | None = None,
+                 on_level: Callable[[float], None] | None = None) -> None:
+        self.on_speech, self.on_state, self.on_level = on_speech, on_state, on_level
         self.wake_word, self.threshold, self.device = wake_word, threshold, device
         self.wake_model, self.on_early, self.barge_in, self.on_barge = wake_model, on_early, barge_in, on_barge
         self._triggered = threading.Event()
+        self._follow_up = threading.Event()  # this recording continues a conversation: no wake word needed
+        self.follow_up_wait = 6.0
         self._paused = threading.Event()
         self._speaking = threading.Event()
         self._stop = threading.Event()
@@ -92,6 +95,13 @@ class Listener:
 
     def trigger(self) -> None:
         """Start recording now (the hotkey or the tray's "Talk now")."""
+        self._triggered.set()
+
+    def follow_up(self, seconds: float = 6.0) -> None:
+        """Listen once more without the wake word - for `seconds` - so the conversation can go on.
+        Saying nothing ends it quietly."""
+        self.follow_up_wait = seconds
+        self._follow_up.set()
         self._triggered.set()
 
     def pause(self, paused: bool) -> None:
@@ -155,6 +165,7 @@ class Listener:
         """One 80 ms frame: True when a recording was made (and handed on)."""
         if self._paused.is_set():
             self._triggered.clear()
+            self._follow_up.clear()
             return False
         speaking = self._speaking.is_set()
         if speaking and not self.barge_in:
@@ -180,8 +191,13 @@ class Listener:
         return True
 
     def _record(self, frames: queue.Queue, floor: float) -> np.ndarray | None:
-        _beep(880, 120)
-        self.on_state("recording")
+        following = self._follow_up.is_set()
+        self._follow_up.clear()
+        if following:
+            _beep(1320, 45)  # a softer cue: still listening
+        else:
+            _beep(880, 120)
+        self.on_state("following up" if following else "recording")
         for _ in range(min(frames.qsize(), 3)):  # drop the tail of the wake word, keep what follows
             frames.get_nowait()
         threshold = max(floor * 2.5, 350.0)
@@ -193,7 +209,10 @@ class Listener:
             except queue.Empty:
                 break
             chunks.append(frame)
-            loud = _loudness(frame) > threshold
+            volume = _loudness(frame)
+            if self.on_level is not None:
+                self.on_level(min(1.0, volume / 3000.0))
+            loud = volume > threshold
             spoke = spoke or loud
             if loud:
                 quiet = 0.0
@@ -205,12 +224,14 @@ class Listener:
                 self._early_frames = len(chunks)
             if spoke and quiet >= SILENCE_SECONDS:
                 break
-            if not spoke and time.monotonic() - started > 6:  # nothing said after the wake word
+            if not spoke and time.monotonic() - started > (self.follow_up_wait if following else 6):  # nothing said
                 break
         _beep(660, 90)
         audio = np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.int16)
+        if self.on_level is not None:
+            self.on_level(0.0)
         if not spoke or len(audio) < RATE * MIN_SECONDS:
-            self.on_state("didn't catch that")
+            self.on_state("conversation over" if following and not spoke else "didn't catch that")
             self.early = None
             return None
         if self.early is not None:  # nothing loud since: the early words are all the words

@@ -18,6 +18,31 @@ You need:
 - For voice, the server's `WHISPER_URL` set (see the main README).
 - In **Tools & Data**, switch on **PC · read** and **PC · write**.
 
+## Jarvis
+
+Start everything at once with `..\run-jarvis.ps1` (Docker's speech-to-text and search, Ollama,
+the server, then this app; `-Stop` stops the server and the app). Then:
+
+- **The HUD.** A J.A.R.V.I.S. panel opens in the corner when you speak: an arc-reactor core that
+  follows your voice, what you said and the reply, and the PC's vitals. **Ctrl+Alt+J**, the tray,
+  or saying "show the HUD" opens it full screen: processor, memory, graphics, battery, drives and
+  network with the busiest apps; today's schedule, reminders and weather; and what Custodian just
+  did. It's `web/hud.html` in its own small window process (`hud_window.py`, pywebview with
+  Windows' built-in WebView2); without pywebview the small text panel is used instead.
+- **The manner.** Spoken requests are answered as Jarvis: calm, brief, a British voice
+  (`en_GB-alan-medium`), and calling you "sir" - or what you set in the app's Jarvis tab. Only
+  the manner changes; the replies go through the same checks. Typed chats keep Custodian's voice.
+- **Conversation mode.** After a reply it listens a few more seconds without the wake word, so
+  you can follow up. "That's all", "thank you" or saying nothing ends it.
+- **Status reports.** "System status", "run diagnostics" or "how's my PC" gets an instant report.
+  On its own it warns about a low battery (20%, then 10%), the processor or memory staying
+  overloaded for two minutes, or a nearly full drive - once each, never in your quiet hours.
+- **A greeting** when it starts ("Good evening, sir. Jarvis is online...") with your next
+  appointment, except when the morning briefing is about to run or it's within your quiet hours.
+
+The weather comes from Open-Meteo (no account): only your city's name and coordinates are sent.
+The city is the Jarvis tab's setting, or the one your memories say you live in.
+
 ## How it works
 
 | Part | File | What it does |
@@ -28,6 +53,8 @@ You need:
 | Voice | `voice.py` | openWakeWord listens for the wake word ("Hey Jarvis", or your own model) on the PC. After it, the app records until about a second of quiet - transcription already starts at the first pause - sends the audio to `/voice/transcribe`, then sends the text to `/chat`. Turns within 15 minutes continue the same chat. Replies are spoken sentence by sentence by Piper (a Hindi voice for Devanagari), or by Windows' voice if Piper isn't installed; saying the wake word cuts a reply off. Links and source lists are not read out. |
 | Voice ID | `voiceid.py` | With "Only my voice" on, each request is compared with your voiceprint (a WeSpeaker model run by onnxruntime, on the PC) before it's transcribed; someone else's is refused. Fails closed. |
 | Browser | `browser.py` | Custodian's own Chrome or Edge, driven over the DevTools protocol (127.0.0.1 only, its own profile): read pages with numbered elements, fill, click, download, tabs. Risky clicks and sends ask; passwords are never typed. |
+| HUD | `hud.py`, `hud_window.py`, `web/hud.html` | The HUD's own process, fed one JSON message per line (state, voice level, captions, vitals, your day); what you press in it comes back the same way. |
+| Jarvis | `jarvis.py`, `watchdog.py`, `stats.py`, `weather.py` | The greeting and sign-offs, the vitals (one sampler shared by the HUD, the status report and the watchdog; `nvidia-smi` for the graphics card, read on the side), the watchdog's rules, and the weather. |
 | Learning | `learning.py` | At night, idle and plugged in, runs `backend\finetune\nightly.py` when the server has new corrections to learn; stops it the moment you're back. |
 | Settings | `config.py` | Settings in `%APPDATA%\Custodian\desktop.json`. The sign-in token is kept in Windows Credential Manager. |
 
@@ -80,7 +107,11 @@ Edit `desktop.json` while the app is closed:
 | `voice_id` / `voice_id_threshold` | `false` / `0.45` | Only your voice (`run-desktop.ps1 -VoiceId`, then the tray); a higher threshold is stricter |
 | `hotkey` | `<ctrl>+<alt>+<space>` | Talk without the wake word (pynput format) |
 | `speak_replies` | `true` | Also in the tray menu |
-| `voice` | `en_US-lessac-medium` | A Piper voice in `%APPDATA%\Custodian\voices` |
+| `voice` | `en_GB-alan-medium` | A Piper voice in `%APPDATA%\Custodian\voices` (falls back to `en_US-lessac-medium`, then Windows' voice) |
+| `conversation_mode` / `follow_up_seconds` | `true` / `6` | Listen for a follow-up after each reply (also in the tray) |
+| `hud` / `hud_hotkey` | `true` / `<ctrl>+<alt>+j` | The HUD, and the key for its full-screen view |
+| `watchdog` | `true` | Speak up about the battery, an overloaded PC or a full drive |
+| `greet` | `true` | Say hello when the app starts |
 | `microphone` | `null` | A sounddevice input number; `null` = the default |
 | `protected` | the four folders above | Folders that are never changed |
 

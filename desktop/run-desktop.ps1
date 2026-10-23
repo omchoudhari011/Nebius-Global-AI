@@ -63,15 +63,16 @@ if (-not (Test-Path $installed) -or (Get-Content $installed -Raw).Trim() -ne $wa
     Set-Content -Path $installed -Value $wanted -Encoding ascii
 }
 
-# A natural voice (Piper, about 60 MB), once. Without it, Windows' own voice is used.
+# Jarvis's voice: a British male Piper voice (about 60 MB), once. Without it, Windows' own voice is used.
 $voices = Join-Path $env:APPDATA "Custodian\voices"
-$voice = Join-Path $voices "en_US-lessac-medium.onnx"
+$voice = Join-Path $voices "en_GB-alan-medium.onnx"
 if (-not (Test-Path $voice)) {
-    Write-Host "Downloading the voice..." -ForegroundColor Cyan
+    Write-Host "Downloading Jarvis's voice..." -ForegroundColor Cyan
     New-Item -ItemType Directory -Force $voices | Out-Null
-    $base = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
-    Invoke-WebRequest $base -OutFile $voice -UseBasicParsing
-    Invoke-WebRequest "$base.json" -OutFile "$voice.json" -UseBasicParsing
+    $base = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alan/medium/en_GB-alan-medium.onnx"
+    curl.exe -sSL --fail -o $voice $base  # much faster than Invoke-WebRequest for a big file
+    if ($LASTEXITCODE -ne 0) { Remove-Item $voice -ErrorAction SilentlyContinue; Write-Host "  (couldn't download it; Windows' voice will be used)" -ForegroundColor Yellow }
+    else { curl.exe -sSL --fail -o "$voice.json" "$base.json" }
 }
 
 # Replies in Hindi or Marathi (Devanagari) are spoken with a Hindi Piper voice when it's there.

@@ -49,10 +49,15 @@ class Client:
     def features(self) -> dict:
         return self._check(self._http.get("/features", headers=self._headers())).json()
 
-    def chat(self, message: str, conversation_id: int | None = None) -> dict:
+    def chat(self, message: str, conversation_id: int | None = None, *, voice: bool = False) -> dict:
+        """One turn. `voice`: it was said out loud, so it's answered in Jarvis's manner."""
         resp = self._http.post("/chat", headers=self._headers(), timeout=300,
-                               json={"message": message, "conversation_id": conversation_id})
+                               json={"message": message, "conversation_id": conversation_id, "voice": voice})
         return self._check(resp).json()
+
+    def hud(self) -> dict:
+        """Today's events and reminders, recent actions and how to address you (GET /hud)."""
+        return self._check(self._http.get("/hud", headers=self._headers(), timeout=30)).json()
 
     def warm(self) -> None:
         """Ask the server to load its model now, while you're still talking."""

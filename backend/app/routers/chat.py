@@ -22,6 +22,8 @@ class ChatRequest(BaseModel):
     deep: bool = False
     # Uploaded files attached to this message (POST /documents ids): their text is read with it.
     document_ids: list[int] = Field(default_factory=list, max_length=3)
+    # Said out loud to the desktop app: answered in Jarvis's manner (app/persona.py).
+    voice: bool = False
 
     @field_validator("message")
     @classmethod
@@ -46,7 +48,7 @@ def chat(body: ChatRequest, request: Request, user_id: int = Depends(require_ses
     usage.check_allowance(user_id)  # 402 when the plan's monthly model allowance is used up
     return orchestrator.handle(
         user_id, body.message, conversation_id=body.conversation_id, private=body.private, deep=body.deep,
-        attachments=body.document_ids, origin=origin_of(request),
+        attachments=body.document_ids, origin=origin_of(request), voice=body.voice,
     )
 
 

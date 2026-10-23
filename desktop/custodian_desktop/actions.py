@@ -110,25 +110,16 @@ def _key(vk: int, times: int = 1) -> None:
 # Looking ---------------------------------------------------------------------------------------
 
 def system_info(**_: object) -> dict:
-    import psutil
+    """The time and the PC's vital signs: processor, memory, graphics, battery, drives, network,
+    uptime and the busiest apps (stats.py)."""
+    from .stats import SAMPLER
 
-    battery = psutil.sensors_battery()
-    disks = []
-    for part in psutil.disk_partitions(all=False):
-        try:
-            use = psutil.disk_usage(part.mountpoint)
-        except OSError:
-            continue
-        disks.append({"drive": part.device, "free_gb": round(use.free / 1e9, 1), "total_gb": round(use.total / 1e9, 1)})
-    memory = psutil.virtual_memory()
-    return {
-        "time": dt.datetime.now().strftime("%A %d %B %Y, %H:%M"),
-        "battery": {"percent": round(battery.percent), "charging": battery.power_plugged} if battery else None,
-        "cpu_percent": psutil.cpu_percent(interval=0.5),
-        "memory": {"used_percent": memory.percent, "total_gb": round(memory.total / 1e9, 1)},
-        "disks": disks,
-        "active_window": _active_title(),
-    }
+    if SAMPLER.fresh(30):  # the HUD read it moments ago: one more reading measures since then
+        reading = SAMPLER.sample(with_apps=True)
+    else:  # prime the counters, then measure over half a second: the apps busy right now
+        SAMPLER.sample(with_apps=True)
+        reading = SAMPLER.sample(cpu_interval=0.5, with_apps=True)
+    return {"time": dt.datetime.now().strftime("%A %d %B %Y, %H:%M"), **reading, "active_window": _active_title()}
 
 
 def _active_title() -> str | None:

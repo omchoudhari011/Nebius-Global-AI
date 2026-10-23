@@ -383,6 +383,9 @@ export type Prefs = {
   remote_approvals: boolean;
   telegram_alerts: boolean;
   voice_language: VoiceLanguage;
+  persona: "jarvis" | "plain"; // how the PC talks when you speak to it
+  address: string; // what Jarvis calls you: "sir", your name...
+  home_city: string; // for the HUD's weather; empty = the city your memories say
 };
 
 export type LearningStatus = {

@@ -18,13 +18,16 @@ from concurrent.futures import Future, ThreadPoolExecutor
 
 from PIL import Image, ImageDraw
 
-from . import actions, config
+from . import actions, config, jarvis, weather
 from .client import Client, NotSignedIn
+from .hud import Hud, Throttle
 from .indexer import Indexer
 from .learning import NightlyLearner
+from .stats import SAMPLER
 from .ui import Window
 from .voice import Listener, Speaker, from_wav
 from .voiceid import PHRASES, VoiceId, VoiceIdUnavailable
+from .watchdog import Watchdog
 
 log = logging.getLogger("custodian.desktop")
 CONVERSATION_MINUTES = 15  # voice turns this close together continue the same chat
@@ -73,19 +76,35 @@ def _icon() -> Image.Image:
 
 
 class App:
+    # Jarvis's state, also when an App is made without __init__ (tests): set per app in __init__.
+    hud: Hud | None = None
+    conversing = False
+    address = "sir"
+    day: dict = {}
+    weather: dict | None = None
+
     def __init__(self) -> None:
         self.settings = config.Settings.load()
         self.window = Window(on_quit=self.quit)
         self.client = Client(self.settings.server, config.get_token(self.settings.server))
-        self.speaker = Speaker(config.APP_DIR / "voices", self.settings.voice, self.settings.hindi_voice)
+        self.speaker = Speaker(config.APP_DIR / "voices", config.voice_name(self.settings.voice), self.settings.hindi_voice)
         self.voiceid = VoiceId(threshold=self.settings.voice_id_threshold)
         self.enrolling: list | None = None  # recordings so far while setting up voice ID
         self.hearing = ThreadPoolExecutor(max_workers=2, thread_name_prefix="hearing")
+        self.levels = Throttle(0.08)
         self.listener = Listener(self.on_speech, self.on_state, wake_word=self.settings.wake_word,
                                  wake_model=config.wake_model_path(self.settings.wake_model),
                                  on_early=self.hear_early if self.settings.fast_transcribe else None,
-                                 barge_in=self.settings.barge_in, on_barge=self.speaker.stop,
+                                 barge_in=self.settings.barge_in, on_barge=self.speaker.stop, on_level=self.on_level,
                                  threshold=self.settings.wake_threshold, device=self.settings.microphone)
+        # Jarvis: the HUD, how to address you (Custodian's settings), your day, the watchdog.
+        self.hud = Hud(self.on_hud_command) if self.settings.hud else None
+        self.address = "sir"
+        self.day: dict = {}
+        self.weather: dict | None = None
+        self.watchdog = Watchdog()
+        self.offers: dict[str, object] = {}  # HUD button id -> what pressing it does
+        self.conversing = False  # in a conversation: the next request needs no wake word
         self.conversation_id: int | None = None
         self.last_turn = 0.0
         actions.on_timer = self.timer_rang
@@ -109,7 +128,7 @@ class App:
                     config.set_token(self.settings.server, None)
                     self.client.token = None
                 except Exception as exc:  # noqa: BLE001 - server not up yet: wait for it
-                    self.window.show("Can't reach the Custodian server", reply=str(exc)[:200], hide_after=6)
+                    self.show("Can't reach the Custodian server", reply=str(exc)[:200], hide_after=6)
                     time.sleep(10)
                     continue
             answer = self.window.ask_sign_in(self.settings.server)
@@ -124,7 +143,7 @@ class App:
             try:
                 config.set_token(server, self.client.login(passcode))
             except Exception as exc:  # noqa: BLE001
-                self.window.show("Sign-in failed", reply=str(exc), hide_after=8)
+                self.show("Sign-in failed", reply=str(exc), hide_after=8)
         return False
 
     # PC actions from the server -------------------------------------------------------------------
@@ -152,7 +171,7 @@ class App:
         if action.get("approved") == "remote":  # you allowed it in the app or on Telegram: show that, don't ask again
             details = actions.describe(function, args)
             log.info("ALLOWED REMOTELY %s %s", function, details[:200])
-            self.window.show("Allowed from your phone", reply=details[:300], hide_after=6)
+            self.show("Allowed from your phone", reply=details[:300], hide_after=6)
             if function in actions.SELF_CONFIRMING:  # it still checks what it found (the chat's real name) itself
                 actions.confirm_hook = lambda _title, _details: True
         elif function in actions.SELF_CONFIRMING and (action.get("confirm") or function in actions.ASK_WHEN_RISKY):
@@ -176,8 +195,12 @@ class App:
         try:
             result = actions.run(function, args, self.settings.protected)
             self.client.send_result(action["id"], True, result=result)
+            if self.hud_on() and function != "confirm_plan":
+                self.hud.log(self.action_label(function, args))
         except Exception as exc:  # noqa: BLE001 - reported to the model
             self.client.send_result(action["id"], False, error=f"{type(exc).__name__}: {exc}"[:500])
+            if self.hud_on():
+                self.hud.log(f"{self.action_label(function, args)} · failed", warn=True)
         finally:
             actions.confirm_hook = None  # an answer given for this action never carries over to the next
 
@@ -190,15 +213,147 @@ class App:
         else:
             log.info("ignored an unknown notice from the server: %s", function)
 
+    # Jarvis: the HUD, your day, the watchdog ------------------------------------------------------------
+
+    def hud_on(self) -> bool:
+        return self.hud is not None and self.hud.running()
+
+    def show(self, status: str, heard: str | None = None, reply: str | None = None, *, hide_after: float | None = None) -> None:
+        """What's happening, on the HUD when it runs, else on the small panel."""
+        if not self.hud_on():
+            self.window.show(status, heard=heard, reply=reply, hide_after=hide_after)
+            return
+        if heard is not None:
+            self.hud.heard(heard)
+        if reply is not None:
+            self.hud.reply(reply)
+        elif status and heard is None:
+            self.hud.reply(status)
+        if not self.hud.visible:
+            self.hud.show("compact")
+        if hide_after:
+            self.hud.hide_later(hide_after)
+
+    def on_level(self, value: float) -> None:
+        if self.hud_on() and self.levels.ready():
+            self.hud.level(value)
+
+    def on_hud_command(self, message: dict) -> None:
+        command = message.get("cmd")
+        if command == "talk":
+            self.talk_now()
+        elif command == "offer":
+            action = self.offers.pop(str(message.get("id")), None)
+            if callable(action):
+                threading.Thread(target=action, daemon=True).start()
+
+    def toggle_hud(self) -> None:
+        if self.hud is None:
+            self.show("The HUD is off", reply="Switch it on in desktop.json (\"hud\": true) and restart.", hide_after=5)
+            return
+        if not self.hud.running() and not self.hud.start():
+            self.show("The HUD can't run here", reply="It needs pywebview: run desktop\\run-desktop.ps1 once more.", hide_after=6)
+            return
+        self.hud.toggle_full()
+        if self.hud.visible:
+            self.push_vitals()
+            self.push_day()
+
+    def push_vitals(self) -> None:
+        if self.hud_on():
+            self.hud.send({"type": "stats", "data": SAMPLER.sample(with_apps=self.hud.mode == "full")})
+
+    def push_day(self) -> None:
+        if not self.hud_on():
+            return
+        if self.day:
+            self.hud.send({"type": "day", "data": self.day})
+        if self.weather:
+            self.hud.send({"type": "weather", "data": self.weather})
+
+    def vitals(self) -> None:
+        """Every 2 s while the HUD shows: the PC's vitals. Every 30 s: the watchdog."""
+        tick = 0
+        while not self.stopping.is_set():
+            try:
+                if self.hud_on() and self.hud.visible:
+                    apps = self.hud.mode == "full" and tick % 5 == 0  # the app list costs most: every 10 s
+                    self.hud.send({"type": "stats", "data": SAMPLER.sample(with_apps=apps)})
+                if self.settings.watchdog and tick % 15 == 0:
+                    self.check_health()
+            except Exception:  # noqa: BLE001 - a bad reading mustn't stop the loop
+                log.debug("vitals", exc_info=True)
+            tick += 1
+            self.stopping.wait(2)
+
+    def check_health(self) -> None:
+        reading = SAMPLER.sample(with_apps=True)
+        for _kind, text in self.watchdog.check(reading, time.monotonic(), self.address):
+            log.info("watchdog: %s", text)
+            if self.hud_on():
+                self.hud.alert(text)
+            if not self.day.get("quiet") and self.day.get("announce", True):
+                self.show("Jarvis", reply=text, hide_after=12)
+                self.speak(text)
+
+    def refresh_day(self) -> None:
+        """Every 5 minutes: your day and how to address you, from Custodian; every 30, the weather."""
+        tick = 0
+        while not self.stopping.is_set():
+            try:
+                self.day = self.client.hud()
+                self.address = self.day.get("address") or self.address
+                if tick % 6 == 0 and self.day.get("city"):
+                    self.weather = weather.current(self.day["city"])
+                if self.hud_on():
+                    self.hud.send({"type": "link", "connected": True})
+                self.push_day()
+            except NotSignedIn:
+                pass
+            except Exception as exc:  # noqa: BLE001 - the server or the weather service is down: try later
+                log.info("couldn't refresh the day: %s", exc)
+                if self.hud_on():
+                    self.hud.send({"type": "link", "connected": False})
+            tick += 1
+            self.stopping.wait(300)
+
+    def greet(self) -> None:
+        """Hello when the app starts - unless the morning briefing is about to say it."""
+        if not self.settings.greet or (dt.datetime.now().hour in MORNING and uptime_seconds() < 15 * 60):
+            return
+        for _ in range(10):  # the day's details come from the server; wait a little for them
+            if self.day:
+                break
+            self.stopping.wait(1)
+        if self.day.get("quiet"):
+            return
+        battery = SAMPLER.sample(with_apps=False).get("battery")
+        warnings = [f"the battery is at {battery['percent']}%"] if battery and not battery["charging"] and battery["percent"] <= 20 else []
+        upcoming = next((e for e in self.day.get("events", []) if not e.get("past")), None)
+        text = jarvis.greeting(self.address, warnings=warnings, next_event=upcoming)
+        self.show("Jarvis", reply=text, hide_after=10)
+        self.speak(text)
+
+    @staticmethod
+    def action_label(function: str, args: dict) -> str:
+        """'open · chrome' for the HUD's activity list - never a message's or a file's text."""
+        target = next((args[k] for k in ("target", "query", "name", "title", "contact", "site", "page", "mode", "level",
+                                         "keys", "path", "seconds", "time") if args.get(k) not in (None, "")), None)
+        return function.replace("_", " ") + (f" · {str(target)[:60]}" if target is not None else "")
+
     # Speaking first ---------------------------------------------------------------------------------
 
     def talk(self, text: str) -> None:
         """Say it, listening only for the wake word meanwhile (to be interrupted), not to itself."""
         self.listener.speaking(True)
+        if self.hud_on():
+            self.hud.state("speaking")
         try:
             self.speaker.say(text)
         finally:
             self.listener.speaking(False)
+            if self.hud_on():
+                self.hud.state("idle")
 
     def speak(self, text: str) -> None:
         if not self.settings.speak_announcements:
@@ -215,10 +370,20 @@ class App:
             if link and not opened.is_set():
                 opened.set()
                 actions.open(link)  # you pressed the button or said yes: that's the go-ahead
-                self.window.show("Opening the meeting link", hide_after=4)
+                self.show("Opening the meeting link", hide_after=4)
+                if self.hud_on():
+                    self.hud.offer(None)
 
-        self.window.announce(notice.get("title") or "Custodian", notice.get("body"),
-                             "Open the link" if link else None, open_link if link else None)
+        if self.hud_on():
+            self.show(notice.get("title") or "Custodian", heard="", reply=" - ".join(
+                p for p in (notice.get("title"), notice.get("body")) if p), hide_after=30)
+            if link:
+                offer_id = f"offer-{time.monotonic_ns()}"
+                self.offers[offer_id] = open_link
+                self.hud.offer("Open the link", offer_id)
+        else:
+            self.window.announce(notice.get("title") or "Custodian", notice.get("body"),
+                                 "Open the link" if link else None, open_link if link else None)
         self.speak(notice.get("say") or notice.get("title") or "")
         if link and not self.paused and not opened.is_set() and self.settings.speak_announcements:
             self.expect_reply(lambda said: open_link() if AFFIRMATIVE.search(said) else None)
@@ -237,17 +402,17 @@ class App:
         text = result.get("text")
         if not text:
             return
-        self.window.show("Your morning", reply=text, hide_after=45)
+        self.show("Your morning", reply=text, hide_after=45)
         self.speak(text)
 
     def brief_now(self) -> None:
         try:
             text = self.client.briefing(force=True).get("text")
         except Exception as exc:  # noqa: BLE001
-            self.window.show("No briefing", reply=str(exc)[:200], hide_after=6)
+            self.show("No briefing", reply=str(exc)[:200], hide_after=6)
             return
         if text:
-            self.window.show("Your briefing", reply=text, hide_after=45)
+            self.show("Your briefing", reply=text, hide_after=45)
             self.speak(text)
 
     def watch_presence(self) -> None:
@@ -270,11 +435,26 @@ class App:
     # Talking ------------------------------------------------------------------------------------
 
     def on_state(self, state: str) -> None:
-        if state == "recording":
-            self.window.show("Listening…", heard="", reply="")
+        if state in ("recording", "following up"):
+            if self.hud_on():
+                self.hud.state("listening")
+                self.hud.cancel_hide()
+                if state == "recording":
+                    self.hud.heard("")
+                if not self.hud.visible:
+                    self.hud.show("compact")
+            elif state == "recording":
+                self.show("Listening…", heard="", reply="")
             threading.Thread(target=self.client.warm, daemon=True).start()  # load the model while you talk
         elif state == "didn't catch that":
-            self.window.show("Didn't catch that", hide_after=2)
+            if self.hud_on():
+                self.hud.state("idle")
+            self.show("Didn't catch that", hide_after=2)
+        elif state == "conversation over":  # nothing said after a reply: go quiet, back to the wake word
+            self.conversing = False
+            if self.hud_on():
+                self.hud.state("idle")
+                self.hud.hide_later(4)
 
     def hear(self, wav: bytes) -> str:
         """What was said - only after voice ID (when it's on) says it's you, so nobody else's
@@ -304,36 +484,69 @@ class App:
             except Exception as exc:  # noqa: BLE001
                 log.info("couldn't hear the answer: %s", exc)
             return
+        following, self.conversing = self.conversing, False
         try:
-            self.window.show("Transcribing…")
+            if self.hud_on():
+                self.hud.state("thinking")
+            else:
+                self.show("Transcribing…")
             try:
                 text = early.result() if early is not None else self.hear(wav)
             except PermissionError as exc:
-                self.window.show("Not your voice" if "sound like you" in str(exc) else "Voice ID", reply=str(exc), hide_after=6)
+                self.show("Not your voice" if "sound like you" in str(exc) else "Voice ID", reply=str(exc), hide_after=6)
                 if self.settings.speak_replies:
-                    self.talk("Sorry, I only take requests from my owner's voice." if "sound like you" in str(exc)
+                    self.talk(jarvis.not_your_voice() if "sound like you" in str(exc)
                               else "Voice ID can't check your voice right now.")
                 return
-            self.window.show("Thinking…", heard=text, reply="")
+            if following and len(text.strip(" .!?,")) < 2:  # a follow-up that was only noise
+                self.on_state("conversation over")
+                return
+            if jarvis.ends_conversation(text):  # "that's all", "thank you": no request, just a polite close
+                self.show("Jarvis", heard=text, reply=jarvis.sign_off(self.address), hide_after=4)
+                if self.settings.speak_replies:
+                    self.talk(jarvis.sign_off(self.address))
+                if self.hud_on() and self.hud.mode != "full":
+                    self.hud.hide_later(3)
+                return
+            command = jarvis.hud_command(text)
+            if command:  # "show the HUD", "hide the HUD": the PC's own business
+                if self.hud is not None and command == "show":
+                    self.hud.show("full")
+                    self.push_vitals()
+                    self.push_day()
+                elif self.hud_on():
+                    self.hud.hide()
+                return
+            self.show("Thinking…", heard=text, reply="")
+            if self.hud_on():
+                self.hud.state("thinking")
             if time.monotonic() - self.last_turn > CONVERSATION_MINUTES * 60:
                 self.conversation_id = None
-            result = self.client.chat(text, self.conversation_id)
+            result = self.client.chat(text, self.conversation_id, voice=True)
             self.conversation_id, self.last_turn = result["conversation_id"], time.monotonic()
             reply = result["reply"]
-            self.window.show("Custodian", heard=text, reply=reply)
+            self.show("Custodian", heard=text, reply=reply)
             if self.settings.speak_replies:
                 self.talk(reply)
-            self.window.show("Custodian", heard=text, reply=reply, hide_after=10)
+            if self.settings.conversation_mode and not self.paused:
+                self.conversing = True
+                self.listener.follow_up(self.settings.follow_up_seconds)  # go on without the wake word
+            elif self.hud_on():
+                self.hud.hide_later(10)
+            else:
+                self.show("Custodian", heard=text, reply=reply, hide_after=10)
         except NotSignedIn:
-            self.window.show("Signed out", reply="Sign in again from the tray icon.", hide_after=8)
+            self.show("Signed out", reply="Sign in again from the tray icon.", hide_after=8)
         except Exception as exc:  # noqa: BLE001
-            self.window.show("Something went wrong", reply=str(exc)[:300], hide_after=8)
+            self.show("Something went wrong", reply=str(exc)[:300], hide_after=8)
+            if self.hud_on():
+                self.hud.state("idle")
             if self.settings.speak_replies:
-                self.speaker.say("Sorry, something went wrong.")
+                self.speaker.say(jarvis.failure(self.address))
 
     def timer_rang(self, label: str) -> None:
         log.info("timer rang: %s", label)
-        self.window.show("⏰ Time's up", reply=label, hide_after=30)
+        self.show("⏰ Time's up", reply=label, hide_after=30)
         try:
             import winsound
 
@@ -347,7 +560,7 @@ class App:
 
     def say_aloud(self, text: str) -> None:
         """pc_say: speak it, whatever "Speak replies" is set to - it was asked for."""
-        self.window.show("Custodian", reply=text, hide_after=8)
+        self.show("Custodian", reply=text, hide_after=8)
         self.talk(text)
 
     def talk_now(self) -> None:
@@ -359,7 +572,7 @@ class App:
     def start_enrolling(self) -> None:
         """Record PHRASES, one each time you're asked, then save your voiceprint."""
         self.enrolling = []
-        self.window.show("Set up voice ID", reply="I'll ask you to say three short phrases, after the beep each time.",
+        self.show("Set up voice ID", reply="I'll ask you to say three short phrases, after the beep each time.",
                          hide_after=4)
         threading.Timer(3, self._ask_phrase).start()
 
@@ -367,7 +580,7 @@ class App:
         if self.enrolling is None:
             return
         n = len(self.enrolling)
-        self.window.show(f"Voice ID {n + 1}/{len(PHRASES)}", reply=f"Say: “{PHRASES[n]}”")
+        self.show(f"Voice ID {n + 1}/{len(PHRASES)}", reply=f"Say: “{PHRASES[n]}”")
         self.listener.trigger()
 
     def enroll_step(self, wav: bytes) -> None:
@@ -380,11 +593,11 @@ class App:
         try:
             self.voiceid.enroll(recordings)
         except (ValueError, VoiceIdUnavailable) as exc:
-            self.window.show("Voice ID wasn't set up", reply=str(exc), hide_after=10)
+            self.show("Voice ID wasn't set up", reply=str(exc), hide_after=10)
             return
         self.settings.voice_id = True
         self.settings.save()
-        self.window.show("Voice ID is on", reply="From now on I only take spoken requests in your voice.", hide_after=6)
+        self.show("Voice ID is on", reply="From now on I only take spoken requests in your voice.", hide_after=6)
 
     # Tray, hotkey, lifetime ------------------------------------------------------------------------
 
@@ -394,7 +607,7 @@ class App:
         def toggle_pause(_icon, _item) -> None:  # noqa: ANN001
             self.paused = not self.paused
             self.listener.pause(self.paused)
-            self.window.show("Microphone off" if self.paused else f"Listening for “{self.settings.wake_phrase}”", hide_after=3)
+            self.show("Microphone off" if self.paused else f"Listening for “{self.settings.wake_phrase}”", hide_after=3)
 
         def toggle_speech(_icon, _item) -> None:  # noqa: ANN001
             self.settings.speak_replies = not self.settings.speak_replies
@@ -415,6 +628,10 @@ class App:
             self.settings.barge_in = self.listener.barge_in = not self.settings.barge_in
             self.settings.save()
 
+        def toggle_conversation(_icon, _item) -> None:  # noqa: ANN001
+            self.settings.conversation_mode = not self.settings.conversation_mode
+            self.settings.save()
+
         def sign_out(_icon, _item) -> None:  # noqa: ANN001
             config.set_token(self.settings.server, None)
             self.client.token = None
@@ -422,6 +639,9 @@ class App:
 
         menu = pystray.Menu(
             pystray.MenuItem("Talk now  (Ctrl+Alt+Space)", lambda *_: self.talk_now(), default=True),
+            pystray.MenuItem("Show the HUD  (Ctrl+Alt+J)", lambda *_: threading.Thread(target=self.toggle_hud, daemon=True).start()),
+            pystray.MenuItem("Conversation mode (follow-ups without the wake word)", toggle_conversation,
+                             checked=lambda _i: self.settings.conversation_mode),
             pystray.MenuItem("Microphone off", toggle_pause, checked=lambda _i: self.paused),
             pystray.MenuItem("Speak replies", toggle_speech, checked=lambda _i: self.settings.speak_replies),
             pystray.MenuItem("Speak reminders and alerts", toggle_announcements,
@@ -442,7 +662,10 @@ class App:
     def start_hotkey(self) -> None:
         from pynput import keyboard
 
-        keyboard.GlobalHotKeys({self.settings.hotkey: self.talk_now}).start()
+        keys = {self.settings.hotkey: self.talk_now}
+        if self.settings.hud_hotkey:
+            keys[self.settings.hud_hotkey] = lambda: threading.Thread(target=self.toggle_hud, daemon=True).start()
+        keyboard.GlobalHotKeys(keys).start()
 
     def quit(self) -> None:
         self.stopping.set()
@@ -450,6 +673,8 @@ class App:
         self.hearing.shutdown(wait=False, cancel_futures=True)
         self.listener.stop()
         self.speaker.stop()
+        if self.hud is not None:
+            self.hud.stop()
         if self.tray is not None:
             self.tray.stop()
         self.window.quit()
@@ -466,9 +691,16 @@ class App:
             threading.Thread(target=self.indexer.run, daemon=True, name="indexer").start()
             threading.Thread(target=self.watch_presence, daemon=True, name="presence").start()
             threading.Thread(target=self.learner.run, daemon=True, name="learning").start()
+            if self.hud is not None and not self.hud.start():
+                log.info("the HUD isn't available; using the small panel")
+            threading.Thread(target=self.refresh_day, daemon=True, name="day").start()
+            threading.Thread(target=self.vitals, daemon=True, name="vitals").start()
             self.start_hotkey()
             hint = f"Say “{self.settings.wake_phrase}” or press Ctrl+Alt+Space" if self.settings.wake_word else "Press Ctrl+Alt+Space"
-            self.window.show("Custodian is ready", reply=hint, hide_after=5)
+            if self.settings.greet and self.settings.speak_announcements:
+                threading.Thread(target=self.greet, daemon=True, name="greeting").start()
+            else:
+                self.show("Jarvis is online", reply=hint, hide_after=5)
 
         self.start_tray()
         threading.Thread(target=start, daemon=True, name="start").start()

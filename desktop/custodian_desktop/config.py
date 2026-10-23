@@ -29,11 +29,19 @@ class Settings:
     hotkey: str = "<ctrl>+<alt>+<space>"
     speak_replies: bool = True
     speak_announcements: bool = True  # reminders, meeting heads-ups, alerts and the morning briefing, out loud
-    voice: str = "en_US-lessac-medium"  # Piper voice in APP_DIR/voices; falls back to Windows' own voice
+    voice: str = "en_GB-alan-medium"  # Piper voice in APP_DIR/voices (Jarvis: British); else lessac, else Windows' own
     hindi_voice: str = "hi_IN-pratham-medium"  # for replies in Hindi or Marathi (Devanagari)
     voice_id: bool = False  # only take spoken requests from the voice set up with "Set up voice ID"
     voice_id_threshold: float = 0.45
     microphone: int | None = None  # sounddevice input index; None = the default microphone
+    # Jarvis
+    conversation_mode: bool = True  # after a reply, listen a few seconds for a follow-up without the wake word
+    follow_up_seconds: float = 6.0
+    hud: bool = True  # the J.A.R.V.I.S. HUD window (needs pywebview); off = the small text panel
+    hud_hotkey: str = "<ctrl>+<alt>+j"  # the full-screen HUD
+    watchdog: bool = True  # speak up about a low battery, an overloaded processor or memory, a full drive
+    greet: bool = True  # say hello when the app starts
+    settings_version: int = 2
     protected: list[str] = field(default_factory=lambda: [
         r"C:\Windows", r"C:\Program Files", r"C:\Program Files (x86)", r"C:\ProgramData",
     ])  # folders the PC actions may never change, whatever is confirmed
@@ -42,6 +50,9 @@ class Settings:
     def load(cls) -> Settings:
         try:
             data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+            if data.get("settings_version", 1) < 2 and data.get("voice") == "en_US-lessac-medium":
+                data["voice"] = "en_GB-alan-medium"  # version 2: Jarvis's British voice, unless you'd chosen another
+            data["settings_version"] = 2
             return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
         except (OSError, ValueError, TypeError):
             return cls()
@@ -58,6 +69,14 @@ def wake_model_path(name: str) -> str:
         if path.exists():
             return str(path)
     return name
+
+
+def voice_name(wanted: str) -> str:
+    """`wanted` if its Piper voice is installed, else the first installed of the usual ones."""
+    for name in (wanted, "en_GB-alan-medium", "en_US-lessac-medium"):
+        if (APP_DIR / "voices" / f"{name}.onnx").exists():
+            return name
+    return wanted
 
 
 def get_token(server: str) -> str | None:

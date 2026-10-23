@@ -15,6 +15,7 @@ from . import db
 
 _TIME = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 VOICE_LANGUAGES = ("auto", "en", "hi", "mr")
+PERSONAS = ("jarvis", "plain")
 
 
 class SettingError(ValueError):
@@ -47,6 +48,18 @@ def _folders(value: Any) -> list[str]:
     return [v.strip() for v in value]
 
 
+def _persona(value: Any) -> str:
+    if value not in PERSONAS:
+        raise SettingError(f"must be one of {', '.join(PERSONAS)}")
+    return value
+
+
+def _short_text(value: Any) -> str:
+    if not isinstance(value, str) or len(value) > 40 or any(c in value for c in "\n\r\x00<>{}$"):
+        raise SettingError("must be a short line of text (40 characters at most)")
+    return " ".join(value.split())
+
+
 def _language(value: Any) -> str:
     if value not in VOICE_LANGUAGES:
         raise SettingError(f"must be one of {', '.join(VOICE_LANGUAGES)}")
@@ -72,6 +85,10 @@ SETTINGS: dict[str, tuple[Any, Callable[[Any], Any]]] = {
     "telegram_alerts": (True, _bool),
     # The language you speak to the desktop app in ("auto" lets Whisper tell).
     "voice_language": ("auto", _language),
+    # Jarvis: how the PC's voice talks (app/persona.py). "plain" is Custodian's ordinary voice.
+    "persona": ("jarvis", _persona),
+    "address": ("sir", _short_text),           # what Jarvis calls you: "sir", "ma'am", "boss", your name
+    "home_city": ("", _short_text),            # for the HUD's weather; empty = the city your memories say you live in
 }
 
 

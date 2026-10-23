@@ -8,6 +8,7 @@ the proactive and learning features.
     GET  /approvals · POST /approvals/{id}   PC actions asked for from the app, waiting for your OK here
     POST /remote                            your phone as a remote: "lock my pc", "next track", "volume 30"
     GET  /learning · GET /learning/data · POST /learning/result   learning from your corrections overnight
+    GET  /hud                               what the Jarvis HUD on the PC shows: your day, reminders, activity
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
-from .. import activity, approvals, desktop, learning, memory, memory_graph, orchestrator, pc_index, proactive, routines, settings_store, watchers
+from .. import activity, approvals, desktop, hud, learning, memory, memory_graph, orchestrator, pc_index, proactive, routines, settings_store, watchers
 from ..auth import require_session
 from ..orchestrator import ConversationNotFound
 from .chat import origin_of
@@ -172,6 +173,12 @@ def memory_map(user_id: int = Depends(require_session)) -> list[dict]:
 
 
 # Proactive -------------------------------------------------------------------------------------
+
+@router.get("/hud")
+def hud_snapshot(user_id: int = Depends(require_session)) -> dict:
+    """Today's events and reminders, recent actions and how to address you, for the PC's HUD."""
+    return hud.snapshot(user_id)
+
 
 @router.post("/briefing")
 def morning_briefing(force: bool = False, user_id: int = Depends(require_session)) -> dict:

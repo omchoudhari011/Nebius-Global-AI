@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from . import accounts, activity, approvals, conversations, db, documents, fastpath, grounding, history_search, memory, memory_graph, plans, privacy, routines, sensitive, skills, usage, vectors, warmup
+from . import accounts, activity, approvals, conversations, db, documents, fastpath, grounding, history_search, memory, memory_graph, persona, plans, privacy, routines, sensitive, skills, usage, vectors, warmup
 from .config import get_settings
 from .crypto import decrypt, encrypt, encrypt_json
 from .model_backends import ModelError, get_backend, get_large_backend, large_base_url
@@ -401,6 +401,7 @@ def handle(
     deep: bool = False,
     attachments: list[int] | None = None,
     origin: str | None = None,
+    voice: bool = False,
 ) -> dict:
     """Run one turn (see _handle). `origin` is where it came from - "desktop", "app" or
     "telegram" - which decides where a PC action that needs an OK asks for it (app/approvals.py);
@@ -408,7 +409,7 @@ def handle(
     token = approvals.origin.set("task" if task else (origin or "desktop"))
     try:
         return _handle(user_id, message, trigger, conversation_id=conversation_id, task=task, private=private,
-                       deep=deep, attachments=attachments)
+                       deep=deep, attachments=attachments, voice=voice)
     finally:
         approvals.origin.reset(token)
 
@@ -423,6 +424,7 @@ def _handle(
     private: bool = False,
     deep: bool = False,
     attachments: list[int] | None = None,
+    voice: bool = False,
 ) -> dict:
     """Run one turn. `message` is None for scheduled tasks, which pass `task`. `private` starts
     an off-the-record chat (a conversation keeps the setting it was started with). `deep` asks
@@ -537,6 +539,10 @@ def _handle(
         system_prompt += "\n\n" + grounding.OFF_THE_RECORD_NOTE
     if message is not None and DEVANAGARI.search(message):
         system_prompt += "\n\n" + LANGUAGE_NOTE
+    # Spoken to the PC: Jarvis's manner (app/persona.py). The facts and checks stay the same.
+    address = persona.wanted(user_id, voice=voice, origin=approvals.origin.get()) if message is not None else None
+    if address:
+        system_prompt += "\n\n" + persona.note(address)
     if message is not None and files:
         quoted = _format_earlier(earlier, settings.timezone) + "\n\n" if earlier else ""
         instruction = f"{quoted}{_attached(files)}\n\n{NOW_LABEL} {message}"
@@ -573,12 +579,12 @@ def _handle(
     if routine is not None:
         backend = routines.RoutinePath(routine)
     elif intent is not None and intent.function in activity.INTERNAL_NAMES and not escalated:
-        backend = fastpath.FastPath(intent, backend)
+        backend = fastpath.FastPath(intent, backend, address=address)
     elif quick is not None and (allowed is None or (quick.tool, quick.scope) in allowed):
         if quick not in offered:
             offered.append(quick)
             tool_schemas.insert(0, quick.openai_schema())
-        backend = fastpath.FastPath(intent, backend)
+        backend = fastpath.FastPath(intent, backend, address=address)
     # A memory has to be something the user said: their words in this turn, this chat and the
     # earlier messages quoted to the model. A scheduled run has none, so it saves no memories.
     said = (

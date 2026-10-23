@@ -38,6 +38,10 @@ const SETTINGS: { key: keyof Prefs; label: string; hint: string }[] = [
   { key: "pc_index", label: "Search inside my files", hint: "Index Documents, Downloads and Desktop so you can find files by what they say. Off deletes the index." },
 ];
 
+const PERSONAS: { value: Prefs["persona"]; label: string }[] = [
+  { value: "jarvis", label: "Jarvis" },
+  { value: "plain", label: "Plain" },
+];
 const LANGUAGES: { value: VoiceLanguage; label: string }[] = [
   { value: "auto", label: "Any" },
   { value: "en", label: "English" },
@@ -61,6 +65,8 @@ export default function JarvisScreen() {
   const t = useTokens();
   const [pc, setPc] = useState<{ connected: boolean; device: string | null } | null>(null);
   const [prefs, setPrefsState] = useState<Prefs | null>(null);
+  const [address, setAddress] = useState("sir");
+  const [city, setCity] = useState("");
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [accounts, setAccounts] = useState<Integration[]>([]);
@@ -90,6 +96,8 @@ export default function JarvisScreen() {
       ]);
       setPc(desk);
       setPrefsState(p);
+      setAddress(p.address);
+      setCity(p.home_city);
       setRoutines(r);
       setActivity(a);
       setAccounts(i.filter((x) => x.provider !== "google"));
@@ -138,6 +146,15 @@ export default function JarvisScreen() {
   async function toggle(key: keyof Prefs, value: boolean) {
     const out = await run(`pref:${key}`, () => api.setPrefs({ [key]: value }));
     if (out) setPrefsState(out);
+  }
+
+  async function savePrefs(key: string, changes: Partial<Prefs>) {
+    const out = await run(`pref:${key}`, () => api.setPrefs(changes));
+    if (out) {
+      setPrefsState(out);
+      setAddress(out.address);
+      setCity(out.home_city);
+    }
   }
 
   async function setLanguage(value: VoiceLanguage) {
@@ -355,6 +372,16 @@ export default function JarvisScreen() {
             <View style={s.divider} />
             <Text style={s.body}>The language you speak to the PC in</Text>
             <Segmented options={LANGUAGES} value={prefs.voice_language} onChange={(v) => void setLanguage(v)} />
+            <View style={s.divider} />
+            <Text style={s.body}>How the PC talks when you speak to it</Text>
+            <Segmented options={PERSONAS} value={prefs.persona} onChange={(v) => void savePrefs("persona", { persona: v })} />
+            <Text style={s.meta}>Jarvis is calm, brief and polite, and calls you what you choose below. Typed chats keep Custodian's own voice.</Text>
+            <Field label="Jarvis calls you" value={address} onChangeText={setAddress} placeholder="sir" maxLength={40} autoCorrect={false} />
+            <Field label="Your city, for the weather" value={city} onChangeText={setCity} maxLength={40}
+              placeholder="Empty: the city your memories say you live in" />
+            <Button compact icon="checkmark" label="Save" loading={busy === "pref:jarvis"}
+              disabled={address.trim() === prefs.address && city.trim() === prefs.home_city}
+              onPress={() => void savePrefs("jarvis", { address: address.trim() || "sir", home_city: city.trim() })} />
             {learning ? (
               <Text style={s.meta}>
                 {learning.new_examples} correction{learning.new_examples === 1 ? "" : "s"} waiting to be learned.

@@ -277,9 +277,18 @@ it. Speech goes to your Whisper server (see Voice above), and replies are spoken
 [Piper](https://github.com/rhasspy/piper) voice on the PC, or Windows' own voice.
 
 ```powershell
-desktop\run-desktop.ps1             # first run: makes desktop\.venv, downloads the voice, asks you to sign in
+.\run-jarvis.ps1                    # everything at once: Docker's Whisper and SearXNG, Ollama, the server, Jarvis
+.\run-jarvis.ps1 -Stop              # stop the server and Jarvis
+desktop\run-desktop.ps1             # just the desktop app (first run: makes desktop\.venv, downloads the voice, asks you to sign in)
 desktop\run-desktop.ps1 -Install    # start it when you sign in to Windows (-Uninstall to undo)
 ```
+
+Spoken to, it behaves like Jarvis: a J.A.R.V.I.S. HUD (an arc-reactor core that follows your
+voice, live captions, the PC's vitals, your day and the weather; **Ctrl+Alt+J** for full
+screen), a British voice that answers briefly and calls you "sir" (or what you set in the
+Jarvis tab), follow-ups without the wake word until you say "that's all", instant "system
+status" reports, and warnings on its own about a low battery, an overloaded PC or a full drive.
+Typed chats keep Custodian's own voice.
 
 Settings are in `%APPDATA%\Custodian\desktop.json` (server, wake word on or off and its
 threshold, hotkey, speaking replies, voice, microphone, protected folders); the sign-in is kept

@@ -275,6 +275,12 @@ def parse(message: str, *, routine: bool = False) -> Intent | None:
                           lambda r, s=seconds: f"Timer set for {_human(s)} - it rings at {r.get('rings_at', 'the time')}.")
     if re.fullmatch(r"(?:what'?s|how\s+much\s+is|how\s+much)?\s*(?:my\s+)?battery(?:\s+(?:level|percentage|left|status))?|how\s+much\s+battery(?:\s+is\s+left|\s+do\s+i\s+have(?:\s+left)?)?", text):
         return Intent("pc_system_info", {}, _battery_reply)
+    if re.fullmatch(r"(?:(?:give\s+me\s+a\s+|run\s+(?:a\s+)?)?(?:system|systems|pc|computer|laptop)\s+(?:status|report|check|diagnostics?)(?:\s+report)?"
+                    r"|status\s+report|(?:run\s+)?(?:a\s+)?diagnostics?|how'?s\s+(?:my|the)\s+(?:pc|computer|laptop|system)(?:\s+doing)?"
+                    r"|how\s+is\s+(?:my|the)\s+(?:pc|computer|laptop|system)(?:\s+doing)?|(?:are\s+)?all\s+systems\s+(?:ok|okay|normal|go))", text):
+        from .persona import status_reply
+
+        return Intent("pc_system_info", {}, status_reply)
     if re.fullmatch(r"what'?s\s+playing|what\s+song\s+is\s+(?:this|playing)|which\s+song\s+is\s+(?:this|playing)", text):
         return Intent("pc_now_playing", {}, lambda r: (f"You're listening to {r['now_playing'][0]['title']} on {r['now_playing'][0]['app']}."
                                                        if r.get("now_playing") else "Nothing is playing right now."))
@@ -334,8 +340,17 @@ class FastPath(ModelBackend):
     name = "fastpath"
     model_id = "custodian-fastpath"
 
-    def __init__(self, intent: Intent, model: ModelBackend) -> None:
+    def __init__(self, intent: Intent, model: ModelBackend, *, address: str | None = None) -> None:
         self.intent, self.model = intent, model
+        self.address = address  # spoken to Jarvis: "Opened Chrome, sir." (app/persona.py)
+
+    def _reply(self, result: dict) -> str:
+        text = self.intent.reply(result)
+        if self.address:
+            from .persona import dress
+
+            text = dress(text, self.address)
+        return text
 
     def generate(self, messages: list[dict], tools: list[dict] | None = None) -> ModelResponse:
         import json
@@ -352,7 +367,7 @@ class FastPath(ModelBackend):
                     if step is not None:
                         return ModelResponse("", [ToolCallRequest("fast_2", *step)], self.model_id)
                 if len(results) <= 2:
-                    return ModelResponse(self.intent.reply(result.get("result") or {}), [], self.model_id)
+                    return ModelResponse(self._reply(result.get("result") or {}), [], self.model_id)
             except (KeyError, TypeError, IndexError):
                 pass
         return self.model.generate(messages, tools)  # failed, declined, denied: let the model explain
