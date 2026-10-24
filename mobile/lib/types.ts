@@ -377,6 +377,7 @@ export type Prefs = {
   quiet_until: string;
   briefing: boolean;
   meeting_heads_up: number;
+  evening_summary: string; // "21:00": your day wrapped up at that time; "" = off
   pc_index: boolean;
   pc_index_folders: string[];
   nightly_learning: boolean;

@@ -8,6 +8,9 @@ you sit down, and a heads-up before a meeting with the link ready to open.
 - briefing(): the desktop app asks for it the first time you use the PC in the morning (after
   hours away). It runs the morning-briefing skill like a scheduled task - today's calendar,
   reminders and notes, and the weather where you live if web search is on - once a day.
+- evening_summary(): at the time you chose (default 21:00; off in the Jarvis tab), what Custodian
+  did for you today, what's still to do and tomorrow's first appointments - in the inbox, and
+  said on the PC unless it's your quiet hours. Once a day.
 - meeting_heads_up(): every minute, events on your calendar (and Google Calendar, when
   connected and switched on) starting within `meeting_heads_up` minutes get one notification
   each - "“Design review” starts in 10 minutes" - with the meeting link when there is one.
@@ -30,7 +33,7 @@ from .tools import calendar_tool
 
 log = logging.getLogger(__name__)
 
-SPOKEN_KINDS = {"reminder", "meeting", "watch"}
+SPOKEN_KINDS = {"reminder", "meeting", "watch"}  # (the evening summary is said by evening_summary itself)
 MEETING_LINK = re.compile(r"https?://(?:[\w-]+\.)*(?:meet\.google\.com|zoom\.us|teams\.microsoft\.com|teams\.live\.com|webex\.com"
                           r"|whereby\.com|meet\.jit\.si)/[^\s<>\"')\]]+", re.I)
 GOOGLE_CACHE_SECONDS = 600
@@ -99,6 +102,56 @@ def briefing(user_id: int, *, force: bool = False) -> dict:
     notifications.add(user_id, "task", "Your morning briefing", text[:280] + ("…" if len(text) > 280 else ""),
                       f"conversation:{result['conversation_id']}", push=False)
     return {"text": text, "conversation_id": result["conversation_id"]}
+
+
+# The end-of-day summary -------------------------------------------------------------------------
+
+EVENING_WINDOW = 60  # minutes after the chosen time it may still run (the server was off, a long task ran)
+
+
+def evening_summary(user_id: int, *, force: bool = False) -> dict:
+    """What Custodian did for you today, what's still to do, and tomorrow's first appointments, as
+    one short text - in the inbox, and said on the PC unless it's your quiet hours."""
+    from . import orchestrator, skills  # here: the orchestrator imports this module's neighbours
+
+    today = _now_local().date().isoformat()
+    if not force and settings_store.internal(user_id, "last_evening_summary") == today:
+        return {"skipped": "already summed up today"}
+    skill = skills.load_skill("evening-summary") or skills.load_skill("daily-summary")
+    result = orchestrator.handle(user_id, None, trigger="evening-summary",
+                                 task=orchestrator.TaskContext(task_id=0, name="evening-summary", skill_id=skill.id))
+    settings_store.set_internal(user_id, "last_evening_summary", today)
+    text = result["reply"].strip()
+    notifications.add(user_id, "task", "Your day", text[:280] + ("…" if len(text) > 280 else ""),
+                      f"conversation:{result['conversation_id']}", push=True)
+    spoken_now = announce(user_id, "summary", "Your day", text)
+    return {"text": text, "conversation_id": result["conversation_id"], "spoken": spoken_now}
+
+
+def evening_summaries_due(now: datetime | None = None) -> int:
+    """Every minute: each user whose end-of-day time has come (within the hour) and who hasn't had
+    today's yet. Returns how many were made."""
+    made = 0
+    with db.connect() as conn:
+        users = [r["id"] for r in conn.execute("SELECT id FROM users")]
+    for user_id in users:
+        at = settings_store.get(user_id)["evening_summary"]
+        local = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo(get_settings().timezone))
+        if not at:
+            continue
+        hour, minute = (int(p) for p in at.split(":"))
+        due = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if not due <= local < due + timedelta(minutes=EVENING_WINDOW):
+            continue
+        if settings_store.internal(user_id, "last_evening_summary") == local.date().isoformat():
+            continue
+        try:
+            evening_summary(user_id)
+            made += 1
+        except Exception:  # noqa: BLE001 - one user's failure mustn't stop the others; tried again next minute
+            log.exception("evening summary failed")
+            settings_store.set_internal(user_id, "last_evening_summary", local.date().isoformat())
+    return made
 
 
 # Meeting heads-ups ------------------------------------------------------------------------------

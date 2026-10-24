@@ -67,6 +67,7 @@ export default function JarvisScreen() {
   const [prefs, setPrefsState] = useState<Prefs | null>(null);
   const [address, setAddress] = useState("sir");
   const [city, setCity] = useState("");
+  const [evening, setEvening] = useState("21:00");
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [accounts, setAccounts] = useState<Integration[]>([]);
@@ -98,6 +99,7 @@ export default function JarvisScreen() {
       setPrefsState(p);
       setAddress(p.address);
       setCity(p.home_city);
+      setEvening(p.evening_summary);
       setRoutines(r);
       setActivity(a);
       setAccounts(i.filter((x) => x.provider !== "google"));
@@ -154,6 +156,7 @@ export default function JarvisScreen() {
       setPrefsState(out);
       setAddress(out.address);
       setCity(out.home_city);
+      setEvening(out.evening_summary);
     }
   }
 
@@ -379,9 +382,12 @@ export default function JarvisScreen() {
             <Field label="Jarvis calls you" value={address} onChangeText={setAddress} placeholder="sir" maxLength={40} autoCorrect={false} />
             <Field label="Your city, for the weather" value={city} onChangeText={setCity} maxLength={40}
               placeholder="Empty: the city your memories say you live in" />
+            <Field label="Wrap up my day at" value={evening} onChangeText={setEvening} maxLength={5} autoCorrect={false}
+              placeholder="21:00 - empty: no end-of-day summary" keyboardType="numbers-and-punctuation" />
+            <Text style={s.meta}>What Custodian did for you today, what's still to do, and tomorrow's first appointments - in your inbox, and said on the PC unless it's your quiet hours.</Text>
             <Button compact icon="checkmark" label="Save" loading={busy === "pref:jarvis"}
-              disabled={address.trim() === prefs.address && city.trim() === prefs.home_city}
-              onPress={() => void savePrefs("jarvis", { address: address.trim() || "sir", home_city: city.trim() })} />
+              disabled={address.trim() === prefs.address && city.trim() === prefs.home_city && evening.trim() === prefs.evening_summary}
+              onPress={() => void savePrefs("jarvis", { address: address.trim() || "sir", home_city: city.trim(), evening_summary: evening.trim() })} />
             {learning ? (
               <Text style={s.meta}>
                 {learning.new_examples} correction{learning.new_examples === 1 ? "" : "s"} waiting to be learned.

@@ -572,6 +572,8 @@ def _handle(
     if message is not None and (activity.ASKS_ABOUT_ACTIVITY.search(message)
                                 or (intent is not None and intent.function in activity.INTERNAL_NAMES)):
         tool_schemas += [activity.UNDO_TOOL, activity.SEARCH_TOOL]
+    elif message is None and skill is not None and skill.name == "evening-summary":  # what got done today
+        tool_schemas.append(activity.SEARCH_TOOL)
     # "next track", "volume 40", "put on Kalyani": an exact everyday command needs no model
     # (app/fastpath.py). The call still goes through the gate below; a failure is still explained.
     # A routine's steps run the same way (app/routines.py).

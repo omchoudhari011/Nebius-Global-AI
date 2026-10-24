@@ -9,6 +9,7 @@ the proactive and learning features.
     POST /remote                            your phone as a remote: "lock my pc", "next track", "volume 30"
     GET  /learning · GET /learning/data · POST /learning/result   learning from your corrections overnight
     GET  /hud                               what the Jarvis HUD on the PC shows: your day, reminders, activity
+    POST /briefing · POST /evening          the morning briefing; your day wrapped up (done, to do, tomorrow)
 """
 
 from __future__ import annotations
@@ -185,6 +186,13 @@ def morning_briefing(force: bool = False, user_id: int = Depends(require_session
     """Today's briefing to read out (the desktop app asks the first time you use the PC in the
     morning; the app's "Brief me" button sends force=true). At most once a day otherwise."""
     return proactive.briefing(user_id, force=force)
+
+
+@router.post("/evening")
+def evening_summary(user_id: int = Depends(require_session)) -> dict:
+    """Your day wrapped up now (the desktop app's "Wrap up my day"): done, still to do, tomorrow.
+    It's in the inbox, and said on the PC unless it's your quiet hours."""
+    return proactive.evening_summary(user_id, force=True)
 
 
 @router.get("/watches")

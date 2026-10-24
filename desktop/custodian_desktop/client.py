@@ -85,6 +85,10 @@ class Client:
         return self._check(self._http.post("/briefing", params={"force": "true"} if force else None,
                                            headers=self._headers(), timeout=300)).json()
 
+    def evening(self) -> dict:
+        """The day wrapped up now ({"text", "spoken"}); the server also says it on this PC when it can."""
+        return self._check(self._http.post("/evening", headers=self._headers(), timeout=300)).json()
+
     def index_config(self) -> dict:
         """Whether to index the PC's files for search, which folders, and what the server has."""
         return self._check(self._http.get("/desktop/index/config", headers=self._headers(), timeout=60)).json()

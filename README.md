@@ -369,7 +369,10 @@ and the page, and a password field is never filled.
 
 **A proactive Jarvis.** Reminders, meeting heads-ups ("Design review starts in 10 minutes - open
 the link?", answered by button or by saying yes) and watcher alerts are spoken on the PC, never in
-your quiet hours; the first time you use the PC in the morning it reads out your day. Watchers:
+your quiet hours; the first time you use the PC in the morning it reads out your day, and at the
+time you choose (Jarvis tab, default 21:00; tray: *Wrap up my day now*) it wraps the day up: what it
+did for you, counted and never quoting a message, what's still to do, and tomorrow's first
+appointments - in the inbox, on your phone, and said on the PC outside quiet hours. Watchers:
 "tell me when the iPhone 16 on Amazon drops below 60000", a page changing, words appearing
 ("In stock"), an email from someone.
 

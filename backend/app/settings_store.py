@@ -34,6 +34,15 @@ def _time(value: Any) -> str:
     return value
 
 
+def _time_or_off(value: Any) -> str:
+    if value == "":
+        return value
+    try:
+        return _time(value)
+    except SettingError:
+        raise SettingError("must be a time like 21:00, or empty for off") from None
+
+
 def _minutes(value: Any) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 120:
         raise SettingError("must be a whole number of minutes from 0 to 120")
@@ -74,6 +83,7 @@ SETTINGS: dict[str, tuple[Any, Callable[[Any], Any]]] = {
     "quiet_until": ("07:00", _time),
     "briefing": (True, _bool),                 # a spoken summary of your day when you first use the PC in the morning
     "meeting_heads_up": (10, _minutes),        # minutes before a calendar event; 0 = off
+    "evening_summary": ("21:00", _time_or_off),  # your day wrapped up - done, pending, tomorrow - at this time; "" = off
     # Search inside your PC's files by meaning: off until you switch it on.
     "pc_index": (False, _bool),
     "pc_index_folders": (["~/Documents", "~/Downloads", "~/Desktop"], _folders),

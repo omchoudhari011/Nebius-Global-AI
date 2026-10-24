@@ -37,6 +37,7 @@ log = logging.getLogger(__name__)
 PURGE_JOB_ID = "purge-expired-memories"
 REMINDERS_JOB_ID = "deliver-reminders"
 MEETINGS_JOB_ID = "meeting-heads-up"
+EVENING_JOB_ID = "evening-summary"
 WATCHERS_JOB_ID = "check-watches"
 GRAPH_JOB_ID = "memory-graph"
 LEARNING_JOB_ID = "overnight-learning"
@@ -119,6 +120,7 @@ def start() -> None:
         # Proactive (app/proactive.py, app/watchers.py): meeting heads-ups every minute, watches
         # every five (each at its own pace).
         for job, minutes, job_id in ((_safe(proactive.meeting_heads_up), 1, MEETINGS_JOB_ID),
+                                     (_safe(proactive.evening_summaries_due), 1, EVENING_JOB_ID),
                                      (_safe(watchers.check_due), 5, WATCHERS_JOB_ID),
                                      (_safe(memory_graph.process_pending), 1, GRAPH_JOB_ID)):  # memories saved elsewhere
             sched.add_job(job, IntervalTrigger(minutes=minutes, timezone=timezone.utc), id=job_id,

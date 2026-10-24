@@ -209,3 +209,62 @@ def test_watches_need_their_switch_and_can_be_stopped_from_the_app(client, tool_
 def test_the_watch_tool_refuses_a_rule_without_its_number():
     with pytest.raises(ValueError, match="needs the number"):
         watchers_tool.watch_page({"user_id": 1, "data_dir": str(Path(get_settings().tool_data_dir))}, "https://x.com", "x", "below")
+
+
+# The end-of-day summary -------------------------------------------------------------------------
+
+class Evening(ModelBackend):
+    name, model_id = "evening", "evening-1"
+
+    def __init__(self):
+        self.tools: list[str] = []
+        self.prompts: list[str] = []
+
+    def generate(self, messages, tools=None):
+        self.tools = [t["function"]["name"] for t in tools or []]
+        self.prompts.append(messages[0]["content"])
+        return ModelResponse("You sent two messages and saved a report. Tomorrow starts with stand-up at 09:30. Rest well.",
+                             [], self.model_id)
+
+
+def _at(hour: int, minute: int) -> datetime:
+    tz = proactive.ZoneInfo(get_settings().timezone)
+    return datetime(2026, 10, 24, hour, minute, tzinfo=tz).astimezone(timezone.utc)
+
+
+def test_the_day_is_wrapped_up_once_at_the_chosen_time(user_id, pc, monkeypatch):
+    model = Evening()
+    set_backend(model)
+    monkeypatch.setattr(desktop, "post", pc.post)
+    monkeypatch.setattr(proactive, "_now_local", lambda: _at(21, 5).astimezone(proactive.ZoneInfo(get_settings().timezone)))
+    assert proactive.evening_summaries_due(_at(20, 59)) == 0  # not yet
+    assert proactive.evening_summaries_due(_at(21, 5)) == 1
+    assert proactive.evening_summaries_due(_at(21, 6)) == 0  # once a day
+    assert "search_activity" in model.tools and "calendar_list_events" in model.tools  # done today, and tomorrow
+    assert "wrapping up the user's day" in model.prompts[0]
+    (said,) = [n for n in pc.notices if n["function"] == "announce"]
+    assert said["kind"] == "summary" and said["say"].startswith("Your day. You sent two messages")
+    inbox = notifications.list_for(user_id)
+    assert inbox[0]["title"] == "Your day" and "stand-up at 09:30" in inbox[0]["body"]
+
+
+def test_no_summary_when_its_off_or_the_hour_has_passed(user_id, pc, monkeypatch):
+    set_backend(Evening())
+    monkeypatch.setattr(desktop, "post", pc.post)
+    monkeypatch.setattr(proactive, "_now_local", lambda: _at(23, 30).astimezone(proactive.ZoneInfo(get_settings().timezone)))
+    assert proactive.evening_summaries_due(_at(22, 6)) == 0  # more than an hour late: skipped today
+    settings_store.update(user_id, evening_summary="")
+    assert proactive.evening_summaries_due(_at(21, 0)) == 0
+    settings_store.update(user_id, evening_summary="23:30")
+    assert proactive.evening_summaries_due(_at(23, 30)) == 1  # quiet hours: in the inbox, not said aloud
+    assert not [n for n in pc.notices if n["function"] == "announce"]
+    assert notifications.list_for(user_id)[0]["title"] == "Your day"
+    with pytest.raises(settings_store.SettingError, match="21:00, or empty"):
+        settings_store.update(user_id, evening_summary="9pm")
+
+
+def test_wrap_up_my_day_on_request(user_id, client):
+    set_backend(Evening())
+    first = client.post("/evening").json()
+    again = client.post("/evening").json()  # asked for: made again, unlike the daily one
+    assert first["text"].startswith("You sent two messages") and again["text"] == first["text"]

@@ -462,6 +462,18 @@ class App:
             self.show("Your briefing", reply=text, hide_after=45)
             self.speak(text)
 
+    def wrap_up_now(self) -> None:
+        """The tray's "Wrap up my day": the server makes it and hands it back to be said here (quiet
+        hours or not - you asked for it)."""
+        try:
+            result = self.client.evening()
+        except Exception as exc:  # noqa: BLE001
+            self.show("No summary", reply=str(exc)[:200], hide_after=6)
+            return
+        if result.get("text") and not result.get("spoken"):
+            self.show("Your day", reply=result["text"], hide_after=45)
+            self.talk(result["text"])
+
     def watch_presence(self) -> None:
         """Brief you when you arrive in the morning: the first touch of the keyboard or mouse after
         AWAY_SECONDS away, or the first minutes after the PC starts. The server says it once a day."""
@@ -694,6 +706,7 @@ class App:
             pystray.MenuItem("Speak reminders and alerts", toggle_announcements,
                              checked=lambda _i: self.settings.speak_announcements),
             pystray.MenuItem("Brief me now", lambda *_: threading.Thread(target=self.brief_now, daemon=True).start()),
+            pystray.MenuItem("Wrap up my day now", lambda *_: threading.Thread(target=self.wrap_up_now, daemon=True).start()),
             pystray.MenuItem(f"Interrupt by saying “{self.settings.wake_phrase}”", toggle_barge_in,
                              checked=lambda _i: self.settings.barge_in),
             pystray.MenuItem("Only my voice (voice ID)", toggle_voice_id, checked=lambda _i: self.settings.voice_id),
