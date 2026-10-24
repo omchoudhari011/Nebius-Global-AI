@@ -93,6 +93,8 @@ SETTINGS: dict[str, tuple[Any, Callable[[Any], Any]]] = {
     "remote_approvals": (True, _bool),
     # Reminders, meeting heads-ups, watcher alerts and finished tasks also as Telegram messages, once linked.
     "telegram_alerts": (True, _bool),
+    # Phone pushes (ntfy): the text of each one, or only "Reminder from Custodian" (the default).
+    "push_text": (False, _bool),
     # The language you speak to the desktop app in ("auto" lets Whisper tell).
     "voice_language": ("auto", _language),
     # Jarvis: how the PC's voice talks (app/persona.py). "plain" is Custodian's ordinary voice.

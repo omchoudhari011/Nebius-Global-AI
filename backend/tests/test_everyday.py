@@ -98,6 +98,31 @@ def test_phone_push_hides_the_text_unless_asked(user_id, monkeypatch):
     assert sent == [b"Reminder from Custodian", b"Take the blood pressure pill"]
 
 
+def test_phone_pushes_are_set_up_from_the_app_on_a_topic_of_your_own(user_id, client, monkeypatch):
+    sent = []
+    monkeypatch.setattr(notifications, "_transport", httpx.MockTransport(
+        lambda r: sent.append((str(r.url), r.content)) or httpx.Response(200)))
+    monkeypatch.delenv("NTFY_URL", raising=False)
+    assert client.get("/push").json() == {"on": False, "server": "https://ntfy.sh"}
+    assert client.post("/push/test").status_code == 400
+    info = client.post("/push").json()
+    topic = info["topic"]
+    assert info["on"] and topic.startswith("custodian-") and len(topic) >= 30  # long enough that nobody guesses it
+    assert info["subscribe_url"] == f"https://ntfy.sh/{topic}" and info["app_link"] == f"ntfy://ntfy.sh/{topic}"
+    assert client.post("/push").json()["topic"] == topic  # set up again: the same one
+    assert client.get("/features").json()["phone_push"] is True
+
+    notifications.add(user_id, "reminder", "Take the blood pressure pill")
+    client.patch("/settings/prefs", json={"push_text": True})
+    assert client.post("/push/test").status_code == 204
+    assert sent == [(f"https://ntfy.sh/{topic}", b"Reminder from Custodian"),
+                    (f"https://ntfy.sh/{topic}", b"Custodian can reach your phone\nThis is a test notification.")]
+    assert client.delete("/push").status_code == 204
+    assert client.get("/push").json()["on"] is False
+    notifications.add(user_id, "reminder", "Not sent anywhere")
+    assert len(sent) == 2
+
+
 def test_a_finished_task_lands_in_the_inbox(user_id):
     from app import scheduler, tasks
 

@@ -5,6 +5,7 @@ Google connection, and which of these this server has set up.
     GET  /notifications · POST /notifications/{id}/read · POST /notifications/read-all
     GET  /reminders · DELETE /reminders/{id}
     GET  /documents · POST /documents · DELETE /documents/{id}
+    GET  /push · POST /push · DELETE /push · POST /push/test   notifications on your phone (ntfy)
     POST /voice/transcribe                 raw audio body (Content-Type: audio/...)
     POST /messages/{id}/feedback · DELETE /messages/{id}/feedback
     GET  /integrations · GET /integrations/google/start · DELETE /integrations/google
@@ -58,7 +59,7 @@ def features(user_id: int = Depends(require_session)) -> dict:
         "spotify": accounts.configured("spotify"),
         "microsoft": accounts.configured("microsoft"),
         "telegram": telegram.configured(),
-        "phone_push": bool(os.getenv("NTFY_URL", "").strip()),
+        "phone_push": notifications.push_target(user_id) is not None,
         "desktop": desktop.status(user_id)["connected"],
         "unread": notifications.unread_count(user_id),
         "feedback": feedback.counts(user_id),
@@ -120,6 +121,33 @@ def upload(body: Upload, user_id: int = Depends(require_session)) -> dict:
 def delete_document(doc_id: int, user_id: int = Depends(require_session)) -> Response:
     if not documents.delete(user_id, doc_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# Phone pushes (ntfy) ------------------------------------------------------------------------
+
+@router.get("/push")
+def get_push(user_id: int = Depends(require_session)) -> dict:
+    return notifications.push_info(user_id)
+
+
+@router.post("/push")
+def set_up_push(user_id: int = Depends(require_session)) -> dict:
+    """Make a topic of your own; subscribe to it in the ntfy app on your phone."""
+    return notifications.set_up_push(user_id)
+
+
+@router.delete("/push", status_code=status.HTTP_204_NO_CONTENT)
+def stop_push(user_id: int = Depends(require_session)) -> Response:
+    notifications.stop_push(user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/push/test", status_code=status.HTTP_204_NO_CONTENT)
+def test_push(user_id: int = Depends(require_session)) -> Response:
+    if notifications.push_target(user_id) is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Phone notifications aren't set up yet")
+    notifications.add(user_id, "system", "Custodian can reach your phone", "This is a test notification.")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

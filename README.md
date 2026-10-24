@@ -165,12 +165,14 @@ the same permission gate, sandbox and accuracy checks as everything else, and is
 stores them; every minute the server turns the ones that are due into a notification in the
 app's inbox (the bell in the chat header). The web app also shows a browser notification
 while it's open, and phones schedule each upcoming reminder as a local notification, so it
-goes off on time even offline. For a push to your phone from the server, install the
-[ntfy](https://ntfy.sh) app, subscribe to a long random topic, and set
-`NTFY_URL=https://ntfy.sh/<that-topic>` (or your own ntfy server). Pushes say only "Reminder
-from Custodian" unless you set `NTFY_SHOW_TEXT=true`. Finished scheduled tasks land in the
-inbox too. The accuracy check now flags "I'll remind you" only when no reminder was set,
-and still flags promises to text, email or call you, which Custodian can't do.
+goes off on time even offline. For a push to your phone from the server, press **Set up** under
+*Notifications on your phone* in the Jarvis tab: Custodian makes a topic of your own with a long
+random name, and you subscribe to it in the free [ntfy](https://ntfy.sh) app (*Open in ntfy*, then
+*Send a test*). Pushes say only "Reminder from Custodian" unless you switch on *Show the text*.
+`NTFY_SERVER` points it at your own ntfy server; `NTFY_URL` (and `NTFY_SHOW_TEXT=true`) sets one
+topic for the whole server instead. Finished scheduled tasks land in the inbox too. The accuracy
+check flags "I'll remind you" only when no reminder was set, and promises to text or call you,
+which Custodian can't do.
 
 **Files**: attach a PDF, text file, web page or photo with the paperclip and it is read with
 that message (and follow-ups in the same chat) - attaching it is the permission, so no switch

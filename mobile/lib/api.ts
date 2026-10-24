@@ -14,6 +14,7 @@ import { Platform } from "react-native";
 import type {
   Activity,
   HudSnapshot,
+  PushInfo,
   Approval,
   LearningStatus,
   Prefs,
@@ -216,6 +217,10 @@ export const getFeatures = () => request<Features>("/features");
 export const warm = () => request<void>("/warm", { method: "POST" });
 export const getDesktopStatus = () => request<{ connected: boolean; device: string | null }>("/desktop/status");
 export const getHud = () => request<HudSnapshot>("/hud");
+export const getPush = () => request<PushInfo>("/push");
+export const setUpPush = () => request<PushInfo>("/push", { method: "POST" });
+export const stopPush = () => request<void>("/push", { method: "DELETE" });
+export const testPush = () => request<void>("/push/test", { method: "POST" });
 
 export const getNotifications = (unread = false) => request<AppNotification[]>(`/notifications${unread ? "?unread=true" : ""}`);
 export const markNotificationRead = (id: number) => request<void>(`/notifications/${id}/read`, { method: "POST" });

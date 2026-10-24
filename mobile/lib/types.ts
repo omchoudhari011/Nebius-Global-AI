@@ -383,10 +383,22 @@ export type Prefs = {
   nightly_learning: boolean;
   remote_approvals: boolean;
   telegram_alerts: boolean;
+  push_text: boolean; // phone pushes show their text, not only "Reminder from Custodian"
   voice_language: VoiceLanguage;
   persona: "jarvis" | "plain"; // how the PC talks when you speak to it
   address: string; // what Jarvis calls you: "sir", your name...
   home_city: string; // for the HUD's weather; empty = the city your memories say
+};
+
+/** GET /push: notifications on your phone through ntfy (a topic of your own). */
+export type PushInfo = {
+  on: boolean;
+  managed_by_server?: boolean; // NTFY_URL on the server: set up there, not here
+  server?: string;
+  topic?: string;
+  subscribe_url?: string;
+  app_link?: string;
+  show_text?: boolean;
 };
 
 /** The PC's vital signs, sent by the desktop app every 30 s (GET /hud's `pc`). */

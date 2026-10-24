@@ -246,10 +246,9 @@ def _other_services(user_id: int) -> list[dict]:
         out.append({"name": connected["device"] or "Custodian desktop", "host": "your PC", "location": "this network",
                     "purpose": "PC control", "sends": "the PC actions you ask for (PC · read and PC · write); "
                     "risky ones wait for you to allow them on the PC"})
-    ntfy = os.getenv("NTFY_URL", "").strip()
-    if ntfy:
-        show = os.getenv("NTFY_SHOW_TEXT", "").strip().lower() in ("1", "true", "yes")
-        add("Phone notifications", ntfy, "ntfy", "each reminder's text" if show else "only \"Reminder from Custodian\"")
+    push = notifications.push_target(user_id)
+    if push:
+        add("Phone notifications", push[0], "ntfy", "each notification's text" if push[1] else "only \"Reminder from Custodian\"")
     if google_account.status(user_id)["connected"]:
         out.append({"name": "Google", "host": "googleapis.com", "location": "internet", "purpose": "Google account",
                     "sends": "requests for the calendar, email or Drive files you let Custodian read, and the "

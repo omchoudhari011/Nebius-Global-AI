@@ -46,7 +46,7 @@ def add(user_id: int, kind: str, title: str, body: str | None = None, ref: str |
             (user_id, kind, encrypt(title), encrypt(body) if body else None, ref),
         ).lastrowid
     if push:
-        _push(kind, title, body)
+        _push(user_id, kind, title, body)
         try:
             from . import telegram  # here: telegram runs chat turns, which add notifications
 
@@ -63,11 +63,62 @@ def add(user_id: int, kind: str, title: str, body: str | None = None, ref: str |
     return note_id
 
 
-def _push(kind: str, title: str, body: str | None) -> None:
+# Phone pushes, through ntfy (https://ntfy.sh): a topic of your own, set up from the app (a long
+# random name, which is all it takes to read the pushes - so they say only "Reminder from
+# Custodian" unless you choose to see the text), or NTFY_URL for the whole server.
+
+def _ntfy_server() -> str:
+    return (os.getenv("NTFY_SERVER", "").strip() or "https://ntfy.sh").rstrip("/")
+
+
+def push_target(user_id: int) -> tuple[str, bool] | None:
+    """(the topic's URL, whether pushes show their text), or None when phone pushes are off."""
     url = os.getenv("NTFY_URL", "").strip()
-    if not url:
+    if url:
+        return url, os.getenv("NTFY_SHOW_TEXT", "").strip().lower() in ("1", "true", "yes")
+    from . import settings_store
+
+    topic = settings_store.internal(user_id, "ntfy_topic")
+    return (f"{_ntfy_server()}/{topic}", bool(settings_store.value(user_id, "push_text"))) if topic else None
+
+
+def push_info(user_id: int) -> dict:
+    """What the app shows: whether pushes are on and how to subscribe on the phone."""
+    from . import settings_store
+
+    if os.getenv("NTFY_URL", "").strip():
+        return {"on": True, "managed_by_server": True}
+    topic = settings_store.internal(user_id, "ntfy_topic")
+    if not topic:
+        return {"on": False, "server": _ntfy_server()}
+    server = _ntfy_server()
+    host = server.split("://", 1)[-1]
+    return {"on": True, "server": server, "topic": topic, "subscribe_url": f"{server}/{topic}",
+            "app_link": f"ntfy://{host}/{topic}", "show_text": bool(settings_store.value(user_id, "push_text"))}
+
+
+def set_up_push(user_id: int) -> dict:
+    """A topic of your own, unguessable (an attacker who knew it could read the pushes)."""
+    import secrets
+
+    from . import settings_store
+
+    if not settings_store.internal(user_id, "ntfy_topic"):
+        settings_store.set_internal(user_id, "ntfy_topic", "custodian-" + secrets.token_urlsafe(18).replace("_", "x"))
+    return push_info(user_id)
+
+
+def stop_push(user_id: int) -> None:
+    from . import settings_store
+
+    settings_store.set_internal(user_id, "ntfy_topic", None)
+
+
+def _push(user_id: int, kind: str, title: str, body: str | None) -> None:
+    target = push_target(user_id)
+    if not target:
         return
-    show = os.getenv("NTFY_SHOW_TEXT", "").strip().lower() in ("1", "true", "yes")
+    url, show = target
     generic = {"reminder": "Reminder from Custodian", "task": "Custodian finished a scheduled task",
                "meeting": "A meeting starts soon", "watch": "Something you asked Custodian to watch happened"}.get(kind, "Custodian")
     try:

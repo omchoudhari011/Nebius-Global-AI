@@ -13,7 +13,7 @@ import { Button, Card, Chip, Field, IconButton, Notice, ScreenGradient, ScreenHe
 import * as api from "../../lib/api";
 import { confirmAction, formatWhen } from "../../lib/format";
 import { space, themed, useTokens } from "../../lib/tokens";
-import type { Activity, HudSnapshot, Integration, LearningStatus, Prefs, Routine, VoiceLanguage } from "../../lib/types";
+import type { Activity, HudSnapshot, Integration, LearningStatus, Prefs, PushInfo, Routine, VoiceLanguage } from "../../lib/types";
 
 type IconName = Parameters<typeof Button>[0]["icon"];
 
@@ -66,6 +66,8 @@ export default function JarvisScreen() {
   const t = useTokens();
   const [pc, setPc] = useState<{ connected: boolean; device: string | null } | null>(null);
   const [hud, setHud] = useState<HudSnapshot | null>(null);
+  const [push, setPush] = useState<PushInfo | null>(null);
+  const [pushNote, setPushNote] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
   const [prefs, setPrefsState] = useState<Prefs | null>(null);
   const [address, setAddress] = useState("sir");
@@ -90,9 +92,10 @@ export default function JarvisScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [desk, h, p, r, a, i, l] = await Promise.all([
+      const [desk, h, n, p, r, a, i, l] = await Promise.all([
         api.getDesktopStatus().catch(() => null),
         api.getHud().catch(() => null),
+        api.getPush().catch(() => null),
         api.getPrefs(),
         api.getRoutines(),
         api.getActivity(),
@@ -101,6 +104,7 @@ export default function JarvisScreen() {
       ]);
       setPc(desk);
       setHud(h);
+      setPush(n);
       setPrefsState(p);
       setAddress(p.address);
       setCity(p.home_city);
@@ -167,6 +171,15 @@ export default function JarvisScreen() {
   async function toggle(key: keyof Prefs, value: boolean) {
     const out = await run(`pref:${key}`, () => api.setPrefs({ [key]: value }));
     if (out) setPrefsState(out);
+  }
+
+  async function pushAction(key: string, work: () => Promise<unknown>, after?: () => void) {
+    const out = await run(`push:${key}`, async () => {
+      await work();
+      return api.getPush();
+    });
+    if (out) setPush(out);
+    after?.();
   }
 
   async function savePrefs(key: string, changes: Partial<Prefs>) {
@@ -415,6 +428,47 @@ export default function JarvisScreen() {
                 {learning.last_run ? ` Last night's run (${formatWhen(learning.last_run.at)}): ${learning.last_run.summary}` : ""}
               </Text>
             ) : null}
+          </Card>
+        ) : null}
+
+        <SectionTitle title="Notifications on your phone" hint="Reminders, meetings, alerts and your end-of-day summary, even when this app is closed - through the free ntfy app." />
+        {push ? (
+          <Card>
+            {push.managed_by_server ? (
+              <Text style={s.meta}>Set up on the server (NTFY_URL): every notification goes to the topic it names.</Text>
+            ) : !push.on ? (
+              <>
+                <Text style={s.body}>Get Custodian's notifications on this phone.</Text>
+                <Text style={s.meta}>Custodian makes a channel of your own with a long random name; you subscribe to it in the ntfy app. Pushes say only "Reminder from Custodian" unless you choose to see their text.</Text>
+                <Button compact icon="notifications-outline" label="Set up" loading={busy === "push:on"}
+                  onPress={() => void pushAction("on", api.setUpPush)} />
+              </>
+            ) : (
+              <>
+                <Text style={s.body}>1. Install ntfy (Android or iPhone).  2. Subscribe to this topic:</Text>
+                <Text style={s.body} selectable>{push.topic}</Text>
+                <Text style={s.meta}>Server: {push.server}. Keep the name to yourself - anyone who has it can read the pushes.</Text>
+                <View style={[s.row, { flexWrap: "wrap" }]}>
+                  <Button compact icon="open-outline" label="Open in ntfy"
+                    onPress={() => void Linking.openURL(push.app_link ?? push.subscribe_url ?? "").catch(() => Linking.openURL(push.subscribe_url ?? ""))} />
+                  <Button compact icon="paper-plane-outline" label="Send a test" loading={busy === "push:test"}
+                    onPress={() => void pushAction("test", api.testPush, () => setPushNote("Sent - it should arrive in a few seconds."))} />
+                  <Button compact icon="close-outline" label="Turn off" loading={busy === "push:off"}
+                    onPress={() => void pushAction("off", api.stopPush)} />
+                </View>
+                {pushNote ? <Text style={s.meta}>{pushNote}</Text> : null}
+                {prefs ? (
+                  <View style={s.row}>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={s.body}>Show the text</Text>
+                      <Text style={s.meta}>Off: only "Reminder from Custodian". On: what it's about, on your lock screen too.</Text>
+                    </View>
+                    <ToggleSwitch accessibilityLabel="Show the text in phone notifications" value={prefs.push_text}
+                      disabled={busy === "pref:push_text"} onValueChange={(v) => void toggle("push_text", v)} />
+                  </View>
+                ) : null}
+              </>
+            )}
           </Card>
         ) : null}
 
