@@ -62,6 +62,17 @@ jobs:
       - run: pip install -r requirements.txt pytest
       - name: Tests (actions, confirmations, recording)
         run: python -m pytest
+      - name: PowerShell scripts parse (Windows PowerShell 5.1, as on a user's PC)
+        shell: powershell
+        working-directory: .
+        run: |
+          $bad = 0
+          Get-ChildItem -Recurse -Filter *.ps1 | Where-Object { $_.FullName -notmatch "node_modules|\.venv" } | ForEach-Object {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { $bad++; Write-Host "$($_.FullName):"; $errors | ForEach-Object { Write-Host "  $($_.Message)" } }
+          }
+          if ($bad) { exit 1 }
 
   docker:
     runs-on: ubuntu-latest
