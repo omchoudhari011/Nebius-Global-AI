@@ -43,6 +43,8 @@ GOOGLE = {
     "gcal_create_event": {"title": "Call", "start": "2030-01-02T15:00"},
     "gmail_search_messages": {"query": "bank"},
     "gmail_read_message": {"id": "m1"},
+    "gmail_draft_email": {"to": ["priya@example.com"], "subject": "Q3", "body": "Numbers attached."},
+    "gmail_send_email": {"to": ["priya@example.com"], "subject": "Q3", "body": "Numbers attached."},
     "gdrive_search_files": {"query": "budget"},
     "gdrive_read_file": {"id": "d1"},
 }

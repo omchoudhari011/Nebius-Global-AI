@@ -315,7 +315,7 @@ prompt, plus what they said in earlier conversations that matches the message.
 | `embedding_ref` in the diagram, but the code uses FTS5 | Removed. If vectors are added later, also store the embedding model so you know what to re-embed. |
 | Foreign keys never enforced | `app/db.py` runs `PRAGMA foreign_keys = ON` for every connection (SQLite's default is off). |
 | No enums, `ON DELETE` rules or indexes | `CHECK` constraints on every enum-like column; deleting a user cascades everywhere; indexes for the scheduler, recall and conversation queries. |
-| No schema versioning | `PRAGMA user_version` (now 8); `init_db()` upgrades a v2, v3, v4, v5, v6 or v7 file in place with `db.MIGRATIONS` and refuses a v1 or unknown database instead of half-applying the schema. |
+| No schema versioning | `PRAGMA user_version` (now 10); `init_db()` upgrades a v2 to v9 file in place with `db.MIGRATIONS` and refuses a v1 or unknown database instead of half-applying the schema. |
 
 ## Deliberately not added
 

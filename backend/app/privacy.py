@@ -252,7 +252,8 @@ def _other_services(user_id: int) -> list[dict]:
         add("Phone notifications", ntfy, "ntfy", "each reminder's text" if show else "only \"Reminder from Custodian\"")
     if google_account.status(user_id)["connected"]:
         out.append({"name": "Google", "host": "googleapis.com", "location": "internet", "purpose": "Google account",
-                    "sends": "requests for the calendar, email or Drive files you let Custodian read"})
+                    "sends": "requests for the calendar, email or Drive files you let Custodian read, and the "
+                             "drafts and emails you allow it to save or send"})
     for item in accounts.where_data_goes(user_id):
         out.append({**item, "sends": "only the requests the tools you switched on make"})
     return out

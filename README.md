@@ -213,7 +213,11 @@ WHISPER_API_KEY=<the key it printed>
 (type "Web application"; enable the Calendar, Gmail and Drive APIs; add your server's
 `…/integrations/google/callback` as an authorised redirect URI), then set
 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI` and press **Connect
-Google** in Tools & Data. Gmail and Drive are read only. The refresh token stays encrypted
+Google** in Tools & Data. Drive is read only. Gmail is read (**Gmail · read**), and with **Gmail · write**
+Custodian writes drafts and sends email: "reply to Priya that the numbers are final" shows you the
+recipients and the exact text, in the app, on Telegram or on the PC (wherever you asked), and sends
+only on **Allow once**; a scheduled task never sends, and addresses are only ones it has seen, never
+guessed. (Connected before this? Connect Google again to grant drafts and sending.) The refresh token stays encrypted
 on the server; a Google tool gets a short-lived access token, and its sandbox may reach only
 Google's API hosts (every other address stays blocked). Email and file contents are treated
 as information, never as instructions.

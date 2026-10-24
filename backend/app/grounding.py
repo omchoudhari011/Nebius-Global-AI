@@ -263,6 +263,18 @@ _PC_CLAIM = re.compile(
     r"|timer set|wrote (?:the |a |your )?\S.* in (?:notepad|word)|filled|moved (?:it|the file)|copied (?:it|the file))\b",
     re.I | re.M,
 )
+# An email sent or drafted: true only when Gmail sent or saved it in this turn.
+_EMAIL_SENT_CLAIM = re.compile(
+    r"\b(?:i(?:'ve| have)?\s+(?:just\s+|now\s+)?)(?:sent|emailed|mailed|replied to)\b(?!\s+you\b)"
+    r"|\b(?:e-?mail|reply|response)\s+(?:is|has been|was)\s+(?:now\s+)?sent\b"
+    r"|(?:^\W*|[.!?]\s+)(?:done[\s,!-]+)?sent (?:the |your |an? )?(?:e-?mail|reply|response)\b",
+    re.I | re.M,
+)
+_DRAFT_CLAIM = re.compile(
+    r"\b(?:saved|left|put|created)\s+(?:it\s+|a\s+|the\s+|your\s+)?(?:\w+\s+)?(?:as\s+a\s+)?drafts?\b"
+    r"|\bdraft\s+(?:is|has been|was)\s+(?:now\s+)?(?:saved|ready|in)\b|\bin (?:your )?drafts\b",
+    re.I,
+)
 _CONTACT_CLAIM = re.compile(
     r"\b(?:i'?ll|i will|i'm going to|i am going to)\s+(?:also\s+)?(?:message|text|email|e-mail|call|phone|whatsapp)\s+you\b",
     re.I,
@@ -449,6 +461,27 @@ def review(reply: str, evidence: Evidence) -> list[Finding]:
                 f"You said you did something on their PC, but no pc action succeeded in this turn ({why}). Call the "
                 "pc tool if you can, or say plainly what didn't happen.",
                 f"Nothing was done on your PC: {why}.",
+            )
+        )
+    message_sent = evidence.succeeded("gmail", "send_email") or evidence.succeeded("pc", "send_message")
+    if not message_sent and _says(reply, _EMAIL_SENT_CLAIM):
+        tried = [o for o in evidence.outcomes if (o.tool, o.function) in (("gmail", "send_email"), ("pc", "send_message"))]
+        why = _why_not(evidence, tried[-1].tool, tried[-1].function) if tried else "nothing was sent"
+        findings.append(
+            Finding(
+                "unverified_send",
+                f"You said it was sent, but no gmail send_email (or pc send_message) call succeeded in this turn ({why}). "
+                "Say plainly that it wasn't sent, or save it as a draft.",
+                f"Nothing was sent: {why}.",
+            )
+        )
+    if not evidence.succeeded("gmail", "draft_email") and _says(reply, _DRAFT_CLAIM):
+        why = _why_not(evidence, "gmail", "draft_email")
+        findings.append(
+            Finding(
+                "unverified_draft",
+                f"You said a draft was saved, but no gmail draft_email call succeeded in this turn ({why}).",
+                f"No draft was saved: {why}.",
             )
         )
     if _says(reply, _CONTACT_CLAIM):

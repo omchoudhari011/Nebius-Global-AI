@@ -112,6 +112,30 @@ def remote_origin(user_id: int) -> str | None:
     return where if settings_store.get(user_id).get("remote_approvals", True) else None
 
 
+def confirm(user_id: int, function: str, args: dict, title: str) -> None:
+    """A server-side action that needs your OK (sending an email): asked where you asked for it -
+    in the app or on Telegram, as above - or else in a dialog on the PC. A scheduled task never
+    gets to do one. Raises PermissionError unless it's allowed."""
+    where = origin.get()
+    if where == "task":
+        raise PermissionError("A scheduled task can't do this; ask Custodian directly and allow it.")
+    remote = remote_origin(user_id)
+    if remote:
+        ask(user_id, function, args, title, remote)
+        return
+    from . import desktop
+
+    if not desktop.status(user_id)["connected"]:
+        raise PermissionError("This needs your OK and there's nowhere to ask: start the desktop app, or switch on "
+                              "“Allow PC actions from here” in the app.")
+    details = describe(function, args)
+    try:  # the PC's dialog, the one a routine uses: it shows these details and asks Allow once
+        desktop.run(user_id, "confirm_plan", {"title": title, "steps": [details.splitlines()[0]], "details": details},
+                    confirm=True, description=title)
+    except (RuntimeError, TimeoutError) as exc:
+        raise PermissionError(f"Not done: {exc}") from None
+
+
 def ask(user_id: int, function: str, args: dict, title: str, where: str) -> None:
     """Ask in the app or on Telegram and wait. Raises PermissionError when it's declined or
     nobody answers in time - the action then never reaches the PC."""
@@ -146,6 +170,11 @@ _SHOWN = {
     "look": lambda a: f"Take a screenshot and have it read to answer:\n{a.get('question', '')}",
     "click_on": lambda a: f"Look at the screen, click {a['target']}, then check it worked",
     "browser_download": lambda a: f"Download into Downloads:\n{a.get('url') or a.get('name') or 'link ' + str(a.get('ref'))}",
+    "send_email": lambda a: (f"Send an email from your Gmail\nTo: {', '.join(a['to'])}"
+                             + (f"\nCc: {', '.join(a['cc'])}" if a.get("cc") else "")
+                             + (f"\nSubject: {a['subject']}" if a.get("subject")
+                                else "\n(a reply, in its thread)" if a.get("reply_to_id") else "\n(no subject)")
+                             + f"\n\n{a['body'][:1500]}"),
 }
 
 

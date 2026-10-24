@@ -19,7 +19,7 @@ from pathlib import Path
 from .config import BACKEND_DIR, get_settings
 
 SCHEMA_PATH = BACKEND_DIR / "schema.sql"
-SCHEMA_VERSION = 9  # must match the PRAGMA user_version at the end of schema.sql
+SCHEMA_VERSION = 10  # must match the PRAGMA user_version at the end of schema.sql
 
 # Upgrades for databases made by an older schema.sql: {from version: script}. Each script
 # runs in one transaction and ends by setting user_version to the next version, so a failed
@@ -244,6 +244,13 @@ MIGRATIONS = {
           ((SELECT id FROM tools WHERE name = 'outlook'),  'read',  'search_mail, read_mail, list_events'),
           ((SELECT id FROM tools WHERE name = 'outlook'),  'write', 'create_event');
         PRAGMA user_version = 9;
+        COMMIT;
+    """,
+    9: """
+        BEGIN;
+        INSERT INTO tool_scopes (tool_id, scope, description) VALUES
+          ((SELECT id FROM tools WHERE name = 'gmail'), 'write', 'draft_email, send_email (each send asked first)');
+        PRAGMA user_version = 10;
         COMMIT;
     """,
 }

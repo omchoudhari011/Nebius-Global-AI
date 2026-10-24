@@ -121,6 +121,27 @@ class ReadMailArgs(ToolArgs):
     id: SafeLine = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$", description="The message id, from search_messages.")
 
 
+_EMAIL = re.compile(r"^[^@\s<>,;\"]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$")
+
+
+def _address(value: str) -> str:
+    if not _EMAIL.match(value):
+        raise ValueError("must be an email address like name@example.com; look it up first, never guess it")
+    return value
+
+
+EmailAddress = Annotated[str, AfterValidator(_address)]
+
+
+class EmailArgs(ToolArgs):
+    to: list[EmailAddress] = Field(min_length=1, max_length=10, description="The recipients' email addresses.")
+    subject: SafeLine = Field(default="", max_length=200, description="The subject; for a reply, empty keeps theirs.")
+    body: PlainText = Field(min_length=1, max_length=20_000, description="The whole email, written out in full.")
+    cc: list[EmailAddress] = Field(default_factory=list, max_length=10)
+    reply_to_id: SafeLine = Field(default="", max_length=64, pattern=r"^[A-Za-z0-9_-]*$",
+                                  description="To answer an email: its id from gmail_search_messages, so it stays in that thread.")
+
+
 class SearchDriveArgs(ToolArgs):
     query: SafeLine = Field(default="", max_length=200, description="Words in the file's name or text. Empty lists recent files.")
     limit: int = Field(default=5, ge=1, le=20)

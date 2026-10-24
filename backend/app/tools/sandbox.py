@@ -323,6 +323,18 @@ def execute(
         from .. import pc_index
 
         context["query_vector"] = pc_index.query_vector(str(getattr(validated, "query", "")))
+    # 4. Your OK, for a server tool that needs one (sending an email) - asked only now, once the
+    #    account is known to work. A PC tool's is asked by the desktop app itself.
+    if fn.confirm and fn.runs_on != "desktop" and not preapproved:
+        from .. import approvals
+
+        try:
+            approvals.confirm(user_id, fn.function, validated.model_dump(mode="json"),
+                              fn.description.split(".")[0].split(" (")[0])
+        except PermissionError as exc:
+            outcome.status, outcome.error = "denied", str(exc)
+            _finish(call_id, outcome.status, error=outcome.error)
+            return outcome
     request = ToolRequest(module=fn.module, function=fn.function, args=validated.model_dump(mode="json"), context=context)
     executor = DESKTOP if fn.runs_on == "desktop" else EXECUTORS.get(tool["executor"]) or UnavailableExecutor(tool["executor"])
     started = time.perf_counter()

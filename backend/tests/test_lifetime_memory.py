@@ -267,10 +267,10 @@ def test_a_v2_database_is_upgraded_in_place(user_id):
     )
     raw.close()
 
-    db.init_db()  # v2 -> v3 -> ... -> v9
+    db.init_db()  # v2 -> v3 -> ... -> v10
 
     with db.connect() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 9
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 10
         tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert {"message_recalls", "memory_vectors", "message_vectors", "user_settings", "usage_daily", "sessions",
                 "notifications", "message_feedback", "integrations"} <= tables

@@ -1510,7 +1510,7 @@ def describe(function: str, args: dict) -> str:
         "write_in_app": lambda a: f"Open {a.get('app', 'notepad')} and write:\n\n{a['text'][:500]}",
         "click_element": lambda a: f"Click \u201c{a['name']}\u201d in \u201c{_window_title(a.get('window', ''))}\u201d",
         "fill_field": lambda a: f"Type into \u201c{a['name']}\u201d in \u201c{_window_title(a.get('window', ''))}\u201d:\n\n{a['text'][:300]}",
-        "confirm_plan": lambda a: "\n".join(f"\u2022 {step}" for step in a["steps"][:12]),
+        "confirm_plan": lambda a: a.get("details") or "\n".join(f"\u2022 {step}" for step in a["steps"][:12]),
         "browser_download": lambda a: "Download into your Downloads folder:\n"
         + (a.get("url") or f"the link “{a.get('name') or a.get('ref')}” on the page in Custodian's browser"),
         "capture": lambda a: (f"Look at your screen to {a['purpose']}" if a.get("purpose") else "Look at your screen")

@@ -39,6 +39,7 @@ SCOPES = (
     "email",
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.compose",  # drafts, and sending - each send asked first
     "https://www.googleapis.com/auth/drive.readonly",
 )
 STATE_MAX_AGE = 600  # seconds to finish the consent screen

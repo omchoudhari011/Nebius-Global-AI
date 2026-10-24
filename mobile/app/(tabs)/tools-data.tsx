@@ -220,7 +220,7 @@ export default function ToolsDataScreen() {
 
         {info ? <Notice tone="success" message={info} actionLabel="Dismiss" onAction={() => setInfo(null)} /> : null}
 
-        <SectionTitle title="Google account" hint="Google Calendar, Gmail (read only) and Google Drive (read only). Each has its own switch below, all off until you turn them on." />
+        <SectionTitle title="Google account" hint="Google Calendar, Gmail (read, drafts, and sending - each email asks you first) and Google Drive (read only). Each has its own switch below, all off until you turn them on. Connected before? Connect again to allow drafts and sending." />
         <Card>
           {google?.connected ? (
             <>

@@ -425,7 +425,7 @@ INSERT INTO tools (name) VALUES
   ('reminders'),                         -- app/tools/reminders_tool.py
   ('documents'),                         -- app/tools/documents_tool.py (files you upload)
   ('gcal'),                              -- app/tools/google_tools.py: Google Calendar
-  ('gmail'),                             -- app/tools/google_tools.py: Gmail (read only)
+  ('gmail'),                             -- app/tools/google_tools.py: Gmail (read, drafts, sending)
   ('gdrive');                            -- app/tools/google_tools.py: Google Drive (read only)
 
 INSERT INTO tool_scopes (tool_id, scope, description) VALUES
@@ -435,6 +435,7 @@ INSERT INTO tool_scopes (tool_id, scope, description) VALUES
   ((SELECT id FROM tools WHERE name = 'gcal'),      'read',  'list_events'),
   ((SELECT id FROM tools WHERE name = 'gcal'),      'write', 'create_event'),
   ((SELECT id FROM tools WHERE name = 'gmail'),     'read',  'search_messages, read_message'),
+  ((SELECT id FROM tools WHERE name = 'gmail'),     'write', 'draft_email, send_email (each send asked first)'),
   ((SELECT id FROM tools WHERE name = 'gdrive'),    'read',  'search_files, read_file');
 
 INSERT INTO tools (name) VALUES
@@ -465,6 +466,6 @@ INSERT INTO tool_scopes (tool_id, scope, description) VALUES
   ((SELECT id FROM tools WHERE name = 'outlook'),  'read',  'search_mail, read_mail, list_events'),
   ((SELECT id FROM tools WHERE name = 'outlook'),  'write', 'create_event');
 
-PRAGMA user_version = 9;                 -- keep in sync with SCHEMA_VERSION in app/db.py
+PRAGMA user_version = 10;                 -- keep in sync with SCHEMA_VERSION in app/db.py
 
 COMMIT;

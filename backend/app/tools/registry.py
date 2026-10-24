@@ -23,6 +23,7 @@ from .schemas import (
     ReadDocumentArgs,
     ReadDriveArgs,
     ReadMailArgs,
+    EmailArgs,
     ReadNotesArgs,
     SearchDocumentsArgs,
     SearchDriveArgs,
@@ -114,7 +115,8 @@ class ToolFunction:
     hosts: tuple[str, ...] = ()  # the only hosts the sandbox lets this tool reach ("*": any public host,
     #                              "account": the connected account's own address - Home Assistant's)
     runs_on: str = "sandbox"  # "sandbox" on the server, or "desktop": the Custodian app on your PC
-    confirm: bool = False  # the desktop app asks you before doing it (changes or reveals something)
+    confirm: bool = False  # you're asked before it's done (changes, reveals or sends something): on the PC, or
+    #                        for a server tool where you asked (app/approvals.confirm)
     group: str = ""  # offered only when the message is about this (see GROUPS); "" = always
     query_vector: bool = False  # the gate embeds the `query` argument for it (search by meaning)
 
@@ -245,6 +247,28 @@ FUNCTIONS: tuple[ToolFunction, ...] = (
         module="app.tools.google_tools",
         account="google",
         hosts=GOOGLE_HOSTS,
+    ),
+    ToolFunction(
+        tool="gmail",
+        function="draft_email",
+        scope="write",
+        description="Save an email (or a reply, with reply_to_id) in Gmail's Drafts without sending it.",
+        args_model=EmailArgs,
+        module="app.tools.google_tools",
+        account="google",
+        hosts=GOOGLE_HOSTS,
+    ),
+    ToolFunction(
+        tool="gmail",
+        function="send_email",
+        scope="write",
+        description=("Send an email (or a reply, with reply_to_id) from the user's Gmail. They see the recipients and "
+                     "the exact text and it's sent only if they allow it."),
+        args_model=EmailArgs,
+        module="app.tools.google_tools",
+        account="google",
+        hosts=GOOGLE_HOSTS,
+        confirm=True,
     ),
     ToolFunction(
         tool="gdrive",

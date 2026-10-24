@@ -9,7 +9,7 @@ from app import db, permissions, skills
 def test_default_deny(user_id, tool_ids):
     assert permissions.check(user_id, tool_ids["calendar"], "read") is False
     rows = permissions.list_for_user(user_id)
-    assert len(rows) == 24 and not any(r["granted"] for r in rows)  # every switch starts off
+    assert len(rows) == 25 and not any(r["granted"] for r in rows)  # every switch starts off
 
 
 def test_grant_revoke_and_history(user_id, tool_ids):

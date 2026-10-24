@@ -1,4 +1,5 @@
-"""Tools: Google Calendar, Gmail (read only) and Google Drive (read only).
+"""Tools: Google Calendar, Gmail (reading, drafts, and sending after the user allows it) and
+Google Drive (read only).
 
 Run inside the sandbox like every tool, with two things the gate adds to `ctx` for these
 only: a short-lived OAuth access token (never the refresh token) and `allow_hosts`, the
@@ -160,6 +161,50 @@ def read_message(ctx: dict, id: str) -> dict:  # noqa: A002 - the model's argume
     return {"id": id, "from": _header(message, "From"), "to": _header(message, "To"),
             "subject": _header(message, "Subject"), "date": _header(message, "Date"),
             "text": _text(_body(message.get("payload", {})))}
+
+
+def _mime(ctx: dict, to: list[str], subject: str, body: str, cc: list[str], reply_to_id: str) -> dict:
+    """The message as Gmail takes it ({"raw": base64url RFC 822, "threadId": ...}). A reply keeps the
+    original's thread and subject, and says which message it answers."""
+    from email.message import EmailMessage
+
+    message = EmailMessage()
+    message["To"] = ", ".join(to)
+    if cc:
+        message["Cc"] = ", ".join(cc)
+    out: dict = {}
+    if reply_to_id:
+        original = _request(
+            ctx, f"{_api(ctx, GMAIL_API)}/users/me/messages/{reply_to_id}?format=metadata"
+                 "&metadataHeaders=Subject&metadataHeaders=Message-ID&metadataHeaders=References")
+        their_id = _header(original, "Message-ID")
+        if their_id:
+            message["In-Reply-To"] = their_id
+            message["References"] = " ".join(p for p in (_header(original, "References"), their_id) if p)
+        before = _header(original, "Subject") or ""
+        subject = subject or (before if before.lower().startswith("re:") else f"Re: {before}".strip())
+        out["threadId"] = original.get("threadId")
+    message["Subject"] = subject
+    message.set_content(body)
+    out["raw"] = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    return {k: v for k, v in out.items() if v}
+
+
+def draft_email(ctx: dict, to: list[str], subject: str = "", body: str = "", cc: list[str] | None = None,
+                reply_to_id: str = "") -> dict:
+    """Save it in Gmail's Drafts, unsent - nothing leaves until they send it."""
+    message = _mime(ctx, to, subject, body, cc or [], reply_to_id)
+    draft = _request(ctx, f"{_api(ctx, GMAIL_API)}/users/me/drafts", method="POST", body={"message": message})
+    return {"draft_id": draft.get("id"), "to": to, "cc": cc or [], "saved_in": "Gmail Drafts", "sent": False}
+
+
+def send_email(ctx: dict, to: list[str], subject: str = "", body: str = "", cc: list[str] | None = None,
+               reply_to_id: str = "") -> dict:
+    """Send it (the gate asked the user first, with the exact recipients and text)."""
+    message = _mime(ctx, to, subject, body, cc or [], reply_to_id)
+    sent = _request(ctx, f"{_api(ctx, GMAIL_API)}/users/me/messages/send", method="POST", body=message)
+    return {"id": sent.get("id"), "to": to, "cc": cc or [], "sent": True,
+            **({"in_reply_to": reply_to_id} if reply_to_id else {})}
 
 
 # Google Drive ------------------------------------------------------------------------------
