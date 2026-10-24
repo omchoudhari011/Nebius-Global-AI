@@ -27,6 +27,7 @@ import importlib
 import json
 import os
 import sys
+import threading
 
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ALLOWED_MODULE_PREFIX = "app.tools."
@@ -123,7 +124,9 @@ def install_guard(data_dir: str, allow_hosts: tuple[str, ...] = ()) -> None:
         | (_ca_paths() if allow_hosts else set())
     )
     resolved: set[str] = set()  # addresses the allowed names resolved to
-    resolving: list[bool] = []  # set while the hook itself resolves a name (its call re-enters the hook)
+    # Set while the hook itself resolves a name (its call re-enters the hook) - per thread, so a
+    # tool reading several pages at once (web_research) has each lookup checked, none skipped.
+    resolving = threading.local()
 
     def deny(what: str) -> None:
         raise PermissionError(f"sandbox: {what} is not allowed for tools")
@@ -137,7 +140,7 @@ def install_guard(data_dir: str, allow_hosts: tuple[str, ...] = ()) -> None:
             if family not in (socket.AF_INET, socket.AF_INET6) or (kind != -1 and kind & 0xF != socket.SOCK_STREAM):
                 deny("that kind of socket")  # TCP over IP only: no UDP, raw or local sockets
         elif event == "socket.getaddrinfo":
-            if resolving:
+            if getattr(resolving, "busy", False):
                 return
             host = args[0].decode() if isinstance(args[0], bytes) else str(args[0])
             listed = host.lower() in hosts
@@ -147,11 +150,11 @@ def install_guard(data_dir: str, allow_hosts: tuple[str, ...] = ()) -> None:
                 import ipaddress
                 import socket
 
-                resolving.append(True)
+                resolving.busy = True
                 try:
                     found = {info[4][0] for info in socket.getaddrinfo(host, None)}
                 finally:
-                    resolving.pop()
+                    resolving.busy = False
                 if not listed:  # "*": only public addresses - never this machine or the local network
                     found = {ip for ip in found if ipaddress.ip_address(ip.split("%")[0]).is_global}
                     if not found:

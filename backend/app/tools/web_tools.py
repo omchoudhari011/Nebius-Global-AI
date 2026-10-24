@@ -119,6 +119,9 @@ def _fetch_text(url: str, timeout: float = 12) -> tuple[str, str, str]:
 # Research: several searches and pages at once, for a report -----------------------------------
 
 EXCERPT = 1400  # characters kept from each page: the passages about the topic
+SPARE = 3  # pages read beyond `pages`, so one that can't be read is replaced by the next
+# Videos, and sites that show their text only to a signed-in browser: nothing to read as a page.
+NOT_PAGES = ("youtube.com", "youtu.be", "reddit.com", "instagram.com", "facebook.com", "x.com", "twitter.com", "tiktok.com")
 _WORD = re.compile(r"[a-z0-9][a-z0-9'-]{2,}")
 _COMMON = {"the", "and", "for", "with", "that", "this", "what", "which", "best", "from", "about", "are", "how", "into",
            "under", "over", "your", "their", "there", "than", "then", "them", "they", "you", "can", "will", "should"}
@@ -159,20 +162,23 @@ def research(ctx: dict, topic: str, queries: list[str], pages: int = 5) -> dict:
             if rank < len(hits):
                 url = hits[rank]["url"]
                 site = urllib.parse.urlsplit(url).hostname or ""
+                if any(site == s or site.endswith("." + s) for s in NOT_PAGES):
+                    continue
                 if url not in {p["url"] for p in picked} and per_site.get(site, 0) < 2:
                     per_site[site] = per_site.get(site, 0) + 1
                     picked.append(hits[rank])
-    picked = picked[:pages]
+    picked = picked[:pages + SPARE]
     keywords = _keywords(topic, *queries)
     with ThreadPoolExecutor(max_workers=max(1, len(picked))) as pool:
         texts = list(pool.map(lambda hit: _safe(_fetch_text, hit["url"], 9), picked))
     sources, unread = [], []
     for hit, text in zip(picked, texts):
-        if text is None or len(text[2]) < 200:
+        excerpt = _excerpt(text[2], keywords) if text is not None else ""
+        if len(excerpt) < 200:  # couldn't be read, or says next to nothing as text
             unread.append(hit["url"])
             continue
-        sources.append({"n": len(sources) + 1, "title": text[1] or hit["title"], "url": text[0],
-                        "excerpt": _excerpt(text[2], keywords)})
+        if len(sources) < pages:
+            sources.append({"n": len(sources) + 1, "title": text[1] or hit["title"], "url": text[0], "excerpt": excerpt})
     answers = [a for result in found for a in (result or {}).get("answers", [])][:2]
     return {"topic": topic, "searched": searches, "sources": sources, "answers": answers,
             **({"unread": unread} if unread else {}),

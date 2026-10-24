@@ -15,8 +15,9 @@ from app.tools.base import ToolRequest
 from app.tools import web_tools
 
 LAPTOP = ("<p>The Vivobook 16 costs Rs 62,990 and its battery lasted 11 hours in our review, the longest of any laptop "
-          "under 80000 we tested this year.</p><p>Subscribe to our newsletter for the latest deals and offers every "
-          "single week of the year.</p>")
+          "under 80000 we tested this year.</p><p>Its 16-inch display is bright enough for a sunny room, and the laptop "
+          "weighs 1.8 kg, light for its size; the keyboard is comfortable for long typing sessions.</p>"
+          "<p>Subscribe to our newsletter for the latest deals and offers every single week of the year.</p>")
 
 
 class _Web(BaseHTTPRequestHandler):
