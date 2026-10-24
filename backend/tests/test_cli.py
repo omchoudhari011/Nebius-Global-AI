@@ -26,12 +26,15 @@ def test_seed_check_and_backup(user_id, tmp_path, capsys):
     assert '"integrity": "ok"' in capsys.readouterr().out
 
     assert cli.main(["backup", str(tmp_path / "backups")]) == 0
-    [folder] = (tmp_path / "backups").iterdir()
-    copy = sqlite3.connect(folder / "custodian.db")
+    [file] = (tmp_path / "backups").iterdir()  # one encrypted file with every database
+    from app import backup
+
+    archive = backup.open_backup(file)
+    assert {"custodian.db", "tools/calendar/calendar.db", "tools/notes/notes.db"} <= set(archive.namelist())
+    archive.extract("custodian.db", tmp_path / "out")
+    copy = sqlite3.connect(tmp_path / "out" / "custodian.db")
     assert copy.execute("SELECT COUNT(*) FROM memories").fetchone()[0] == 6
     copy.close()
-    assert (folder / "tools" / "calendar" / "calendar.db").exists()
-    assert (folder / "tools" / "notes" / "notes.db").exists()
 
 
 def test_run_task(user_id, capsys):

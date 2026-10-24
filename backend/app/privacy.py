@@ -219,8 +219,12 @@ def _other_services(user_id: int) -> list[dict]:
     def add(purpose: str, url: str, name: str, sends: str) -> None:
         out.append({**_service(url, name), "purpose": purpose, "sends": sends})
 
-    if os.getenv("WHISPER_URL", "").strip():
-        add("Voice messages", os.environ["WHISPER_URL"], "Speech to text", "the recording of each voice message")
+    whisper = os.getenv("WHISPER_URL", "").strip()
+    if whisper.lower() == "local":  # Whisper inside this server (app/voice.py): the recording goes nowhere else
+        out.append({"name": "Speech to text", "host": "this server", "location": "this device", "purpose": "Voice messages",
+                    "sends": "nothing elsewhere: each recording is transcribed here, on this machine"})
+    elif whisper:
+        add("Voice messages", whisper, "Speech to text", "the recording of each voice message")
     if os.getenv("VISION_MODEL", "").strip():
         add("Photos", os.getenv("VISION_BASE_URL", "").strip() or get_settings().nebius_base_url,
             os.environ["VISION_MODEL"], "each photo you upload")
@@ -246,6 +250,12 @@ def _other_services(user_id: int) -> list[dict]:
         out.append({"name": connected["device"] or "Custodian desktop", "host": "your PC", "location": "this network",
                     "purpose": "PC control", "sends": "the PC actions you ask for (PC · read and PC · write); "
                     "risky ones wait for you to allow them on the PC"})
+    from . import backup
+
+    out.append({"name": "Backups", "host": str(backup.folder()), "location": "this device",
+                "purpose": "Encrypted backups", "sends": (f"an encrypted copy of everything, every day at {backup.at()} "
+                "(the newest {backup.keep()} kept); unreadable without APP_SECRET_KEY") if backup.at() else
+                "an encrypted copy of everything, only when you make one"})
     push = notifications.push_target(user_id)
     if push:
         add("Phone notifications", push[0], "ntfy", "each notification's text" if push[1] else "only \"Reminder from Custodian\"")

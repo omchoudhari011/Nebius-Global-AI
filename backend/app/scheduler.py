@@ -28,9 +28,11 @@ from datetime import datetime, timedelta, timezone
 
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from . import auth, db, memory, memory_graph, notifications, orchestrator, plans, privacy, proactive, tasks, usage, watchers
+from . import auth, backup, db, memory, memory_graph, notifications, orchestrator, plans, privacy, proactive, tasks, usage, watchers
+from .config import get_settings
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +43,7 @@ EVENING_JOB_ID = "evening-summary"
 WATCHERS_JOB_ID = "check-watches"
 GRAPH_JOB_ID = "memory-graph"
 LEARNING_JOB_ID = "overnight-learning"
+BACKUP_JOB_ID = "daily-backup"
 MAX_RUNS_PER_DAY = 48
 SKIPPED = "skipped:"
 
@@ -125,6 +128,11 @@ def start() -> None:
                                      (_safe(memory_graph.process_pending), 1, GRAPH_JOB_ID)):  # memories saved elsewhere
             sched.add_job(job, IntervalTrigger(minutes=minutes, timezone=timezone.utc), id=job_id,
                           next_run_time=datetime.now(timezone.utc) + timedelta(seconds=30), replace_existing=True)
+        when = backup.at()  # encrypted backups of everything (app/backup.py), once a day
+        if when:
+            hour, minute = (int(p) for p in when.split(":"))
+            sched.add_job(backup.run_daily, CronTrigger(hour=hour, minute=minute, timezone=get_settings().timezone),
+                          id=BACKUP_JOB_ID, replace_existing=True)
     with db.connect() as conn:
         task_ids = [r["id"] for r in conn.execute("SELECT id FROM tasks WHERE status = 'active'").fetchall()]
     for task_id in task_ids:

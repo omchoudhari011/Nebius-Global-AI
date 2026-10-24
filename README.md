@@ -139,7 +139,8 @@ single worker (the default): the scheduler lives inside the API process.
 | Command | What it does |
 |---|---|
 | `check` | Validates settings and the database; prints a summary without secrets |
-| `backup /data/backups` | Consistent copy of every database, safe while running |
+| `backup [folder]` | One encrypted backup of every database now (the server also makes one daily), safe while running |
+| `restore <file>` | With the server stopped: puts a backup in place; the data in use is moved aside, never deleted |
 | `rotate-keys` | Re-encrypts all private columns with the first key in `APP_SECRET_KEY` |
 | `run-task daily-summary` | Runs a scheduled task now and prints its output |
 | `sandbox-selftest` | Proves tools can't reach the network, other files, processes or secrets |
@@ -545,6 +546,7 @@ Set in `backend/.env` (see `backend/.env.example` for every option).
 | `WHISPER_LOCAL_MODEL` / `WHISPER_DEVICE` / `WHISPER_IDLE_MINUTES` | `large-v3-turbo` on a GPU, else `small` / `auto` / `10` | The local Whisper model, where it runs, and when it's let go |
 | `VISION_MODEL` / `VISION_BASE_URL` / `VISION_API_KEY` | (unset) / `NEBIUS_BASE_URL` | Vision model that reads uploaded photos, e.g. `qwen3-vl:4b` |
 | `VISION_KEEP_ALIVE` | `2m` | How long a vision model on this machine stays loaded after a use |
+| `BACKUP_DIR` / `BACKUP_TIME` / `BACKUP_KEEP` | `data/backups` / `03:30` / `14` | Where the daily encrypted backup goes (another drive or a synced folder is best), when (`off` for only by hand), and how many are kept. Each is one file, encrypted with `APP_SECRET_KEY`: keep a copy of that key away from this PC |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` | (unset) | Your Google OAuth client, for Calendar, Gmail and Drive |
 | `LARGE_MODEL_ID` / `LARGE_MODEL_BASE_URL` / `LARGE_MODEL_API_KEY` | (unset) / Token Factory / `NEBIUS_API_KEY` | The larger model for **Think harder**, questions about the world, and escalation |
 | `SCREEN_VISION_MODEL` | `VISION_MODEL` | The vision model that reads the screen for `pc_look` and `pc_click_on`, e.g. `qwen2.5vl:7b` |

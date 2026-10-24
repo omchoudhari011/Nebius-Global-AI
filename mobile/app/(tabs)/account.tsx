@@ -11,7 +11,7 @@ import * as api from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { confirmAction, formatDateTime, formatWhen } from "../../lib/format";
 import { radius, space, themed, useTokens } from "../../lib/tokens";
-import type { Billing, DataService, Limit, Plan, PrivacySummary, RedactMode, ServiceLocation, Session } from "../../lib/types";
+import type { BackupStatus, Billing, DataService, Limit, Plan, PrivacySummary, RedactMode, ServiceLocation, Session } from "../../lib/types";
 
 const RETENTION = [
   { value: "keep", label: "Until I delete them" },
@@ -157,6 +157,7 @@ export default function AccountScreen() {
   const [billing, setBilling] = useState<Billing | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [privacy, setPrivacy] = useState<PrivacySummary | null>(null);
+  const [backups, setBackups] = useState<BackupStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -166,9 +167,11 @@ export default function AccountScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [b, p, d] = await Promise.all([api.getBilling(), api.getPrivacy(), api.getSessions()]);
+      const [b, p, d, k] = await Promise.all([api.getBilling(), api.getPrivacy(), api.getSessions(),
+                                              api.getBackups().catch(() => null)]);
       setBilling(b);
       setPrivacy(p);
+      setBackups(k);
       setSessions(d);
       setError(null);
     } catch (err) {
@@ -218,6 +221,12 @@ export default function AccountScreen() {
   const setRedaction = (value: RedactMode) =>
     run("redact", async () => {
       setPrivacy(await api.updatePrivacy({ redact_secrets: value }));
+    });
+
+  const backUp = () =>
+    run("backup", async () => {
+      setBackups(await api.backUpNow());
+      setNotice("Backed up - one encrypted file with everything.");
     });
 
   const download = () =>
@@ -397,6 +406,22 @@ export default function AccountScreen() {
               <Button label="Download my data" variant="secondary" icon="download-outline" onPress={download} loading={busy === "export"} />
               <Button label="Erase all my data" variant="danger" icon="trash-outline" onPress={() => void erase()} loading={busy === "erase"} />
             </Card>
+
+            {backups ? (
+              <Card>
+                <Text style={s.label}>Backups</Text>
+                <Text style={s.body}>
+                  {backups.last ? `Last: ${formatDateTime(backups.last.made)} · ${Math.max(1, Math.round(backups.last.bytes / 1024))} KB` : "None yet"}
+                  {` · ${backups.count} kept (up to ${backups.keep})`}
+                </Text>
+                <Text style={s.meta}>
+                  {backups.time ? `Every day at ${backups.time}, ` : "Only when you make one, "}one encrypted file with everything goes to {backups.folder}.
+                  It can't be read without the server's APP_SECRET_KEY - keep a copy of that key somewhere other than this PC, or no backup can be restored.
+                  Point BACKUP_DIR at another drive or a synced folder so a broken disk doesn't take the backups with it.
+                </Text>
+                <Button label="Back up now" variant="secondary" icon="cloud-upload-outline" onPress={backUp} loading={busy === "backup"} />
+              </Card>
+            ) : null}
           </>
         ) : null}
 

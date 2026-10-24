@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from .. import privacy
+from .. import backup, privacy
 from ..auth import require_session
 
 router = APIRouter(prefix="/privacy", tags=["privacy"])
@@ -45,6 +45,22 @@ def export_data(user_id: int = Depends(require_session)) -> JSONResponse:
     """Everything Custodian keeps about you, decrypted, as a JSON file to download."""
     filename = f"custodian-export-{date.today().isoformat()}.json"
     return JSONResponse(privacy.export(user_id), headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.get("/backups")
+def backups(user_id: int = Depends(require_session)) -> dict:
+    """The encrypted backups: where they go, when, how many are kept, and the newest ones."""
+    return backup.status()
+
+
+@router.post("/backups")
+def back_up_now(user_id: int = Depends(require_session)) -> dict:
+    """One encrypted backup of everything, now."""
+    try:
+        backup.make()
+    except backup.BackupError as exc:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from None
+    return backup.status()
 
 
 @router.post("/erase")

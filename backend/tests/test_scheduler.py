@@ -50,7 +50,7 @@ def test_start_registers_active_tasks(user_id):
         assert scheduler.is_running()
         jobs = {job.id for job in scheduler._scheduler.get_jobs()}
         assert f"task-{active['id']}" in jobs and f"task-{paused['id']}" not in jobs
-        assert scheduler.PURGE_JOB_ID in jobs
+        assert {scheduler.PURGE_JOB_ID, scheduler.EVENING_JOB_ID, scheduler.BACKUP_JOB_ID} <= jobs  # and the daily ones
         assert tasks.get_task(user_id, active["id"])["next_run_at"]
 
         tasks.update_task(user_id, active["id"], status="paused")

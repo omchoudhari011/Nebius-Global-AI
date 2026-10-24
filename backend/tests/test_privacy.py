@@ -230,7 +230,11 @@ def test_privacy_summary(client):
 
 
 def test_every_outside_service_is_listed(user_id, client, monkeypatch):
-    assert client.get("/privacy").json()["other_services"] == []
+    (only,) = client.get("/privacy").json()["other_services"]  # nothing set up: only the backups, here
+    assert only["purpose"] == "Encrypted backups" and only["location"] == "this device" and "03:30" in only["sends"]
+    monkeypatch.setenv("WHISPER_URL", "local")
+    local = {s["purpose"]: s for s in client.get("/privacy").json()["other_services"]}["Voice messages"]
+    assert local["host"] == "this server" and local["sends"].startswith("nothing elsewhere")
     monkeypatch.setenv("WHISPER_URL", "http://127.0.0.1:9000/v1")
     monkeypatch.setenv("VISION_MODEL", "llava")
     monkeypatch.setenv("VISION_BASE_URL", "http://127.0.0.1:11434/v1")

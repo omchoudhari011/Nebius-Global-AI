@@ -334,4 +334,5 @@ Calendar events and notes are not in this schema. Each tool keeps its own SQLite
 `DATA_DIR/tools/<tool>/` (`calendar/calendar.db`, `notes/notes.db`). Tools run in a separate
 sandboxed process that may only open files in its own folder, so a tool never needs, or can
 reach, `custodian.db` - including the `permissions` table that decides whether it may run.
-`python -m app.cli backup` copies the main database and every tool database together.
+`python -m app.cli backup` copies the main database and every tool database together, as one
+encrypted file (`app/backup.py`; the scheduler makes one daily), and `restore` puts one back.

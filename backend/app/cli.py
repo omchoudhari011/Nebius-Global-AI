@@ -272,28 +272,29 @@ def _cmd_rotate_keys(_: argparse.Namespace) -> int:
 
 
 def _cmd_backup(args: argparse.Namespace) -> int:
-    """Consistent copies of every database (safe while the server runs), via SQLite's backup API."""
-    import sqlite3
-    from datetime import datetime, timezone
+    """One encrypted backup of every database now (safe while the server runs)."""
+    from . import backup
 
-    from .config import get_settings
+    try:
+        made = backup.make(Path(args.dest) if args.dest else None)
+    except backup.BackupError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    print(f"backed up everything -> {made['file']} ({made['bytes']:,} bytes, encrypted)")
+    print("Keep a copy of APP_SECRET_KEY somewhere other than this PC: no backup can be restored without it.")
+    return 0
 
-    settings = get_settings()
-    target = Path(args.dest) / datetime.now(timezone.utc).strftime("custodian-%Y%m%dT%H%M%SZ")
-    target.mkdir(parents=True, exist_ok=False)
-    sources = [(settings.database_path, target / "custodian.db")]
-    for path in sorted(settings.tool_data_dir.glob("*/*.db")):
-        sources.append((path, target / "tools" / path.parent.name / path.name))
-    for source, dest in sources:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        src, dst = sqlite3.connect(source), sqlite3.connect(dest)
-        try:
-            src.backup(dst)
-        finally:
-            src.close()
-            dst.close()
-        print(f"backed up {source} -> {dest}")
-    print("Done. Keep APP_SECRET_KEY with the backup: without it the encrypted text can't be read.")
+
+def _cmd_restore(args: argparse.Namespace) -> int:
+    """Put a backup in place of the data in use. Stop the server first."""
+    from . import backup
+
+    try:
+        done = backup.restore(Path(args.file))
+    except backup.BackupError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    print(f"restored {len(done['restored'])} database(s); what was there before is in {done['previous_data']}")
     return 0
 
 
@@ -352,9 +353,12 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("rotate-keys", help="re-encrypt with the first APP_SECRET_KEY").set_defaults(fn=_cmd_rotate_keys)
 
-    p = sub.add_parser("backup", help="copy every database into a timestamped folder")
-    p.add_argument("dest", help="folder to create the backup in, e.g. /data/backups")
+    p = sub.add_parser("backup", help="an encrypted backup of every database, now")
+    p.add_argument("dest", nargs="?", help="folder to write it to (default BACKUP_DIR, else data/backups)")
     p.set_defaults(fn=_cmd_backup)
+    p = sub.add_parser("restore", help="restore an encrypted backup (stop the server first)")
+    p.add_argument("file", help="the custodian-....cbk file")
+    p.set_defaults(fn=_cmd_restore)
     sub.add_parser("sandbox-selftest", help="check the tool sandbox").set_defaults(fn=_cmd_sandbox_selftest)
 
     p = sub.add_parser("export", help="write everything you have stored, decrypted, to a JSON file")

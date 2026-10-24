@@ -390,6 +390,15 @@ export type Prefs = {
   home_city: string; // for the HUD's weather; empty = the city your memories say
 };
 
+/** GET /privacy/backups: the encrypted backups of everything (backend/app/backup.py). */
+export type BackupStatus = {
+  folder: string;
+  time: string; // "03:30", or "" when only made by hand
+  keep: number;
+  count: number;
+  last: { name: string; bytes: number; made: string } | null;
+};
+
 /** GET /push: notifications on your phone through ntfy (a topic of your own). */
 export type PushInfo = {
   on: boolean;
