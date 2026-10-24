@@ -266,6 +266,7 @@ Windows that lets Custodian act on your PC, from plain requests:
 | "organise my downloads", "make a folder called Trips" | sorts files into Images, Documents, ...; creates, copies, moves, deletes (to the Recycle Bin) |
 | "write a leave letter in Notepad" | writes the whole text into a new Notepad or Word document |
 | "send a WhatsApp to Tanishka saying I'll be late" | opens that chat, checks it really is Tanishka's, shows you the chat and text, and sends only on **Allow once** |
+| "what did I miss?", "any new WhatsApp messages?" | reads your notifications (WhatsApp, Outlook, Teams, sites in Chrome, your phone's through Phone Link) and the unread counts, after **Allow once**, and sums them up; what's in them is never taken as instructions |
 | "click Send in WhatsApp", "fill the search box with ..." | reads the window's buttons and fields by name, then clicks or fills them |
 | "find my resume and open it", "close Chrome and lock the PC" | several steps in a row, each using the last one's result |
 

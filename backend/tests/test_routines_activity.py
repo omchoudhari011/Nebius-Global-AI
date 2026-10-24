@@ -215,3 +215,16 @@ def test_the_routines_api_checks_steps(client):
 def test_internal_plan_function_is_never_offered():
     offered = registry.offer(registry.for_scopes(None), "do anything", everything_if_unclear=True)
     assert "pc_confirm_plan" not in {f.exposed_name for f in offered}
+
+
+@pytest.mark.parametrize("said", ["What did I miss?", "Any new WhatsApp messages?", "did I get any notifications",
+                                  "show my unread messages"])
+def test_what_did_i_miss_reaches_the_notifications_on_the_pc(said):
+    from app import approvals, skills
+
+    assert skills.pick_skill_name(said) == "pc"
+    offered = {f.exposed_name for f in registry.offer(registry.for_scopes(None), said)}
+    assert "pc_notifications" in offered
+    assert registry.find("pc_notifications").confirm  # other people's messages: only after you allow it
+    assert approvals.describe("notifications", {"hours": 24, "app": "WhatsApp"}) == (
+        "Send your WhatsApp notifications from the last 24 hours, and the unread counts, to Custodian")

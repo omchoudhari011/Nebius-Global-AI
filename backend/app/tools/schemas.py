@@ -255,6 +255,11 @@ class PcTimerArgs(ToolArgs):
     label: SafeLine = Field(default="Timer", max_length=100)
 
 
+class PcNotificationsArgs(ToolArgs):
+    hours: int = Field(default=24, ge=1, le=168, description="How far back, in hours (a day = 24, a week = 168).")
+    app: SafeLine = Field(default="", max_length=40, description="Only one app's, e.g. 'whatsapp' or 'outlook'; empty = all.")
+
+
 class PcAppArgs(ToolArgs):
     name: SafeLine = Field(min_length=1, max_length=100, description="The app's name, e.g. 'chrome' or 'spotify'.")
 

@@ -42,6 +42,7 @@ from .schemas import (
     PcWindowArgs,
     PcWriteFileArgs,
     PcAppArgs,
+    PcNotificationsArgs,
     PcBrightnessArgs,
     PcCopyArgs,
     PcElementArgs,
@@ -325,6 +326,10 @@ FUNCTIONS: tuple[ToolFunction, ...] = (
              "Sort a folder's loose files into subfolders by type: Images, Documents, Videos, ... (the user confirms)."),
             ("write_in_app", "write", "typing", True, PcWriteInAppArgs,
              "Open Notepad or Word and write text into a new document (the user confirms)."),
+            ("notifications", "read", "messaging", True, PcNotificationsArgs,
+             "The user's recent notifications (WhatsApp, Outlook, Teams, sites in Chrome, their phone's through Phone "
+             "Link) and each app's unread count - for 'what did I miss?' or 'any new WhatsApp messages?' (the user "
+             "confirms)."),
             ("send_message", "write", "messaging", True, PcSendMessageArgs,
              "Send a WhatsApp message to one chat by name. The PC shows the chat it found and the text, and sends only if the user allows."),
             ("type_text", "write", "typing", True, PcTypeArgs, "Type text into the window in front (the user confirms)."),
@@ -567,7 +572,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
               "mentioned", "notes", "doc", "docs", "spreadsheet", "presentation"),
     "typing": ("type", "write", "writing", "press", "key", "keys", "shortcut", "ctrl", "alt", "enter", "paste",
                "clipboard", "notepad", "word", "letter", "essay", "draft", "copy", "text"),
-    "messaging": ("whatsapp", "message", "messages", "msg", "send", "text", "texting", "tell", "reply", "wish", "ping"),
+    "messaging": ("whatsapp", "message", "messages", "msg", "send", "text", "texting", "tell", "reply", "wish", "ping",
+                  "notification", "notifications", "miss", "missed", "unread", "new messages", "telegram", "teams"),
     "screen": ("on my screen", "on the screen", "on screen", "read the screen", "my screen", "click", "button", "fill",
                "form", "field", "screenshot", "you see", "showing", "sign in", "log in", "submit", "tick", "check box"),
     "speak": ("out loud", "aloud", "announce", "speak", "say it", "read it out"),

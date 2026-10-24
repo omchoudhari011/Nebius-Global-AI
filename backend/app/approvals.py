@@ -134,6 +134,8 @@ _SHOWN = {
     "close_app": lambda a: f"Quit {a['name']} and close all its windows (it may ask to save)",
     "read_file": lambda a: f"Read the file\n{a['path']}\nand send its text to Custodian",
     "get_clipboard": lambda a: "Send the text on your clipboard to Custodian",
+    "notifications": lambda a: (f"Send your {a.get('app') + ' ' if a.get('app') else ''}notifications from the last "
+                                f"{a.get('hours', 24)} hours, and the unread counts, to Custodian"),
     "screenshot": lambda a: "Take a screenshot and send it to Custodian to describe",
     "organize_folder": lambda a: f"Sort the loose files in\n{a['path']}\ninto subfolders by type",
     "write_in_app": lambda a: f"Open {a.get('app', 'notepad')} and write:\n\n{a['text'][:500]}",

@@ -22,7 +22,7 @@ import time
 import webbrowser
 from pathlib import Path
 
-from . import browser
+from . import browser, notices
 
 MAX_READ = 8000
 MAX_LIST = 40  # a long list costs the model seconds to write out; it says how many more
@@ -1426,6 +1426,7 @@ ACTIONS = {
     "organize_folder": organize_folder, "write_in_app": write_in_app, "read_screen": read_screen,
     "click_element": click_element, "fill_field": fill_field, "send_message": send_message,
     "do_not_disturb": do_not_disturb, "alarm": alarm, "say": say, "confirm_plan": confirm_plan,
+    "notifications": lambda **a: notices.read(int(a.get("hours") or 24), str(a.get("app") or "")),
     # The vision model's eyes and hands (backend app/vision.py): only after you allowed pc_look or pc_click_on.
     "capture": capture, "click_at_checked": click_at_checked,
     # Custodian's own browser, over the DevTools protocol (browser.py): risky clicks and sends ask first.
@@ -1501,6 +1502,8 @@ def describe(function: str, args: dict) -> str:
         "close_window": lambda a: f"Close the window \u201c{(best_window(a['title']) or [a['title']])[0]}\u201d (unsaved work may be lost)",
         "read_file": lambda a: f"Read the file\n{a['path']}\nand send its text to Custodian",
         "get_clipboard": lambda a: "Send the text on your clipboard to Custodian",
+        "notifications": lambda a: (f"Send your {a.get('app') + ' ' if a.get('app') else ''}notifications from the last "
+                                    f"{a.get('hours', 24)} hours (who wrote, and what), and the unread counts, to Custodian"),
         "screenshot": lambda a: "Take a screenshot and send it to Custodian to describe",
         "close_app": lambda a: f"Quit {app_process(a['name']) or a['name']} and close all its windows (it may ask to save)",
         "organize_folder": lambda a: f"Sort the loose files in\n{a['path']}\ninto subfolders by type (Images, Documents, ...)",

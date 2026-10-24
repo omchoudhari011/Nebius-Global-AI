@@ -62,7 +62,7 @@ Actions that ask first:
 - `send_message` (WhatsApp), `type_text`, `press_keys`, `click`, `click_element`, `fill_field`, `write_in_app`
 - `close_window`, `close_app`
 - `read_file`, `write_file`, `move_file`, `delete_file`, `organize_folder`
-- `get_clipboard`
+- `get_clipboard`, `notifications` (Notification Centre's messages and the unread counts, read from a copy of Windows' list in `notices.py`)
 - `screenshot`, `look` and `click_on` (the screen, read by the server's vision model; one OK covers look, click and check)
 - `browser_download`; `browser_click` and `browser_fill` only for a submit, buy, pay, order, book, send or delete
 
