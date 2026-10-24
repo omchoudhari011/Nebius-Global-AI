@@ -29,6 +29,7 @@ import json
 import re
 import sqlite3
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from . import memory, sensitive, statements
@@ -140,6 +141,9 @@ class Evidence:
     outcomes: list[Any] = field(default_factory=list)  # sandbox.ToolCallOutcome for every gated call
     saved_memories: int = 0
     rejected_memories: list[str] = field(default_factory=list)
+    # The switches ("Calendar · write") of the tools offered this turn, and which of them are off -
+    # so "X is switched off" can be checked. None: not known (the excuse check is skipped).
+    switches: dict[str, bool] | None = None
 
     def attempts(self, tool: str, function: str) -> list[Any]:
         return [o for o in self.outcomes if o.tool == tool and o.function == function]
@@ -243,6 +247,7 @@ _MEMORY_CLAIM = re.compile(
 # A reminder is true only when the reminders tool set one in this turn.
 _REMINDER_CLAIM = re.compile(
     r"\b(?:i'?ll|i will|i'm going to|i am going to)\s+(?:also\s+)?(?:remind|notify|alert|ping)\s+you\b"
+    r"|\b(?:i'?ll|i will|i'm going to|i am going to)\s+(?:also\s+)?(?:set|add|create|make)\s+(?:up\s+)?(?:a|an|the|your)?\s*(?:reminder|alarm)s?\b"
     r"|\b(?:reminder|alarm|alert|notification)\s+(?:is|has been|was)\s+(?:now\s+|all\s+)?set\b"
     r"|\bi(?:'ve| have)\s+(?:also\s+)?set\s+(?:up\s+)?(?:a|an|the|your)?\s*(?:reminder|alarm|alert|notification)s?\b",
     re.I,
@@ -275,6 +280,13 @@ _DRAFT_CLAIM = re.compile(
     r"|\bdraft\s+(?:is|has been|was)\s+(?:now\s+)?(?:saved|ready|in)\b|\bin (?:your )?drafts\b",
     re.I,
 )
+_EXCUSE_CLAIM = re.compile(
+    r"\b(?:is|was|are|were)\s+(?:switched|turned)\s+off\b|\b(?:read|write)\s+is\s+off\b"
+    r"|\b(?:wasn'?t|isn'?t|is not|was not|not)\s+(?:available|enabled|switched on|turned on|allowed)\b"
+    r"|\bdon'?t have (?:access|permission)\b|\b(?:tool|switch)\s+(?:is|was)\s+off\b",
+    re.I,
+)
+_SWITCH = re.compile(r"([A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)?) · (read|write)")
 _CONTACT_CLAIM = re.compile(
     r"\b(?:i'?ll|i will|i'm going to|i am going to)\s+(?:also\s+)?(?:message|text|email|e-mail|call|phone|whatsapp)\s+you\b",
     re.I,
@@ -416,7 +428,36 @@ def drop_invented_sources(reply: str, evidence: Evidence) -> str:
         return line
 
     cleaned = _SOURCE_LINE.sub(keep, reply)
+    if not _URL.search(cleaned):  # no link left (or none given): "[1]" points at nothing
+        cleaned = re.sub(r"\s?\[\d+(?:\s*[-–,]\s*\d+)*\]", "", cleaned)  # [1], [1, 2], [1-5]
     return re.sub(r"\n{3,}", "\n\n", cleaned).strip() if cleaned != reply else reply
+
+
+_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+_DATED = re.compile(
+    r"\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)(day|sday|nesday|rsday|urday)?(,?\s+)(\d{1,2})(?:st|nd|rd|th)?(\s+)"
+    r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\b", re.I)
+
+
+def fix_weekdays(reply: str, today: date) -> str:
+    """'Sat 25 Oct' -> 'Sun 25 Oct' when the 25th is a Sunday (this year's, or next year's when this
+    year's is long past). Small models count weekdays wrong; the date is the part they got from a tool."""
+    def put_right(match: re.Match) -> str:
+        day, tail, gap, number, space, month = match.groups()
+        year = today.year
+        try:
+            when = date(year, _MONTHS.index(month[:3].lower()) + 1, int(number))
+            if (today - when).days > 180:
+                when = date(year + 1, when.month, when.day)
+        except ValueError:
+            return match.group(0)
+        right = _DAY_NAMES[when.weekday()]
+        word = right if tail else right[:3]
+        word = word if day[0].isupper() else word.lower()
+        return match.group(0).replace(day + (tail or ""), word, 1)
+
+    return _DATED.sub(put_right, reply)
 
 
 def keep_real_sources(arguments: Any, evidence: Evidence) -> Any:
@@ -497,6 +538,27 @@ def review(reply: str, evidence: Evidence) -> list[Finding]:
                 "unverified_draft",
                 f"You said a draft was saved, but no gmail draft_email call succeeded in this turn ({why}).",
                 f"No draft was saved: {why}.",
+            )
+        )
+    blocked = any(o.status in ("denied", "failed", "timed_out", "unknown") for o in evidence.outcomes)
+    # (An excuse comes wrapped in "couldn't", which _says reads as a denial: match it plainly.)
+    excuse = any(_EXCUSE_CLAIM.search(x) for x in _SENTENCES.findall(reply) if not x.rstrip().endswith("?"))
+    named = {f"{t.strip().lower()} · {s.lower()}" for t, s in _SWITCH.findall(reply)}
+    on = {k.lower() for k, v in (evidence.switches or {}).items() if v}
+    off = {k.lower() for k, v in (evidence.switches or {}).items() if not v}
+    # False: a switch it names is really on, or it names none while every offered tool's is on.
+    false_excuse = evidence.switches is not None and (bool(named & on) or (not named and not off))
+    if not blocked and excuse and false_excuse:
+        rejected = [o for o in evidence.outcomes if o.status == "rejected"]
+        findings.append(
+            Finding(
+                "false_excuse",
+                "You said a switch is off or a tool isn't available, but nothing was denied in this turn: the tools "
+                "you were given are switched on and ready."
+                + (f" Your {rejected[-1].tool}_{rejected[-1].function} call was only rejected for its arguments "
+                   f"({(rejected[-1].error or '')[:160]}); call it again with them fixed." if rejected else
+                   " Call the tool now, or say what really went wrong."),
+                "That wasn't done, but not because a switch is off: ask again.",
             )
         )
     if _says(reply, _CONTACT_CLAIM):

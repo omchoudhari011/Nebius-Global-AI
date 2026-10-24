@@ -47,3 +47,22 @@ def test_never_over_another_file_and_never_in_a_protected_folder(documents):
     assert first["saved"].endswith("Plan Q3Q4.docx") and second["saved"].endswith("Plan Q3Q4 (2).docx")
     with pytest.raises(actions.ActionError, match="never changes"):
         actions.run("write_document", args, [str(folder)])
+
+
+def test_a_report_given_as_one_text_becomes_headed_sections(documents):
+    folder, _ = documents
+    body = "For most people, the Vivobook [1].\n\n## Top picks\n- **Vivobook 16**: Rs 62,990 [1]\n- IdeaPad: Rs 71,500\n\n## What to choose\nThe Vivobook."
+    actions.run("write_document", {"title": "Laptops", "body": body, "sources": SOURCES[:1]}, [])
+    lines = [(p.style.name, p.text) for p in Document(str(folder / "Laptops.docx")).paragraphs]
+    assert ("Normal", "For most people, the Vivobook [1].") in lines  # before the first heading: no heading
+    assert ("Heading 1", "Top picks") in lines and ("List Bullet", "Vivobook 16: Rs 62,990 [1]") in lines  # no ** left
+    assert ("Heading 1", "What to choose") in lines
+
+
+def test_the_title_and_a_written_sources_list_arent_repeated(documents):
+    folder, _ = documents
+    body = "# Laptops under 80000\nGet the Vivobook [1].\n\n## Sources\n1. Laptop review"
+    actions.run("write_document", {"title": "Laptops under 80,000", "body": body, "sources": SOURCES[:1]}, [])
+    lines = [(p.style.name, p.text) for p in Document(str(folder / "Laptops under 80,000.docx")).paragraphs]
+    assert [t for s, t in lines if s.startswith("Heading")] == ["Sources"]  # only the linked list, and no title twice
+    assert ("Normal", "Get the Vivobook [1].") in lines

@@ -47,10 +47,6 @@ function Winget($id, $what) {
     Native { winget install -e --id $id --accept-source-agreements --accept-package-agreements }
     Refresh-Path
 }
-function Same-Hash($file, $stamp) {
-    (Test-Path $stamp) -and ((Get-Content $stamp -Raw).Trim() -eq (Get-FileHash $file).Hash)
-}
-function Stamp($file, $stamp) { Set-Content -Path $stamp -Value (Get-FileHash $file).Hash -Encoding ascii }
 
 Say "Setting up Custodian in $root"
 
@@ -67,7 +63,16 @@ if (-not $python) {
 }
 Say "  Python: $(Native { & $python --version 2>&1 })" Green
 
-$needsWeb = -not (Test-Path (Join-Path $mobile "dist\index.html")) -or -not (Same-Hash (Join-Path $mobile "package-lock.json") (Join-Path $mobile "dist\.installed"))
+# The web app is rebuilt when anything in mobile\ changed: git's fingerprint of the folder (an
+# update changes it), else the package list's.
+function Web-Version {
+    $tree = Native { git -C $root rev-parse "HEAD:mobile" 2>$null }
+    if ($LASTEXITCODE -eq 0 -and $tree) { return "$tree".Trim() }
+    return (Get-FileHash (Join-Path $mobile "package-lock.json")).Hash
+}
+$webStamp = Join-Path $mobile "dist\.installed"
+$needsWeb = -not (Test-Path (Join-Path $mobile "dist\index.html")) -or -not (Test-Path $webStamp) -or
+            ((Get-Content $webStamp -Raw).Trim() -ne (Web-Version))
 if ($needsWeb -and -not (Has npm)) { Winget "OpenJS.NodeJS.LTS" "Node.js" }
 
 # 2. The server's packages; speech to text on the graphics card when there's an NVIDIA one.
@@ -123,7 +128,7 @@ if ($needsWeb) {
         if ($LASTEXITCODE -ne 0) { throw "installing the web app's packages failed" }
         Native { npm run export:web }
         if ($LASTEXITCODE -ne 0) { throw "building the web app failed" }
-        Stamp (Join-Path $mobile "package-lock.json") (Join-Path $mobile "dist\.installed")
+        Set-Content -Path $webStamp -Value (Web-Version) -Encoding ascii
     } finally { Pop-Location }
 }
 

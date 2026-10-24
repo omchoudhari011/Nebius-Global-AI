@@ -7,9 +7,10 @@ schema.sql.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, get_origin
 
 from .schemas import (
     CancelReminderArgs,
@@ -73,6 +74,7 @@ from .schemas import (
     PcSearchContentsArgs,
     ReadPageArgs,
     WebResearchArgs,
+    WeatherArgs,
     PcWriteDocumentArgs,
     RoutineNameArgs,
     SaveRoutineArgs,
@@ -310,6 +312,16 @@ FUNCTIONS: tuple[ToolFunction, ...] = (
         args_model=ReadPageArgs,
         module="app.tools.web_tools",
         hosts=("*",),
+    ),
+    ToolFunction(
+        tool="web",
+        function="weather",
+        scope="read",
+        description=("The weather in a city now and for the next days (°C, rain chance, wind), from Open-Meteo. "
+                     "Use this for any weather question, not web_search."),
+        args_model=WeatherArgs,
+        module="app.tools.web_tools",
+        hosts=("geocoding-api.open-meteo.com", "api.open-meteo.com"),
     ),
     ToolFunction(
         tool="web",
@@ -684,9 +696,53 @@ def clean_schema(node: Any, *, in_properties: bool = False) -> Any:
 _SERVICE_IN_QUERY = re.compile(r"\s+(?:on|in|from|using)\s+(spotify|youtube)\s*$", re.I)
 
 
+def _json_values(text: str) -> list | None:
+    """Every JSON value in `text`, one after another ('[...]\n[...]', '{...}, {...}'), lists
+    flattened one level; None when it isn't JSON."""
+    decoder, values, at = json.JSONDecoder(strict=False), [], 0  # strict=False: a raw line break inside a string, as models write
+    while at < len(text):
+        while at < len(text) and text[at] in " \t\r\n,;":
+            at += 1
+        if at >= len(text):
+            break
+        try:
+            value, at = decoder.raw_decode(text, at)
+        except ValueError:
+            return None
+        values.extend(value if isinstance(value, list) else [value])
+    return values or None
+
+
+def _as_list(value: str) -> list:
+    """'["a", "b"]', '["a"]\n["b"]', '[{...}]\n[{...}]', '"a" "b"', 'a; b' or 'a' -> a list."""
+    text = value.strip()
+    parsed = _json_values(text) if text[:1] in "[{\"" else None
+    if parsed is not None:
+        return [x for x in parsed if not (isinstance(x, str) and not x.strip())]
+    quoted = re.findall(r'"([^"\n]+)"', text)
+    if quoted:
+        return quoted
+    return [p.strip() for p in re.split(r"[\n;]+", text) if p.strip()]
+
+
+def _list_fields(model: type) -> dict[str, int | None]:
+    """The model's list fields, with their longest allowed length."""
+    out = {}
+    for name, field in model.model_fields.items():
+        if get_origin(field.annotation) is list:
+            limit = next((m.max_length for m in field.metadata if getattr(m, "max_length", None)), None)
+            out[name] = limit
+    return out
+
+
 def fix_arguments(fn: ToolFunction, args: dict) -> dict:
     """Mend arguments a small model reliably gets slightly wrong, before validation: "Perfect by
-    Ed Sheeran in spotify" is the song "Perfect by Ed Sheeran" on Spotify."""
+    Ed Sheeran in spotify" is the song "Perfect by Ed Sheeran" on Spotify; a list sent as one
+    string - '["iPhone camera"]\n["Pixel camera"]', or a single email address - is that list."""
+    for name, limit in _list_fields(fn.args_model).items():
+        if isinstance(args.get(name), str):
+            items = _as_list(args[name])
+            args = {**args, name: items[:limit] if limit else items}
     if fn.exposed_name == "pc_play" and isinstance(args.get("query"), str):
         found = _SERVICE_IN_QUERY.search(args["query"])
         if found:

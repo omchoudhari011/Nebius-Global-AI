@@ -245,6 +245,8 @@ def _other_services(user_id: int) -> list[dict]:
             "the search words; it passes them on to public search engines without your identity")
         out.append({"name": "Web pages", "host": "the page's own site", "location": "internet", "purpose": "Reading a web page",
                     "sends": "a request for that one page, when Custodian reads a search result"})
+        out.append({"name": "Open-Meteo", "host": "api.open-meteo.com", "location": "internet", "purpose": "Weather",
+                    "sends": "the name of the city you ask about, and its coordinates"})
     connected = desktop.status(user_id)
     if connected["connected"]:
         out.append({"name": connected["device"] or "Custodian desktop", "host": "your PC", "location": "this network",

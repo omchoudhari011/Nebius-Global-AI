@@ -276,7 +276,7 @@ def load_settings() -> Settings:
         nebius_model_id=os.getenv("NEBIUS_MODEL_ID", "").strip() or DEFAULT_NEBIUS_MODEL_ID,
         nebius_base_url=nebius_base_url,
         model_timeout_seconds=_float("MODEL_TIMEOUT_SECONDS", 60.0, 1.0, 600.0),
-        model_max_tokens=_int("MODEL_MAX_TOKENS", 1024, 64, 32768),
+        model_max_tokens=_int("MODEL_MAX_TOKENS", 2048, 64, 32768),  # a report written into a document needs ~1500
         model_temperature=_float("MODEL_TEMPERATURE", 0.3, 0.0, 2.0),
         model_extra_body=model_extra_body,
         embedding_model=os.getenv("EMBEDDING_MODEL", "").strip(),

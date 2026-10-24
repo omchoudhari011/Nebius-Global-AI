@@ -158,6 +158,11 @@ class WebSearchArgs(ToolArgs):
     limit: int = Field(default=5, ge=1, le=8)
 
 
+class WeatherArgs(ToolArgs):
+    city: SafeLine = Field(min_length=2, max_length=80, description="The city, e.g. 'Pune' or 'Mumbai'.")
+    days: int = Field(default=2, ge=1, le=7, description="Days of forecast from today (2 = today and tomorrow).")
+
+
 class WebResearchArgs(ToolArgs):
     topic: SafeLine = Field(min_length=3, max_length=200, description="What the report is about, in a few words.")
     queries: list[SafeLine] = Field(min_length=1, max_length=3,
@@ -301,9 +306,18 @@ class DocSource(ToolArgs):
 
 class PcWriteDocumentArgs(ToolArgs):
     title: SafeLine = Field(min_length=1, max_length=150, description="The document's title (also its file name).")
-    sections: list[DocSection] = Field(min_length=1, max_length=20)
+    body: PlainText = Field(default="", max_length=40_000,
+                            description="The whole document as text: '## Heading' lines start sections, '- ' lines are "
+                                        "bullets, [1] cites the first source.")
+    sections: list[DocSection] = Field(default_factory=list, max_length=20, description="Or: the sections, one by one.")
     sources: list[DocSource] = Field(default_factory=list, max_length=20,
                                      description="The sources cited as [1], [2], ... in that order: only ones a tool returned.")
+
+    @model_validator(mode="after")
+    def _has_text(self) -> "PcWriteDocumentArgs":
+        if not self.body.strip() and not self.sections:
+            raise ValueError("give the document's text in body (or its sections)")
+        return self
 
 
 class PcAppArgs(ToolArgs):

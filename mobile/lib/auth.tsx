@@ -48,7 +48,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStartupError(null);
     const savedServer = await getItem(KEYS.server);
     const savedToken = await getItem(KEYS.token);
-    if (savedServer) {
+    // The web app served by Custodian always talks to the server it came from; a saved address
+    // (from an older build that pinned it to localhost) would break it opened from another device.
+    if (savedServer && !(Platform.OS === "web" && !__DEV__)) {
       api.configureApi({ base: savedServer });
       setServerUrl(api.getApiBase());
     }

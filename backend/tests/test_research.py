@@ -131,3 +131,92 @@ def test_keep_real_sources_leaves_a_clean_document_alone():
     args = {"title": "T", "sections": [], "sources": []}
     assert grounding.keep_real_sources(args, evidence) is args
     assert grounding.keep_real_sources("not json", evidence) == "not json"
+
+
+# The weather -------------------------------------------------------------------------------------
+
+def test_the_weather_comes_in_celsius_for_the_city_asked_about(monkeypatch):
+    calls = []
+
+    def fake_get(url, *, accept, timeout=12):
+        calls.append(url)
+        if "geocoding" in url:
+            body = {"results": [{"name": "Pune", "admin1": "Maharashtra", "country": "India", "latitude": 18.5, "longitude": 73.9}]}
+        else:
+            body = {"current": {"temperature_2m": 31.5, "apparent_temperature": 33.5, "weather_code": 51, "wind_speed_10m": 6,
+                                "relative_humidity_2m": 39},
+                    "daily": {"time": ["2026-10-24", "2026-10-25"], "weather_code": [51, 3], "temperature_2m_max": [31.5, 32.4],
+                              "temperature_2m_min": [23.0, 21.5], "precipitation_probability_max": [52, 36]}}
+        return json.dumps(body).encode(), "application/json", url
+
+    monkeypatch.setattr(web_tools, "_get", fake_get)
+    out = web_tools.weather({}, "Pune", 2)
+    assert out["place"] == "Pune, Maharashtra, India" and out["now"]["temperature_c"] == 31.5
+    assert out["days"][1] == {"date": "2026-10-25", "condition": "overcast", "high_c": 32.4, "low_c": 21.5, "rain_chance": 36}
+    assert "name=Pune" in calls[0] and "forecast_days=2" in calls[1]
+    monkeypatch.setattr(web_tools, "_get", lambda url, **_: (b'{"results": []}', "application/json", url))
+    with pytest.raises(ValueError, match="ask which city"):
+        web_tools.weather({}, "Atlantis")
+    assert skills.pick_skill_name("will it rain tomorrow in Mumbai?") == "web"
+    assert registry.find("web_weather").hosts == ("geocoding-api.open-meteo.com", "api.open-meteo.com")
+
+
+def test_ill_set_a_reminder_is_a_promise_the_check_holds_to():
+    evidence = grounding.Evidence(message="remind me at 7", outcomes=[])
+    assert "unverified_reminder" in [f.kind for f in grounding.review("Will do - I'll set a reminder for 07:00.", evidence)]
+
+
+# Arguments a small model sends almost right ------------------------------------------------------
+
+def test_lists_sent_as_one_string_are_mended_before_they_are_checked():
+    research = registry.find("web_research")
+    odd = '["iPhone 16 camera review"]\n["Pixel 9 camera review"]\n["camera comparison"]\n["one too many"]'
+    assert registry.fix_arguments(research, {"topic": "x", "queries": odd})["queries"] == [
+        "iPhone 16 camera review", "Pixel 9 camera review", "camera comparison"]  # cut to the 3 allowed
+    email = registry.fix_arguments(registry.find("gmail_send_email"), {"to": "priya@example.com", "body": "Hi"})
+    assert email["to"] == ["priya@example.com"]
+    doc = registry.find("pc_write_document")
+    sections = '[{"heading": "Summary", "text": "Get A [1]."}]\n[{"heading": "Top picks", "text": "- A\n- B"}]'
+    fixed = doc.args_model.model_validate(registry.fix_arguments(doc, {"title": "T", "sections": sections}))
+    assert [s.heading for s in fixed.sections] == ["Summary", "Top picks"]
+    assert doc.args_model.model_validate({"title": "T", "body": "## Summary\nGet A [1]."}).body.startswith("## Summary")
+    with pytest.raises(ValueError, match="give the document"):
+        doc.args_model.model_validate({"title": "T"})
+
+
+def test_an_excuse_is_checked_against_the_real_switches():
+    def kinds(reply, switches, *outcomes):
+        return [f.kind for f in grounding.review(reply, grounding.Evidence(message="x", switches=switches, outcomes=list(outcomes)))]
+
+    assert "false_excuse" in kinds("I couldn't search the web: Web · read is off.", {"Web · read": True})
+    assert "false_excuse" in kinds("I couldn't set it - the reminders tool wasn't available.", {"Reminders · write": True})
+    assert kinds("I can't add events: Calendar · write is switched off in Tools & Data.", {"Calendar · write": False}) == []
+    denied = sandbox.ToolCallOutcome(name="web_search", status="denied", tool="web", function="search")
+    assert kinds("Web · read is switched off.", {"Web · read": True}, denied) == []  # it was denied: true
+    assert grounding.drop_invented_sources("Pune is 28°C today. [1]", grounding.Evidence(message="x")) == "Pune is 28°C today."
+
+
+# What a reply says about dates and reminders ------------------------------------------------------
+
+def test_a_weekday_that_doesnt_match_its_date_is_put_right():
+    from datetime import date
+
+    today = date(2026, 10, 24)  # a Saturday
+    assert grounding.fix_weekdays("Added for tomorrow, Sat 25 Oct, 15:00.", today) == "Added for tomorrow, Sun 25 Oct, 15:00."
+    assert grounding.fix_weekdays("On Monday, 26th October.", today) == "On Monday, 26th October."  # already right
+    assert grounding.fix_weekdays("fri 1 Jan", today) == "fri 1 Jan"  # 1 Jan 2027 is a Friday
+
+
+def test_a_reminder_is_saved_as_the_task_and_confirmed_from_what_was_saved():
+    from app import orchestrator
+    from app.tools.reminders_tool import task_text
+
+    assert task_text("दवाई लेने की याद दिलाना") == "दवाई लेना" and task_text("remind me to call mum") == "call mum"
+    made = sandbox.ToolCallOutcome(name="reminders_create_reminder", status="succeeded", tool="reminders",
+                                   function="create_reminder",
+                                   result={"created": {"text": "दवाई लेना", "when": "Sun 25 Oct, 07:00", "repeat": None}})
+    assert orchestrator._reminder_confirmation([made], hindi=True) == "ठीक है, याद दिलाऊँगा: दवाई लेना - रविवार, 25 अक्टूबर को 07:00 बजे।"
+    made.result["created"]["text"] = "Take medicine"
+    assert orchestrator._reminder_confirmation([made], hindi=False) == "Done - I'll remind you: Take medicine, Sun 25 Oct, 07:00."
+    other = sandbox.ToolCallOutcome(name="calendar_create_event", status="succeeded", tool="calendar", function="create_event")
+    assert orchestrator._reminder_confirmation([made, other], hindi=False) is None  # more than reminders: the model's reply

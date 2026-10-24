@@ -103,7 +103,7 @@ export function PcHud({ hud, connected }: { hud: HudSnapshot | null; connected: 
           <Text style={s.soft}>
             {live && pc ? `${pc.device ?? "Your PC"} · online · updated ${ago(pc.age_seconds)}`
               : connected ? "Your PC is connected; its readings arrive within half a minute"
-              : "Your PC is offline - start Jarvis on it (run-jarvis.ps1)"}
+              : "Your PC is offline - start Jarvis with the Jarvis icon on its desktop"}
           </Text>
           {weather ? (
             <Text style={s.ink}>

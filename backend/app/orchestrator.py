@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from . import accounts, activity, approvals, conversations, db, documents, fastpath, grounding, history_search, memory, memory_graph, persona, plans, privacy, routines, sensitive, skills, usage, vectors, warmup
+from . import accounts, activity, approvals, conversations, db, documents, fastpath, grounding, history_search, memory, memory_graph, permissions, persona, plans, privacy, routines, sensitive, skills, usage, vectors, warmup
 from .config import get_settings
 from .crypto import decrypt, encrypt, encrypt_json
 from .model_backends import ModelError, get_backend, get_large_backend, large_base_url
@@ -43,6 +43,14 @@ log = logging.getLogger(__name__)
 LARGE_MODEL_SKILLS = {"web"}  # skills answered by the larger model whenever LARGE_MODEL_ID is set
 # ...unless the question is about the user ("my rent", "remind me"): those stay on the local model.
 PERSONAL = re.compile(r"\b(i|i'm|im|me|my|mine|myself|we|our|us)\b", re.IGNORECASE)
+# The tools that make each kind of claim true, named in the repair round when they're offered.
+REPAIR_TOOLS = {
+    "unverified_reminder": ("reminders_create_reminder",),
+    "unverified_send": ("gmail_send_email", "pc_send_message"),
+    "unverified_draft": ("gmail_draft_email",),
+    "unverified_pc_action": (),
+    "false_excuse": (),
+}
 MAX_TOOL_ROUNDS = 6  # model turns that may call tools before it must answer (a PC task can take several)
 MAX_MEMORY_WRITES = 3  # memories the model may save in one reply; the rest are rejected
 HISTORY_LIMIT = 20  # earlier user/assistant messages of this conversation sent as context
@@ -374,6 +382,44 @@ _ATTACHED = re.compile(r"📎 .+? \(file #(\d+)\)")
 ATTACH_CHARS = 12_000  # of each attached file in the prompt (about 3,000 tokens)
 
 
+HINDI_DAYS = {"Mon": "सोमवार", "Tue": "मंगलवार", "Wed": "बुधवार", "Thu": "गुरुवार", "Fri": "शुक्रवार", "Sat": "शनिवार",
+              "Sun": "रविवार"}
+HINDI_MONTHS = {"Jan": "जनवरी", "Feb": "फ़रवरी", "Mar": "मार्च", "Apr": "अप्रैल", "May": "मई", "Jun": "जून", "Jul": "जुलाई",
+                "Aug": "अगस्त", "Sep": "सितंबर", "Oct": "अक्टूबर", "Nov": "नवंबर", "Dec": "दिसंबर"}
+
+
+def _reminder_confirmation(outcomes: list, *, hindi: bool) -> str | None:
+    """'Done - I'll remind you: Call mum, Sat 24 Oct, 18:00.' when the turn's only actions set
+    reminders (and they all worked); else None, and the model's reply stands."""
+    acted = [o for o in outcomes if not (o.tool == "reminders" and o.function == "list_reminders")]
+    if not acted or any(o.tool != "reminders" or o.function != "create_reminder" or o.status != "succeeded" for o in acted):
+        return None
+    made = [o.result.get("created") for o in acted if isinstance(o.result, dict) and o.result.get("created")]
+    if not made or not all(r.get("when") for r in made):
+        return None
+    if hindi:
+        def when(r: dict) -> str:
+            day, rest = r["when"].split(" ", 1)
+            date, clock = rest.split(", ")
+            number, month = date.split(" ")
+            return f"{HINDI_DAYS.get(day, day)}, {number} {HINDI_MONTHS.get(month, month)} को {clock} बजे"
+        return "ठीक है, याद दिलाऊँगा: " + "; ".join(f"{r['text']} - {when(r)}" for r in made) + "।"
+    items = "; ".join(f"{r['text']}, {r['when']}" + (f" (every {r['repeat']})" if r.get("repeat") else "") for r in made)
+    return f"Done - I'll remind you: {items}."
+
+
+def _switches(user_id: int, offered: list) -> dict[str, bool]:
+    """{"Calendar · write": on?} for the tools offered this turn - what an excuse is checked against."""
+    with db.connect() as conn:
+        ids = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM tools")}
+        out = {}
+        for fn in offered:
+            label = f"{registry.display_name(fn.tool)} · {fn.scope}"
+            if label not in out and fn.tool in ids:
+                out[label] = permissions.check(user_id, ids[fn.tool], fn.scope, conn=conn)
+    return out
+
+
 def _attached(files: list[dict]) -> str:
     """The attached files' text for the user's turn, quoted as material, not instructions."""
     blocks = []
@@ -599,6 +645,7 @@ def _handle(
         private=private,
         calendar_question=grounding.asks_about_calendar(message, skill.name if skill else None),
         memory_ids={m["id"] for m, _ in context_memories},
+        switches=_switches(user_id, offered),
     )
     def redaction() -> bool:  # withheld secrets depend on where the answering model runs
         return privacy.redaction_active(user_id, large_base_url() if escalated else None)
@@ -629,8 +676,10 @@ def _handle(
         content = response.content
         if not calls:
             # A "Source:" link no tool returned is made up: drop it rather than ask for a rewrite,
-            # which tends to invent a search that never ran.
+            # which tends to invent a search that never ran. A weekday that doesn't match its date is
+            # put right.
             content = grounding.drop_invented_sources(content, evidence)
+            content = grounding.fix_weekdays(content, datetime.now(ZoneInfo(settings.timezone)).date())
         if not calls and not content.strip():
             content = EMPTY_REPLY
         final_id = _save_message(
@@ -659,7 +708,14 @@ def _handle(
                     repaired = findings
                 _set_content(final_id, "")
                 model_messages.append({"role": "assistant", "content": content})
-                model_messages.append({"role": "user", "content": grounding.repair_request(findings)})
+                request = grounding.repair_request(findings)
+                ready = [n for f in findings for n in REPAIR_TOOLS.get(f.kind, ())
+                         if offer and n in {s["function"]["name"] for s in offer}]
+                if ready:  # a small model otherwise tends to say the tool "isn't available"
+                    request += f"\nAvailable to you right now: {', '.join(dict.fromkeys(ready))}. Call it with what they said."
+                if message is not None and DEVANAGARI.search(message):  # the request is in English; the reply isn't
+                    request += "\n" + LANGUAGE_NOTE
+                model_messages.append({"role": "user", "content": request})
                 continue
             break
 
@@ -712,6 +768,12 @@ def _handle(
                     _save_message(conversation_id, "tool", result, tool_call_id=outcome.tool_call_id)
             model_messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
 
+    confirmed = _reminder_confirmation(evidence.outcomes, hindi=bool(message and DEVANAGARI.search(message)))
+    if confirmed and not findings:
+        # Only reminders were set: say what was saved, in the user's language. A small model adds
+        # details ("take medicine with lemon") and answers Hindi in English.
+        reply = confirmed
+        _set_content(final_id, reply)
     if findings:  # still wrong after the repair round (or no round was left): say so in the reply
         reply = grounding.annotate(reply, findings)
         _set_content(final_id, reply)

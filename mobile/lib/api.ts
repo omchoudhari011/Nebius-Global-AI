@@ -1,9 +1,10 @@
 // Typed fetch wrappers for the Custodian API.
 //
 // Where the API lives:
-//   * EXPO_PUBLIC_API_BASE, when set at build time, wins.
-//   * A production web build is served by the API itself, so it calls its own origin.
-//   * Otherwise http://localhost:8000 (web dev server, iOS simulator).
+//   * A production web build is served by the API itself, so it always calls its own origin -
+//     whatever address it was opened at (http://<the PC>:8001 from a phone on the same Wi-Fi too).
+//   * Otherwise EXPO_PUBLIC_API_BASE when set at build time, else http://localhost:8000 (web dev
+//     server, iOS simulator).
 // The native app can also point at another server from the sign-in screen.
 //
 // Auth: the web build uses the httpOnly session cookie (credentials: "include"); the native
@@ -64,9 +65,9 @@ export function errorMessage(err: unknown): string {
 }
 
 export function defaultApiBase(): string {
+  if (Platform.OS === "web" && !__DEV__) return ""; // a developer's EXPO_PUBLIC_API_BASE mustn't pin it to localhost
   const fromEnv = process.env.EXPO_PUBLIC_API_BASE;
   if (fromEnv && fromEnv.trim()) return normalizeBase(fromEnv);
-  if (Platform.OS === "web" && !__DEV__) return "";
   return "http://localhost:8000";
 }
 

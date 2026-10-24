@@ -172,7 +172,7 @@ PC = {
     "pc_browser_fill": {"name": "Search", "text": "earbuds"}, "pc_browser_download": {"url": "https://example.com/a.pdf"},
     "pc_browser_tabs": {},
 }
-WEB = {"web_search", "web_read_page", "web_research"}  # web_research: tests/test_research.py
+WEB = {"web_search", "web_read_page", "web_research", "web_weather"}  # web_research, web_weather: tests/test_research.py
 SCREEN = {"pc_look", "pc_click_on"}  # with the vision model: tests/test_vision.py
 
 

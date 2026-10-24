@@ -39,6 +39,7 @@ SILENCE_SECONDS = 1.0
 EARLY_SILENCE = 0.45  # a pause this long starts transcribing what's been said so far
 MIN_SECONDS = 0.6
 BARGE_IN_SCORE = 0.75  # the wake word's score needed while Custodian is speaking
+STALL_SECONDS = 4.0  # no sound at all for this long: the stream broke (sleep, a device change); open it again
 DEVANAGARI = re.compile(r"[ऀ-ॿ]")
 
 
@@ -140,9 +141,33 @@ class Listener:
         return score >= (max(BARGE_IN_SCORE, self.threshold) if speaking else self.threshold)
 
     def run(self) -> None:
+        """Listen until stopped - and keep listening across what breaks a microphone stream: the PC
+        sleeping and waking, a headset plugged in or out, a Bluetooth one dropping. When no sound
+        has come for STALL_SECONDS the microphone is opened again (Windows' default one, as it is
+        now); when it can't be opened, it's tried again every few seconds."""
         import sounddevice as sd
 
         self._load_model()
+        failures = 0
+        while not self._stop.is_set():
+            try:
+                self._listen(sd)
+                failures = 0
+            except Exception as exc:  # noqa: BLE001 - no microphone right now: wait, then try again
+                failures += 1
+                if failures in (1, 10):
+                    log.warning("the microphone can't be used (%s); trying again", exc)
+            if self._stop.is_set():
+                break
+            self._stop.wait(min(30.0, 2.0 * max(1, failures)))
+            try:  # PortAudio keeps the device list it started with: read it again, to find the default one now
+                sd._terminate()
+                sd._initialize()
+            except Exception:  # noqa: BLE001 - an older sounddevice: the next open still tries
+                pass
+
+    def _listen(self, sd) -> None:  # noqa: ANN001 - the sounddevice module
+        """One microphone stream, until it goes quiet for STALL_SECONDS (or Custodian stops)."""
         frames: queue.Queue[np.ndarray] = queue.Queue()
 
         def callback(data, _frames, _time, status):  # noqa: ANN001
@@ -153,13 +178,19 @@ class Listener:
         with sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=FRAME, device=self.device, callback=callback):
             self.on_state("listening" if self.wake_word else "ready")
             noise = deque(maxlen=40)  # recent loudness, for the silence threshold
+            last = time.monotonic()
             while not self._stop.is_set():
                 try:
                     frame = frames.get(timeout=0.5)
                 except queue.Empty:
+                    if time.monotonic() - last > STALL_SECONDS and not self._paused.is_set():
+                        log.info("the microphone went quiet (the PC slept, or a device changed); opening it again")
+                        return
                     continue
+                last = time.monotonic()
                 if self.step(frame, frames, noise):
                     self.on_state("listening" if self.wake_word else "ready")
+                    last = time.monotonic()
 
     def step(self, frame: np.ndarray, frames: queue.Queue, noise: deque) -> bool:
         """One 80 ms frame: True when a recording was made (and handed on)."""

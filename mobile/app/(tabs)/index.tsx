@@ -242,7 +242,11 @@ export default function ChatScreen() {
               color={offTheRecord ? t.accent2 : undefined}
               onPress={() => !sending && newChat(true)}
             />
-            <Button compact variant="secondary" icon="create-outline" label="New chat" onPress={() => newChat(false)} disabled={sending} />
+            {width < 480 ? (  // a phone: the icon alone, so the name beside it fits on one line
+              <IconButton icon="create-outline" label="New chat" onPress={() => !sending && newChat(false)} />
+            ) : (
+              <Button compact variant="secondary" icon="create-outline" label="New chat" onPress={() => newChat(false)} disabled={sending} />
+            )}
           </>
         }
       />

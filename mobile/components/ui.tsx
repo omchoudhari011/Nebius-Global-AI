@@ -207,7 +207,7 @@ export function ScreenHeader({ title, subtitle, right, orb }: { title: string; s
         <View style={{ flexShrink: 1, flexDirection: "row", alignItems: "center", gap: space.md }}>
           {orb ? <Orb size={38} mood={orb} /> : null}
           <View style={{ flexShrink: 1 }}>
-            <Text accessibilityRole="header" style={s.title}>
+            <Text accessibilityRole="header" style={s.title} numberOfLines={1}>
               {title}
             </Text>
             {typeof subtitle === "string" ? <Text style={s.subtitle}>{subtitle}</Text> : subtitle}

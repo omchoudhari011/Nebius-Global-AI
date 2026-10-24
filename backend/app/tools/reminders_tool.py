@@ -7,6 +7,7 @@ Times are stored in UTC and returned in the user's time zone.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -55,17 +56,34 @@ def next_due(due: datetime, repeat: str, tz: ZoneInfo) -> datetime:
 
 
 def describe(row: sqlite3.Row, tz: ZoneInfo) -> dict:
+    due = from_db(row["due_at"]).astimezone(tz)
     return {
         "id": row["id"],
         "text": row["text"],
-        "due": from_db(row["due_at"]).astimezone(tz).isoformat(timespec="minutes"),
+        "due": due.isoformat(timespec="minutes"),
+        "when": due.strftime("%a %d %b, %H:%M").replace(" 0", " "),  # "Sun 25 Oct, 07:00": say this, don't work it out
         "repeat": row["repeat"],
         "status": row["status"],
     }
 
 
+# What a small model copies along with the task: "remind me to ...", "... की याद दिलाना".
+_ASKING = re.compile(r"^\s*(?:please\s+)?(?:remind\s+me\s+(?:to\s+)?|remember\s+to\s+|reminder\s*(?:to|:)\s*)", re.I)
+_ASKING_HI = re.compile(r"\s*(?:की|का|के)?\s*याद\s*(?:दिलाना|दिला|दिलाओ|दिलाइए|दिलाना है|दिला देना)\s*[।.!]*\s*$")
+
+
+def task_text(text: str) -> str:
+    """'remind me to call mum' -> 'call mum'; 'दवाई लेने की याद दिलाना' -> 'दवाई लेना'."""
+    cleaned = _ASKING.sub("", text).strip()
+    if _ASKING_HI.search(cleaned):
+        cleaned = _ASKING_HI.sub("", cleaned).strip()
+        cleaned = re.sub(r"ने$", "ना", cleaned)  # "लेने की याद" -> "लेना": the task, as a task
+    return cleaned or text.strip()
+
+
 def create_reminder(ctx: dict, text: str, at: str, repeat: str | None = None) -> dict:
     tz = ZoneInfo(ctx["timezone"])
+    text = task_text(text)
     due = datetime.fromisoformat(at)
     if due.tzinfo is None:
         due = due.replace(tzinfo=tz)

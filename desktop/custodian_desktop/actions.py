@@ -1152,23 +1152,43 @@ def _link(paragraph, url: str, text: str) -> None:  # noqa: ANN001 - a python-do
     paragraph._p.append(link)
 
 
-def write_document(title: str, sections: list[dict], sources: list[dict] | None = None, *, protected: list[str],
-                   **_: object) -> dict:
+def sections_of(body: str) -> list[dict]:
+    """'## Heading' (or '#', '###') lines start a section; text before the first has no heading."""
+    out: list[dict] = [{"heading": "", "text": ""}]
+    for line in body.splitlines():
+        heading = re.match(r"^\s{0,3}#{1,4}\s+(.+?)\s*#*\s*$", line)
+        if heading:
+            out.append({"heading": heading.group(1).strip("* "), "text": ""})
+        else:
+            out[-1]["text"] += line + "\n"
+    return [s for s in out if s["heading"] or s["text"].strip()]
+
+
+def write_document(title: str, sections: list[dict] | None = None, sources: list[dict] | None = None, body: str = "", *,
+                   protected: list[str], **_: object) -> dict:
     """A Word document with the title, each section's heading and paragraphs ('- ' lines become
-    bullets), and the sources as links - saved as a new file in Documents, then opened."""
+    bullets), and the sources as links - saved as a new file in Documents, then opened. The text
+    comes as `body` ('## Heading' lines) or as `sections`."""
     from docx import Document
 
+    sections = (sections or []) + (sections_of(body) if body.strip() else [])
+    same = lambda a, b: re.sub(r"\W+", "", a).lower() == re.sub(r"\W+", "", b).lower()  # noqa: E731
+    if sections and same(sections[0]["heading"], title):
+        sections[0] = {**sections[0], "heading": ""}  # the title again as the first heading: once is enough
+    if sources:  # the linked list below replaces a sources list written into the text
+        sections = [s for s in sections if not re.fullmatch(r"(?i)\s*(sources?|references?)\s*:?\s*", s["heading"])]
     doc = Document()
     doc.add_heading(title, 0)
     for section in sections:
-        doc.add_heading(section["heading"], 1)
+        if section["heading"]:
+            doc.add_heading(section["heading"], 1)
         for block in re.split(r"\n\s*\n", section["text"].strip()):
             lines = [line.strip() for line in block.splitlines() if line.strip()]
             if lines and all(line.startswith(("- ", "* ", "• ")) for line in lines):
                 for line in lines:
-                    doc.add_paragraph(line[2:].strip(), style="List Bullet")
+                    doc.add_paragraph(line[2:].strip().replace("**", ""), style="List Bullet")
             elif lines:
-                doc.add_paragraph(" ".join(lines))
+                doc.add_paragraph(" ".join(lines).replace("**", ""))
     if sources:
         doc.add_heading("Sources", 1)
         for number, source in enumerate(sources, 1):

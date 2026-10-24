@@ -233,3 +233,66 @@ def test_filterbank_features_match_kaldis_which_the_speaker_model_was_trained_on
     reference.input_finished()
     kaldi = np.stack([reference.get_frame(i) for i in range(reference.num_frames_ready)])
     assert np.abs(fbank(samples) - (kaldi - kaldi.mean(axis=0))).max() < 1e-3
+
+
+class _Mic:
+    """sounddevice's surface: InputStream(callback=...) as a context manager, fed by a thread. The
+    first stream sends a few frames then nothing (the PC slept); the next ones keep sending."""
+
+    def __init__(self, fail_first=0):
+        self.opened, self.fail_first, self.restarts = 0, fail_first, 0
+
+    def _terminate(self):
+        self.restarts += 1
+
+    def _initialize(self):
+        pass
+
+    def InputStream(self, *, callback, **_):  # noqa: N802 - sounddevice's name
+        mic = self
+        mic.opened += 1
+        if mic.opened <= mic.fail_first:
+            raise RuntimeError("Error opening InputStream: Invalid device")
+        frames = 3 if mic.opened == mic.fail_first + 1 else 10_000
+
+        class Stream:
+            def __enter__(self):
+                self.stop = threading.Event()
+
+                def feed():
+                    for _ in range(frames):
+                        if self.stop.wait(0.01):
+                            return
+                        callback(np.zeros((FRAME, 1), dtype=np.int16), FRAME, None, None)
+
+                threading.Thread(target=feed, daemon=True).start()
+                return self
+
+            def __exit__(self, *exc):
+                self.stop.set()
+
+        return Stream()
+
+
+def test_the_microphone_is_opened_again_when_it_goes_quiet_or_cant_be_opened(monkeypatch):
+    import sys
+
+    from custodian_desktop import voice
+
+    mic = _Mic(fail_first=1)
+    monkeypatch.setitem(sys.modules, "sounddevice", mic)
+    monkeypatch.setattr(voice, "STALL_SECONDS", 0.2)
+    listener, _ = _listener()
+    listener._load_model = lambda: None
+    waits = []
+    real_wait = listener._stop.wait
+    monkeypatch.setattr(listener._stop, "wait", lambda seconds: waits.append(seconds) or real_wait(0.01))
+    thread = threading.Thread(target=listener.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 5
+    while mic.opened < 3 and time.monotonic() < deadline:
+        time.sleep(0.05)
+    listener.stop()
+    thread.join(timeout=3)
+    # 1: couldn't be opened; 2: sent 3 frames and went quiet; 3: opened again, and listening.
+    assert mic.opened >= 3 and mic.restarts >= 2 and not thread.is_alive()

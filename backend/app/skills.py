@@ -228,9 +228,14 @@ COMMAND_VERBS = {"open", "play", "launch", "start", "close", "quit", "take", "go
                  "message", "bring", "fire", "pull", "listen", "watch"}
 
 
+# A word: letters and digits - and Devanagari's vowel signs, which \w alone doesn't count, so
+# "दिलाना" stays one word instead of breaking at each matra.
+WORD = re.compile(r"[\w\u0900-\u097f]+")
+
+
 def pick_skill_name(message: str) -> str:
     """The skill whose keywords match the message best; DEFAULT_SKILL when none or a tie."""
-    text = " " + " ".join(re.findall(r"\w+", message.lower())) + " "
+    text = " " + " ".join(WORD.findall(message.lower())) + " "
     scores: dict[str, int] = {}
     for d in definitions().values():
         hits = sum(1 for k in d.keywords if f" {k} " in text)

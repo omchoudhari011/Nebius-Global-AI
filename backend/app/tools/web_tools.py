@@ -116,6 +116,41 @@ def _fetch_text(url: str, timeout: float = 12) -> tuple[str, str, str]:
     raise ValueError(f"that link is a {content_type.split(';')[0]} file, not a web page")
 
 
+# The weather, from Open-Meteo (free, no key): only the city's name and its coordinates go there ------
+
+GEOCODE = "https://geocoding-api.open-meteo.com/v1/search"
+FORECAST = "https://api.open-meteo.com/v1/forecast"
+WEATHER_HOSTS = ("geocoding-api.open-meteo.com", "api.open-meteo.com")
+WMO = {0: "clear", 1: "mainly clear", 2: "partly cloudy", 3: "overcast", 45: "foggy", 48: "foggy", 51: "light drizzle",
+       53: "drizzle", 55: "heavy drizzle", 61: "light rain", 63: "rain", 65: "heavy rain", 66: "freezing rain",
+       67: "freezing rain", 71: "light snow", 73: "snow", 75: "heavy snow", 77: "snow grains", 80: "rain showers",
+       81: "rain showers", 82: "violent rain showers", 85: "snow showers", 86: "snow showers", 95: "thunderstorms",
+       96: "thunderstorms with hail", 99: "thunderstorms with hail"}
+
+
+def weather(ctx: dict, city: str, days: int = 2) -> dict:
+    """Now and the next `days` days in a city: °C, rain chance, wind in km/h."""
+    found = json.loads(_get(f"{GEOCODE}?" + urllib.parse.urlencode({"name": city, "count": 1, "format": "json"}),
+                            accept="application/json", timeout=8)[0]).get("results") or []
+    if not found:
+        raise ValueError(f"no place called {city!r} was found; ask which city they mean")
+    place = found[0]
+    query = {"latitude": place["latitude"], "longitude": place["longitude"], "timezone": "auto", "forecast_days": days,
+             "current": "temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m",
+             "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code"}
+    data = json.loads(_get(f"{FORECAST}?" + urllib.parse.urlencode(query), accept="application/json", timeout=8)[0])
+    now, daily = data.get("current") or {}, data.get("daily") or {}
+    forecast = [{"date": day, "condition": WMO.get(code, "unknown"), "high_c": high, "low_c": low, "rain_chance": rain}
+                for day, code, high, low, rain in zip(daily.get("time", []), daily.get("weather_code", []),
+                                                      daily.get("temperature_2m_max", []), daily.get("temperature_2m_min", []),
+                                                      daily.get("precipitation_probability_max", []))]
+    return {"place": ", ".join(p for p in (place.get("name"), place.get("admin1"), place.get("country")) if p),
+            "now": {"temperature_c": now.get("temperature_2m"), "feels_like_c": now.get("apparent_temperature"),
+                    "condition": WMO.get(now.get("weather_code"), "unknown"), "humidity": now.get("relative_humidity_2m"),
+                    "wind_kmh": now.get("wind_speed_10m")},
+            "days": forecast, "source": "https://open-meteo.com"}
+
+
 # Research: several searches and pages at once, for a report -----------------------------------
 
 EXCERPT = 1400  # characters kept from each page: the passages about the topic
