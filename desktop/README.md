@@ -68,6 +68,7 @@ Actions that ask first:
 
 Actions that just run (they only need their switch):
 - `system_info`, `list_files`, `find_files`, `list_windows`, `list_apps`, `now_playing`, `read_screen`
+- `write_document` (a new Word file in Documents, never over another; python-docx)
 - `open`, `go_to`, `search_site`, `play`, `media`, `set_volume`, `focus_window`, `lock_screen`
 - `set_brightness`, `set_theme`, `open_settings`, `timer`
 - `copy_file`, `create_folder`, `set_clipboard`

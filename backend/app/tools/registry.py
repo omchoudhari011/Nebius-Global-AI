@@ -72,6 +72,8 @@ from .schemas import (
     PcSayArgs,
     PcSearchContentsArgs,
     ReadPageArgs,
+    WebResearchArgs,
+    PcWriteDocumentArgs,
     RoutineNameArgs,
     SaveRoutineArgs,
     WatchEmailArgs,
@@ -119,6 +121,7 @@ class ToolFunction:
     #                        for a server tool where you asked (app/approvals.confirm)
     group: str = ""  # offered only when the message is about this (see GROUPS); "" = always
     query_vector: bool = False  # the gate embeds the `query` argument for it (search by meaning)
+    timeout: float = 0  # seconds it may take, when that's longer than the usual limit
 
     @property
     def exposed_name(self) -> str:
@@ -308,6 +311,18 @@ FUNCTIONS: tuple[ToolFunction, ...] = (
         module="app.tools.web_tools",
         hosts=("*",),
     ),
+    ToolFunction(
+        tool="web",
+        function="research",
+        scope="read",
+        description=("Research a topic for a report or a comparison: runs several web searches at once, reads the best "
+                     "pages (from different sites) and returns what each says about it, numbered [1], [2], ... with "
+                     "its link. One call instead of many searches and page reads."),
+        args_model=WebResearchArgs,
+        module="app.tools.web_tools",
+        hosts=("searxng", "*"),
+        timeout=50,
+    ),
     *(
         ToolFunction(tool="pc", function=function, scope=scope, args_model=args, module="desktop", runs_on="desktop",
                      confirm=confirm, group=group, description=description)
@@ -348,6 +363,9 @@ FUNCTIONS: tuple[ToolFunction, ...] = (
             ("create_folder", "write", "files", False, PcFolderArgs, "Create a folder."),
             ("organize_folder", "write", "files", True, PcFolderArgs,
              "Sort a folder's loose files into subfolders by type: Images, Documents, Videos, ... (the user confirms)."),
+            ("write_document", "write", "typing", False, PcWriteDocumentArgs,
+             "Make a Word document (.docx) with a title, headed sections, bullets and the sources as links, save it as a "
+             "new file in Documents (never over another) and open it - for a report or anything longer to keep."),
             ("write_in_app", "write", "typing", True, PcWriteInAppArgs,
              "Open Notepad or Word and write text into a new document (the user confirms)."),
             ("notifications", "read", "messaging", True, PcNotificationsArgs,
@@ -595,7 +613,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
               "tidy", "save a", "save it", "save the", "find", "zip", "photo", "photos", "wrote", "mention", "mentions",
               "mentioned", "notes", "doc", "docs", "spreadsheet", "presentation"),
     "typing": ("type", "write", "writing", "press", "key", "keys", "shortcut", "ctrl", "alt", "enter", "paste",
-               "clipboard", "notepad", "word", "letter", "essay", "draft", "copy", "text"),
+               "clipboard", "notepad", "word", "letter", "essay", "draft", "copy", "text", "report", "document",
+               "research", "write up", "docx"),
     "messaging": ("whatsapp", "message", "messages", "msg", "send", "text", "texting", "tell", "reply", "wish", "ping",
                   "notification", "notifications", "miss", "missed", "unread", "new messages", "telegram", "teams"),
     "screen": ("on my screen", "on the screen", "on screen", "read the screen", "my screen", "click", "button", "fill",

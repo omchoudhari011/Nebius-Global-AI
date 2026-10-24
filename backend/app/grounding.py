@@ -419,6 +419,21 @@ def drop_invented_sources(reply: str, evidence: Evidence) -> str:
     return re.sub(r"\n{3,}", "\n\n", cleaned).strip() if cleaned != reply else reply
 
 
+def keep_real_sources(arguments: Any, evidence: Evidence) -> Any:
+    """A document's arguments (pc_write_document) without the sources whose links no tool returned
+    this turn (and the user didn't give) - the same rule as a reply's "Source:" lines."""
+    try:
+        args = arguments if isinstance(arguments, dict) else json.loads(arguments or "{}")
+    except (TypeError, ValueError):
+        return arguments
+    if not isinstance(args, dict) or not isinstance(args.get("sources"), list):
+        return arguments
+    seen = (evidence.message or "") + json.dumps([getattr(o, "result", None) for o in evidence.outcomes],
+                                                 ensure_ascii=False, default=str)
+    real = [s for s in args["sources"] if isinstance(s, dict) and str(s.get("url", "")).rstrip(".") in seen]
+    return {**args, "sources": real} if len(real) != len(args["sources"]) else arguments
+
+
 def review(reply: str, evidence: Evidence) -> list[Finding]:
     """The claims in `reply` that this turn's evidence doesn't support (empty = none found)."""
     findings: list[Finding] = []

@@ -158,6 +158,13 @@ class WebSearchArgs(ToolArgs):
     limit: int = Field(default=5, ge=1, le=8)
 
 
+class WebResearchArgs(ToolArgs):
+    topic: SafeLine = Field(min_length=3, max_length=200, description="What the report is about, in a few words.")
+    queries: list[SafeLine] = Field(min_length=1, max_length=3,
+                                    description="Two or three different web searches that together cover it.")
+    pages: int = Field(default=5, ge=2, le=6, description="How many pages to read.")
+
+
 class ReadPageArgs(ToolArgs):
     url: SafeLine = Field(min_length=8, max_length=2000, pattern=r"^https?://", description="The page's full http(s) address.")
 
@@ -279,6 +286,24 @@ class PcTimerArgs(ToolArgs):
 class PcNotificationsArgs(ToolArgs):
     hours: int = Field(default=24, ge=1, le=168, description="How far back, in hours (a day = 24, a week = 168).")
     app: SafeLine = Field(default="", max_length=40, description="Only one app's, e.g. 'whatsapp' or 'outlook'; empty = all.")
+
+
+class DocSection(ToolArgs):
+    heading: SafeLine = Field(min_length=1, max_length=150)
+    text: PlainText = Field(min_length=1, max_length=8000,
+                            description="Paragraphs separated by blank lines; lines starting with '- ' become bullets.")
+
+
+class DocSource(ToolArgs):
+    title: SafeLine = Field(min_length=1, max_length=300)
+    url: SafeLine = Field(min_length=8, max_length=2000, pattern=r"^https?://")
+
+
+class PcWriteDocumentArgs(ToolArgs):
+    title: SafeLine = Field(min_length=1, max_length=150, description="The document's title (also its file name).")
+    sections: list[DocSection] = Field(min_length=1, max_length=20)
+    sources: list[DocSource] = Field(default_factory=list, max_length=20,
+                                     description="The sources cited as [1], [2], ... in that order: only ones a tool returned.")
 
 
 class PcAppArgs(ToolArgs):

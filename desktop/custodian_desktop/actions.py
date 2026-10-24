@@ -1125,6 +1125,69 @@ def write_in_app(text: str, app: str = "notepad", **_: object) -> dict:
     return {"app": app, "window": window[0], "characters": len(text)}
 
 
+def _link(paragraph, url: str, text: str) -> None:  # noqa: ANN001 - a python-docx paragraph
+    """A clickable link in a Word paragraph (python-docx has no call for one)."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    rel = paragraph.part.relate_to(url, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
+                                   is_external=True)
+    link = OxmlElement("w:hyperlink")
+    link.set(qn("r:id"), rel)
+    run = OxmlElement("w:r")
+    props = OxmlElement("w:rPr")
+    style = OxmlElement("w:rStyle")
+    style.set(qn("w:val"), "Hyperlink")
+    props.append(style)
+    for tag, attrs in (("w:color", {"w:val": "0563C1"}), ("w:u", {"w:val": "single"})):
+        element = OxmlElement(tag)
+        for key, value in attrs.items():
+            element.set(qn(key), value)
+        props.append(element)
+    run.append(props)
+    label = OxmlElement("w:t")
+    label.text = text
+    run.append(label)
+    link.append(run)
+    paragraph._p.append(link)
+
+
+def write_document(title: str, sections: list[dict], sources: list[dict] | None = None, *, protected: list[str],
+                   **_: object) -> dict:
+    """A Word document with the title, each section's heading and paragraphs ('- ' lines become
+    bullets), and the sources as links - saved as a new file in Documents, then opened."""
+    from docx import Document
+
+    doc = Document()
+    doc.add_heading(title, 0)
+    for section in sections:
+        doc.add_heading(section["heading"], 1)
+        for block in re.split(r"\n\s*\n", section["text"].strip()):
+            lines = [line.strip() for line in block.splitlines() if line.strip()]
+            if lines and all(line.startswith(("- ", "* ", "• ")) for line in lines):
+                for line in lines:
+                    doc.add_paragraph(line[2:].strip(), style="List Bullet")
+            elif lines:
+                doc.add_paragraph(" ".join(lines))
+    if sources:
+        doc.add_heading("Sources", 1)
+        for number, source in enumerate(sources, 1):
+            paragraph = doc.add_paragraph(f"[{number}] ")
+            _link(paragraph, source["url"], source["title"])
+            paragraph.add_run(f" - {source['url']}")
+    folder = known_folder("documents") or Path.home() / "Documents"
+    stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", title).strip(" .")[:80] or "Custodian document"
+    path, n = folder / f"{stem}.docx", 2
+    while path.exists():  # never over another file
+        path, n = folder / f"{stem} ({n}).docx", n + 1
+    _guard(path, protected)
+    folder.mkdir(parents=True, exist_ok=True)
+    doc.save(str(path))
+    os.startfile(str(path))  # noqa: S606 - the file just made, in Word (or what opens .docx here)
+    return {"saved": str(path), "opened": True, "sections": len(sections), "sources": len(sources or []),
+            "undo": {"function": "recycle_created", "args": {"path": str(path)}, "label": f"delete {path.name}"}}
+
+
 # Seeing and using the screen (Windows UI Automation: names, not pixels) --------------------------
 
 ELEMENT_TYPES = {"Button", "Hyperlink", "Edit", "ComboBox", "CheckBox", "RadioButton", "MenuItem", "TabItem", "ListItem",
@@ -1423,7 +1486,8 @@ ACTIONS = {
     "go_to": go_to, "search_site": search_site, "play": play, "now_playing": now_playing,
     "set_brightness": set_brightness, "set_theme": set_theme, "open_settings": open_settings, "timer": timer,
     "list_apps": list_apps, "close_app": close_app, "copy_file": copy_file, "create_folder": create_folder,
-    "organize_folder": organize_folder, "write_in_app": write_in_app, "read_screen": read_screen,
+    "organize_folder": organize_folder, "write_in_app": write_in_app, "write_document": write_document,
+    "read_screen": read_screen,
     "click_element": click_element, "fill_field": fill_field, "send_message": send_message,
     "do_not_disturb": do_not_disturb, "alarm": alarm, "say": say, "confirm_plan": confirm_plan,
     "notifications": lambda **a: notices.read(int(a.get("hours") or 24), str(a.get("app") or "")),
@@ -1442,7 +1506,7 @@ SELF_CONFIRMING = {"send_message", "browser_click", "browser_fill"}  # they ask 
 # Of those, the ones the server doesn't mark "confirm": they ask only when what they found is risky
 # (a submit or "Place order" button, Enter in a form), so following a link never asks.
 ASK_WHEN_RISKY = {"browser_click", "browser_fill"}
-NEEDS_PROTECTED = {"write_file", "move_file", "delete_file", "copy_file", "create_folder", "organize_folder",
+NEEDS_PROTECTED = {"write_file", "move_file", "delete_file", "copy_file", "create_folder", "organize_folder", "write_document",
                    "restore_deleted", "undo_moves", "remove_empty_folder", "recycle_created", "restore_backup"}
 
 

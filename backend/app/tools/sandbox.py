@@ -291,7 +291,7 @@ def execute(
         "data_dir": str(settings.tool_data_dir / fn.tool),
         "timezone": settings.timezone,
     }
-    timeout = settings.tool_timeout_seconds
+    timeout = max(settings.tool_timeout_seconds, fn.timeout)
     if fn.account:
         from .. import accounts, google_account
 

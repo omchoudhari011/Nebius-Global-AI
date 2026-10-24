@@ -692,10 +692,13 @@ def _handle(
                                                                      function="undo", result=done.get("result"),
                                                                      error=done.get("error")))
             else:
+                arguments = call.arguments
+                if call.name == "pc_write_document":  # a report cites only what was really found
+                    arguments = grounding.keep_real_sources(arguments, evidence)
                 outcome = sandbox.execute(
                     user_id,
                     call.name,
-                    call.arguments,
+                    arguments,
                     message_id=final_id,
                     allowed=allowed,
                     skill_name=skill.name if skill else None,
