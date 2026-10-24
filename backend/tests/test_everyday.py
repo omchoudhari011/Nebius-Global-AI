@@ -262,15 +262,23 @@ class FakeWhisper:
     """faster_whisper.WhisperModel's surface: transcribe() gives (segments, info)."""
     made: list = []
 
+    ranked = [("vi", 0.4), ("en", 0.3), ("hi", 0.1)]  # what detect_language says for a short command
+    said = [" Open Spotify,", " please. "]
+
     def __init__(self, name, device, compute_type, download_root):
         self.args = (name, device, compute_type)
         self.calls = []
+        self.prompts = []
         FakeWhisper.made.append(self)
 
-    def transcribe(self, audio, language=None, beam_size=5, vad_filter=False):
-        self.calls.append((audio.read(), language, vad_filter))
-        segment = type("Segment", (), {"text": " Open Spotify,"})
-        return iter([segment, type("Segment", (), {"text": " please. "})]), None
+    def detect_language(self, samples, vad_filter=False):
+        return FakeWhisper.ranked[0][0], FakeWhisper.ranked[0][1], FakeWhisper.ranked
+
+    def transcribe(self, audio, language=None, beam_size=5, vad_filter=False, initial_prompt=None,
+                   condition_on_previous_text=True):
+        self.calls.append((audio, language, vad_filter))
+        self.prompts.append(initial_prompt)
+        return iter([type("Segment", (), {"text": t}) for t in FakeWhisper.said]), None
 
 
 @pytest.fixture
@@ -279,7 +287,8 @@ def local_whisper(monkeypatch):
     import types
 
     FakeWhisper.made = []
-    monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=FakeWhisper))
+    monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=FakeWhisper,
+                                                                            decode_audio=lambda f: f.read()))
     monkeypatch.setitem(sys.modules, "ctranslate2", types.SimpleNamespace(get_cuda_device_count=lambda: 1))
     monkeypatch.setenv("WHISPER_URL", "local")
     monkeypatch.setenv("WHISPER_DEVICE", "auto")
@@ -600,3 +609,12 @@ def test_a_web_page_is_stored_as_readable_text(user_id, client):
 def test_the_microphone_is_allowed_on_custodians_own_pages(client):
     policy = client.get("/health").headers["Permissions-Policy"]
     assert "microphone=(self)" in policy and "camera=()" in policy
+
+
+def test_left_to_choose_it_picks_english_hindi_or_marathi_never_another_language(local_whisper, monkeypatch):
+    monkeypatch.setattr(FakeWhisper, "ranked", [("vi", 0.5), ("en", 0.3), ("hi", 0.2)])
+    voice.transcribe(b"audio", "audio/wav")
+    assert FakeWhisper.made[-1].calls[-1][1] == "en"  # Vietnamese was likeliest; of the three, English
+    monkeypatch.setattr(FakeWhisper, "ranked", [("ur", 0.45), ("hi", 0.2), ("en", 0.3)])
+    voice.transcribe(b"audio", "audio/wav")
+    assert FakeWhisper.made[-1].calls[-1][1] == "hi"  # Urdu counts as Hindi: the same speech

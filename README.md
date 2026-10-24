@@ -408,6 +408,22 @@ Chrome, alarm at 07:00, lock the PC. Make them by chat ("make a routine called .
 Jarvis tab; saying the name runs every step, with one approval on the PC for the whole list when a
 step would ask. A routine can't delete or write files, type, click or send messages.
 
+**How Jarvis hears** - tested like people use it ([voice-lab/](voice-lab/README.md)): 44 everyday
+requests in 10 voices (British, American, Indian English, Hindi), said normally, in a hurry, with
+someone talking and a fan going, and across a room into a laptop mic - 1,136 recordings through the
+real pipeline, scored on whether the right thing was done.
+- Whisper chooses between English, Hindi and Marathi only (Urdu counts as Hindi): left to itself it
+  wrote a short "open chrome" as Vietnamese and Hindi in Urdu's script. A hint of typical commands
+  and the user's names was tried and measured worse (in noise and in Hindi), so it isn't used.
+- Commands are understood as they're said: numbers in words ("volume forty", "दस मिनट का टाइमर"),
+  "seven in the morning", "six thirty", "गाना बंद करो", "H.U.D.", "that's all thanks".
+- The wake word has a second opinion (`desktop/custodian_desktop/wake.py`): a small network trained
+  on openWakeWord's own features from 200 synthetic voices. On voices it never heard it stops half
+  the lookalikes ("Hey Travis" 13% -> 7%) and hears a few more real ones (86.5% -> 89%).
+- The microphone is reopened when it goes quiet (the PC slept, a headset changed).
+- Still hard: a TV or someone talking near the mic - Whisper hears their words too. A closer mic
+  (a headset) helps most; voice ID keeps others' words from being acted on.
+
 **Faster, more natural voice** (the desktop app).
 - Replies are spoken sentence by sentence, the next one made while the last plays, so it starts
   talking after the first sentence; and transcription starts at the first pause in what you say.

@@ -1,7 +1,7 @@
 ---
 name: reminders
 description: Sets, lists and cancels reminders that notify the user.
-keywords: remind, reminder, reminders, alarm, wake me, don't let me forget, dont let me forget, ping me, notify me, याद दिलाना, याद दिला, याद दिलाओ, याद दिलाइए, याद दिलाना है, रिमाइंडर, आठवण, आठवण करून दे, yaad dilana, yaad dila, yaad dilao, yad dilana, remind karna, reminder laga, reminder set karo
+keywords: remind, reminder, reminders, don't let me forget, dont let me forget, ping me, notify me, याद दिलाना, याद दिला, याद दिलाओ, याद दिलाइए, याद दिलाना है, रिमाइंडर, आठवण, आठवण करून दे, yaad dilana, yaad dila, yaad dilao, yad dilana, remind karna, reminder laga, reminder set karo
 tools: reminders:read, reminders:write
 ---
 You are Custodian, a private personal assistant. Right now you are helping with reminders.

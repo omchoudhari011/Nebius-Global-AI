@@ -296,3 +296,48 @@ def test_the_microphone_is_opened_again_when_it_goes_quiet_or_cant_be_opened(mon
     thread.join(timeout=3)
     # 1: couldn't be opened; 2: sent 3 frames and went quiet; 3: opened again, and listening.
     assert mic.opened >= 3 and mic.restarts >= 2 and not thread.is_alive()
+
+
+def test_the_second_opinion_stops_lookalikes_and_hears_what_the_stock_model_misses():
+    from custodian_desktop import wake
+
+    assert wake.heard(0.96, 0.01) is False  # "Hey Travis": the stock model's yes, vetoed
+    assert wake.heard(0.96, 0.6) is True  # the stock model's yes, not objected to
+    assert wake.heard(0.05, 0.99) is True  # an accent the stock model barely hears
+    assert wake.heard(0.3, 0.5) is False
+    assert wake.heard(0.6, None) is True and wake.heard(0.4, None) is False  # without it: as before
+    second = wake.load()
+    assert second is not None and 0.0 <= second.probability(np.zeros((1, 16, 96), dtype=np.float32)) <= 1.0
+
+
+def test_the_listener_asks_the_second_opinion_only_for_hey_jarvis():
+    class Pre:
+        def get_features(self, n):
+            return np.zeros((1, n, 96), dtype=np.float32)
+
+    class Stock:
+        preprocessor = Pre()
+
+        def __init__(self, score):
+            self.score = score
+
+        def predict(self, frame):
+            return {"hey_jarvis": self.score}
+
+    class Second:
+        def __init__(self, p):
+            self.p, self.asked = p, 0
+
+        def probability(self, features):
+            self.asked += 1
+            return self.p
+
+    listener, _ = _listener()
+    listener._model, listener._second = Stock(0.97), Second(0.0)
+    assert listener.heard_wake_word(QUIET, speaking=False) is False  # "Hey Travis"
+    listener._model, listener._second = Stock(0.0), Second(1.0)
+    assert listener.heard_wake_word(QUIET, speaking=False) is False and listener._second.asked == 0  # silence: not asked
+    listener._model, listener._second = Stock(0.2), Second(0.99)
+    assert listener.heard_wake_word(QUIET, speaking=False) is True
+    listener._second = None
+    assert listener.heard_wake_word(QUIET, speaking=False) is False  # a custom wake word: the threshold alone

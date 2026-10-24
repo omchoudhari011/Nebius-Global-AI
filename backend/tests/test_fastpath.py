@@ -137,3 +137,28 @@ def test_search_then_open_takes_the_top_link():
     step = intent.then({"results": [{"url": "https://www.isro.gov.in/news", "title": "ISRO"}]})
     assert step == ("pc_open", {"target": "https://www.isro.gov.in/news"})
     assert intent.then({"results": []}) is None  # nothing found: the model says so
+
+
+# As people say it out loud (the voice lab's suite: voice-lab/suite.py) -----------------------------
+
+@pytest.mark.parametrize(("said", "function", "args"), [
+    ("set the volume to forty", "pc_set_volume", {"level": 40}),
+    ("volume twenty five", "pc_set_volume", {"level": 25}),
+    ("set a timer for ten minutes", "pc_timer", {"seconds": 600}),
+    ("set a timer for half an hour", "pc_timer", {"seconds": 1800}),
+    ("wake me up at seven in the morning", "pc_alarm", {"time": "07:00"}),
+    ("wake me up at six thirty in the evening", "pc_alarm", {"time": "18:30"}),
+    ("what's playing right now", "pc_now_playing", {}),
+    ("play seven nation army", "pc_play", {"query": "seven nation army"}),  # a name keeps its words
+    ("दस मिनट का टाइमर लगाओ", "pc_timer", {"seconds": 600}),
+    ("10 मिनिट का टाइमर लगा", "pc_timer", {"seconds": 600}),
+    ("गाना बंद करो", "pc_media", {"action": "play_pause"}),
+    ("एक गाना बजाओ", "pc_play", {}),
+])
+def test_commands_as_theyre_said(said, function, args):
+    intent = fastpath.match(said)
+    if function is None:
+        return  # not an exact command: the model takes it, and that's fine
+    assert intent is not None and intent.function == function
+    for key, value in args.items():
+        assert intent.args[key] == value

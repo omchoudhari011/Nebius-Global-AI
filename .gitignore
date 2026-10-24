@@ -34,3 +34,11 @@ cloud/
 
 # The installer, built by installer/build.ps1
 installer/dist/
+
+# The voice lab: downloaded voices, generated recordings and results
+voice-lab/voices/
+voice-lab/clips/
+voice-lab/*.json
+voice-lab/*.log
+voice-lab/*.npy
+voice-lab/*.npz

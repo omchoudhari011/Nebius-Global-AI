@@ -30,15 +30,20 @@ SIGN_OFFS = ("Very well, {a}.", "As you wish, {a}.", "I'll be here, {a}.", "Of c
 STANDING_BY = ("At your service, {a}.", "Yes, {a}?", "Standing by, {a}.")
 
 
+_CLOSINGS = re.compile(rf"(?:{_CLOSING.pattern})(?:\s+(?:{_CLOSING.pattern}))*", re.IGNORECASE)
+
+
 def ends_conversation(said: str) -> bool:
+    """Every piece of it is a closing: "That's all.", "no thanks, Jarvis", "that's all thanks"."""
     text = _SOFTENERS.sub(" ", said)
     pieces = [p.strip() for p in re.split(r"[,.;!?।]+|\s{2,}", text) if p.strip()]
-    return bool(pieces) and all(_CLOSING.fullmatch(" ".join(p.split())) for p in pieces)
+    return bool(pieces) and all(_CLOSINGS.fullmatch(" ".join(p.split())) for p in pieces)
 
 
 def hud_command(said: str) -> str | None:
     """"show"/"hide" for a request about the HUD itself, else None."""
     text = _FILLER.sub("", said.strip())
+    text = re.sub(r"\bh\.?\s?u\.?\s?d\b\.?", "HUD", text, flags=re.IGNORECASE)  # Whisper writes "H.U.D." and "H U D"
     if _HUD_SHOW.match(text):
         return "show"
     if _HUD_HIDE.match(text):

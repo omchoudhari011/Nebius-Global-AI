@@ -30,6 +30,8 @@ from typing import Callable
 
 import numpy as np
 
+from . import wake
+
 log = logging.getLogger(__name__)
 
 RATE = 16_000
@@ -91,6 +93,7 @@ class Listener:
         self._speaking = threading.Event()
         self._stop = threading.Event()
         self._model = None
+        self._second = None  # wake.SecondOpinion, for the built-in "Hey Jarvis"
         self.early = None  # what on_early returned for the last recording's words, when they're all of them
         self._early_frames = 0
 
@@ -129,6 +132,8 @@ class Listener:
             else:
                 utils.download_models(model_names=[self.wake_model])
                 self._model = Model(wakeword_models=[self.wake_model], inference_framework="onnx")
+                if self.wake_model == "hey_jarvis":  # the second opinion was trained for this one (wake.py)
+                    self._second = wake.load()
         except Exception as exc:  # noqa: BLE001 - keep working with the hotkey alone
             log.warning("wake word unavailable (%s); use the hotkey", exc)
             self.wake_word = False
@@ -138,7 +143,11 @@ class Listener:
             return False
         scores = self._model.predict(frame)
         score = max(scores.values()) if scores else 0.0
-        return score >= (max(BARGE_IN_SCORE, self.threshold) if speaking else self.threshold)
+        threshold = max(BARGE_IN_SCORE, self.threshold) if speaking else self.threshold
+        ours = None
+        if self._second is not None and score >= 0.01:  # it only matters once the stock model stirs
+            ours = self._second.probability(self._model.preprocessor.get_features(16))
+        return wake.heard(score, ours, threshold) if ours is not None else score >= threshold
 
     def run(self) -> None:
         """Listen until stopped - and keep listening across what breaks a microphone stream: the PC

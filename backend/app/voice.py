@@ -46,6 +46,8 @@ def local() -> bool:
 
 
 LANGUAGES = {"en": "English", "hi": "Hindi", "mr": "Marathi"}
+SPOKEN = tuple(LANGUAGES)  # the languages people speak to Custodian in: "any" means one of these
+SAME_AS = {"ur": "hi"}  # spoken Hindi and Urdu are one speech; Whisper picks Urdu's script for it
 
 
 def _check(audio: bytes) -> None:
@@ -56,7 +58,9 @@ def _check(audio: bytes) -> None:
 
 
 def transcribe(audio: bytes, content_type: str, language: str | None = None) -> str:
-    """`language` ("en", "hi", "mr") tells Whisper what to expect; None lets it tell by itself."""
+    """`language` ("en", "hi", "mr") tells Whisper what to expect; None lets it choose among those
+    three. (A hint of typical commands and the user's names was tried, and measured worse - in noise
+    and in Hindi Whisper drifts toward the hint's words: voice-lab/compare.py.)"""
     base = _url().rstrip("/")
     if not base:
         raise VoiceError("Voice input needs speech to text: set WHISPER_URL=local or a server's address (see README).")
@@ -182,8 +186,13 @@ class LocalWhisper:
         with self._lock:
             model = self._load()
             try:
+                from faster_whisper import decode_audio
+
+                samples = decode_audio(io.BytesIO(audio))
+                language = language or self.which_language(model, samples)
                 # The VAD filter skips silence, where Whisper would otherwise "hear" a "Thank you."
-                segments, _info = model.transcribe(io.BytesIO(audio), language=language, beam_size=5, vad_filter=True)
+                segments, _info = model.transcribe(samples, language=language, beam_size=5, vad_filter=True,
+                                                   condition_on_previous_text=False)
                 text = " ".join(s.text.strip() for s in segments).strip()
             except Exception as exc:  # noqa: BLE001 - audio it can't decode
                 log.info("couldn't transcribe: %s", exc)
@@ -191,6 +200,22 @@ class LocalWhisper:
             finally:
                 self._let_go_later()
         return text
+
+    @staticmethod
+    def which_language(model, samples) -> str:  # noqa: ANN001
+        """English, Hindi or Marathi - whichever Whisper finds likeliest of the three. Left to choose
+        among all its languages, a short "open chrome" comes out Vietnamese or Portuguese, and Hindi in
+        Urdu's script (the same speech): Urdu counts as Hindi here."""
+        try:
+            _lang, _p, ranked = model.detect_language(samples, vad_filter=True)
+        except Exception:  # noqa: BLE001 - too short to tell: English is likeliest
+            return "en"
+        score = {code: 0.0 for code in SPOKEN}
+        for code, probability in ranked:
+            code = SAME_AS.get(code, code)
+            if code in score:
+                score[code] += probability
+        return max(score, key=score.get)
 
 
 LOCAL = LocalWhisper()

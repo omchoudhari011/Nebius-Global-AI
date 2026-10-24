@@ -19,7 +19,47 @@ from typing import Callable
 from .model_backends.base import ModelBackend, ModelResponse, ToolCallRequest
 
 _FILLER = re.compile(r"^(?:hey jarvis|jarvis|hey custodian|ok|okay|please|can you|could you|would you|will you|"
-                     r"just|now)\s+|\s+(?:please|now|for me|thanks|thank you)$")
+                     r"just|now)\s+|\s+(?:please|right now|now|for me|thanks|thank you)$")
+
+# Numbers as they're said - "volume forty", "a timer for ten minutes", "दस मिनट" - as digits. Tried
+# only when the words as said match nothing, so "play seven nation army" keeps its name.
+_UNITS = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
+          "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
+          "seventeen": 17, "eighteen": 18, "nineteen": 19}
+_TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fourty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80,
+         "ninety": 90}
+_HINDI_NUMBERS = {"एक": 1, "दो": 2, "तीन": 3, "चार": 4, "पांच": 5, "पाँच": 5, "छह": 6, "छः": 6, "सात": 7, "आठ": 8,
+                  "नौ": 9, "दस": 10, "ग्यारह": 11, "बारह": 12, "तेरह": 13, "चौदह": 14, "पंद्रह": 15, "पन्द्रह": 15,
+                  "सोलह": 16, "सत्रह": 17, "अठारह": 18, "उन्नीस": 19, "बीस": 20, "पच्चीस": 25, "तीस": 30,
+                  "पैंतीस": 35, "चालीस": 40, "पैंतालीस": 45, "पचास": 50, "साठ": 60, "सत्तर": 70, "अस्सी": 80,
+                  "नब्बे": 90, "सौ": 100, "das": 10, "bees": 20, "tees": 30, "pandrah": 15, "chaalis": 40,
+                  "pachas": 50}
+_NUMBER_WORDS = re.compile(
+    r"\b(?:(" + "|".join(_TENS) + r")(?:[\s-](" + "|".join(k for k in _UNITS if 0 < _UNITS[k] < 10) + r"))?|("
+    + "|".join(_UNITS) + r")|(a|one)\s+hundred)\b")
+_HINDI_NUMBER = re.compile(r"(?<![\w\u0900-\u097f])(" + "|".join(sorted(_HINDI_NUMBERS, key=len, reverse=True))
+                           + r")(?![\w\u0900-\u097f])")
+_HINDI_TIME = re.compile(r"(?<![\wऀ-ॿ])(" + "|".join(sorted(_HINDI_NUMBERS, key=len, reverse=True))
+                         + r")\s+(मिनट|मिनिट|सेकंड|सेकेंड|घंटे|घंटा|घंटों|minute|minat|ghante|ghanta)")
+_TIME_OF_DAY = ((r"\s+in\s+the\s+morning\b", " am"), (r"\s+(?:in\s+the\s+(?:afternoon|evening)|at\s+night|tonight)\b", " pm"),
+                (r"\bhalf\s+an\s+hour\b", "30 minutes"), (r"\ban\s+hour\b", "1 hour"))
+
+
+def numbers_as_digits(text: str) -> str:
+    """'set the volume to forty' -> 'set the volume to 40'; 'दस मिनट का टाइमर' -> '10 मिनट का टाइमर';
+    'wake me up at seven in the morning' -> 'wake me up at 7 am'."""
+    def english(m: re.Match) -> str:
+        if m.group(4):
+            return "100"
+        if m.group(1):
+            return str(_TENS[m.group(1)] + (_UNITS[m.group(2)] if m.group(2) else 0))
+        return str(_UNITS[m.group(3)])
+
+    text = _NUMBER_WORDS.sub(english, text)
+    text = _HINDI_NUMBER.sub(lambda m: str(_HINDI_NUMBERS[m.group(1)]), text)
+    for pattern, said in _TIME_OF_DAY:
+        text = re.sub(pattern, said, text)
+    return text
 
 APP_NAMES = {"notepad", "calculator", "calc", "chrome", "google chrome", "edge", "firefox", "spotify", "vs code", "vscode",
              "visual studio code", "word", "excel", "powerpoint", "outlook", "paint", "file explorer", "explorer",
@@ -114,15 +154,20 @@ _TRANSLATIONS: tuple[tuple[str, str], ...] = (
     # media
     (r"(?:अगला|अगले|पुढचं|पुढचे|पुढील)\s+(?:गाना|गाने|गाणं|गाणे)(?:\s+(?:बजाओ|लगाओ|चलाओ|लाव|वाजव))?|agla\s+gaana|next\s+gaana", "next song"),
     (r"(?:पिछला|पिछले|मागचं|मागचे|मागील)\s+(?:गाना|गाने|गाणं|गाणे)(?:\s+(?:बजाओ|लगाओ|चलाओ|लाव|वाजव))?|pichla\s+gaana", "previous song"),
-    (r"(?:गाना|गाणं|गाणे|म्यूजिक|music|gaana)?\s*(?:रोको|रोक\s+दो|रुको|थांबव|थांबवा|ruko|roko|rok\s+do)", "pause"),
+    (r"(?:गाना|गाणं|गाणे|म्यूजिक|म्यूज़िक|music|gaana)?\s*(?:रोको|रोक\s+दो|रुको|थांबव|थांबवा|ruko|roko|rok\s+do)"
+     r"|(?:गाना|गाने|गाणं|गाणे|म्यूजिक|म्यूज़िक|music|gaana|gana)\s+(?:बंद\s+करो|बंद\s+कर\s+दो|बंद\s+कर|बंद\s+करा|band\s+karo|band\s+kar\s+do)",
+     "pause"),
     (r"(?:आवाज़|आवाज|वॉल्यूम|awaaz|awaz|volume)\s+(?:बढ़ाओ|बढाओ|तेज़\s+करो|तेज\s+करो|वाढव|वाढवा|badhao|badha\s+do|tez\s+karo)", "volume up"),
     (r"(?:आवाज़|आवाज|वॉल्यूम|awaaz|awaz|volume)\s+(?:कम\s+करो|कम\s+कर\s+दो|धीमी\s+करो|कमी\s+कर|कमी\s+करा|kam\s+karo|kam\s+kar\s+do|dheemi\s+karo)", "volume down"),
     (r"(?:आवाज़|आवाज|वॉल्यूम|awaaz|awaz|volume)\s+(\d{1,3})\s*(?:%|प्रतिशत|टक्के)?\s*(?:करो|कर\s+दो|कर|करा|karo|kar\s+do)", r"volume \1"),
     (r"(?:आवाज़|आवाज)\s+बंद\s+(?:करो|कर|करा)|म्यूट\s+(?:करो|कर|करा)|mute\s+karo|awaaz\s+band\s+karo", "mute"),
-    (r"(.+?)\s+(?:बजाओ|बजा\s+दो|चलाओ|चला\s+दो|लगाओ|लगा\s+दो|वाजव|वाजवा|लाव|लावा|bajao|baja\s+do|chalao|chala\s+do|lagao|laga\s+do)", r"play \1"),
+    # "लगाओ" puts on a song - or sets a timer or an alarm, which aren't songs.
+    (r"(?!.*(?:टाइमर|टायमर|timer|अलार्म|alarm))(.+?)\s+(?:बजाओ|बजा\s+दो|चलाओ|चला\s+दो|लगाओ|लगा\s+दो|वाजव|वाजवा|लाव|लावा|bajao|baja\s+do|chalao|chala\s+do|lagao|laga\s+do)",
+     r"play \1"),
     # the PC
     (r"(?:कंप्यूटर|कम्प्यूटर|पीसी|लैपटॉप|लॅपटॉप|संगणक|स्क्रीन|pc|computer|laptop|screen)\s+(?:लॉक|lock)\s+(?:करो|कर\s+दो|कर|करा|karo|kar\s+do)", "lock my pc"),
-    (r"(\d{1,4})\s+(?:मिनट|मिनिट|मिनिटांचा|minute|minat)\s+(?:का|चा|ka)?\s*(?:टाइमर|टायमर|timer)\s*(?:लगाओ|लगा\s+दो|लाव|लावा|सेट\s+करो|lagao|laga\s+do|set\s+karo)?", r"\1 minute timer"),
+    (r"(\d{1,4})\s+(?:मिनट|मिनिट|मिट|मिनिटांचा|minute|minat)\s+(?:का|चा|ka)?\s*(?:टाइमर|टायमर|ताइमर|timer)\s*"
+     r"(?:लगाओ|लगा\s+दो|लगा|लगाव|लाव|लावा|सेट\s+करो|lagao|laga\s+do|laga|set\s+karo)?[.।]?", r"\1 minute timer"),
     (r"(?:डार्क|dark)\s+(?:मोड|mode)(?:\s+(?:करो|कर|चालू\s+कर|on\s+karo|karo))?", "dark mode"),
     (r"(?:लाइट|लाईट|light)\s+(?:मोड|mode)(?:\s+(?:करो|कर|चालू\s+कर|on\s+karo|karo))?", "light mode"),
     (r"(?:बैटरी|बॅटरी|battery)\s+(?:कितनी\s+है|किती\s+आहे|kitni\s+hai|kitna\s+hai)", "battery"),
@@ -135,6 +180,8 @@ def translate(text: str) -> str:
     """'क्रोम खोलो' -> 'open chrome', 'volume badhao' -> 'volume up'. Text in other words is
     returned as it was."""
     text = text.translate(_DEVANAGARI_DIGITS)
+    # A number right before a unit of time is never a song's name: "दस मिनट" is "10 मिनट".
+    text = _HINDI_TIME.sub(lambda m: f"{_HINDI_NUMBERS[m.group(1)]} {m.group(2)}", text)
     for pattern, english in _TRANSLATIONS:
         found = re.fullmatch(pattern, text)
         if found:
@@ -163,10 +210,16 @@ def _alarm_reply(r: dict) -> str:
 
 
 def match(message: str | None) -> Intent | None:
-    """The intent for an exact, unambiguous command, or None (let the model handle it)."""
+    """The intent for an exact, unambiguous command, or None (let the model handle it). Numbers
+    said as words get a second try as digits ("volume forty", "दस मिनट का टाइमर")."""
     if not message or not ENABLED:
         return None
-    return parse(message)
+    found = parse(message)
+    if found is None:
+        digits = numbers_as_digits(normalise(message))
+        if digits != normalise(message):
+            found = parse(digits)
+    return found
 
 
 def parse(message: str, *, routine: bool = False) -> Intent | None:
@@ -189,8 +242,9 @@ def parse(message: str, *, routine: bool = False) -> Intent | None:
         return Intent("pc_do_not_disturb", {"on": on},
                       lambda r: "Do Not Disturb is on - notifications are silenced." if r.get("do_not_disturb")
                       else "Do Not Disturb is off.")
-    m = re.fullmatch(r"(?:set\s+)?(?:an?\s+|my\s+)?alarm\s+(?:for|at)\s+(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m|p\.m)?(?:\s+tomorrow)?"
-                     r"|wake\s+me\s+(?:up\s+)?at\s+(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m|p\.m)?(?:\s+tomorrow)?", text)
+    # "6:30", "6.30" - and "6 30", how "six thirty" is said.
+    m = re.fullmatch(r"(?:set\s+)?(?:an?\s+|my\s+)?alarm\s+(?:for|at)\s+(\d{1,2})(?:[:.\s](\d{2}))?\s*(am|pm|a\.m|p\.m)?(?:\s+tomorrow)?"
+                     r"|wake\s+me\s+(?:up\s+)?at\s+(\d{1,2})(?:[:.\s](\d{2}))?\s*(am|pm|a\.m|p\.m)?(?:\s+tomorrow)?", text)
     if m:
         hour, minute, half = (m.group(1), m.group(2), m.group(3)) if m.group(1) else (m.group(4), m.group(5), m.group(6))
         hour, minute = int(hour), int(minute or 0)
