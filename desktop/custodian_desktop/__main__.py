@@ -35,7 +35,7 @@ ACTS_ON_FRONT_WINDOW = {"type_text", "press_keys", "click", "click_element", "fi
 AWAY_SECONDS = 3 * 3600  # this long without a key or mouse touch, and the next touch is "arriving"
 MORNING = range(5, 12)  # hours when arriving gets the morning briefing
 # A spoken "yes" to an offer ("Shall I open the meeting link?"), in English, Hindi or Marathi.
-AFFIRMATIVE = re.compile(r"^\W*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|please|go\s+ahead|open\s+it|do\s+it|haan?|ha|ho|hoy|ji|chalo|kholo"
+AFFIRMATIVE = re.compile(r"^\W*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|please|go\s+ahead|open\s+it|do\s+it|close\s+(?:it|them)|haan?|ha|ho|hoy|ji|chalo|kholo"
                          r"|हाँ|हां|हा|हो|होय|जी|खोलो|उघड)\b", re.IGNORECASE)
 
 
@@ -82,6 +82,7 @@ class App:
     address = "sir"
     day: dict = {}
     weather: dict | None = None
+    front_seen: dict[str, float] = {}  # process name -> when it was last the app in front
 
     def __init__(self) -> None:
         self.settings = config.Settings.load()
@@ -103,6 +104,7 @@ class App:
         self.day: dict = {}
         self.weather: dict | None = None
         self.watchdog = Watchdog()
+        self.front_seen = {}
         self.offers: dict[str, object] = {}  # HUD button id -> what pressing it does
         self.conversing = False  # in a conversation: the next request needs no wake word
         self.conversation_id: int | None = None
@@ -272,10 +274,14 @@ class App:
             self.hud.send({"type": "weather", "data": self.weather})
 
     def vitals(self) -> None:
-        """Every 2 s while the HUD shows: the PC's vitals. Every 30 s: the watchdog."""
+        """Every 2 s: which app is in front (so Jarvis knows what you aren't using), and the PC's
+        vitals while the HUD shows. Every 30 s: the watchdog."""
         tick = 0
         while not self.stopping.is_set():
             try:
+                front = actions.foreground_process()
+                if front:
+                    self.front_seen[front] = time.monotonic()
                 if self.hud_on() and self.hud.visible:
                     apps = self.hud.mode == "full" and tick % 5 == 0  # the app list costs most: every 10 s
                     self.hud.send({"type": "stats", "data": SAMPLER.sample(with_apps=apps)})
@@ -288,13 +294,54 @@ class App:
 
     def check_health(self) -> None:
         reading = SAMPLER.sample(with_apps=True)
-        for _kind, text in self.watchdog.check(reading, time.monotonic(), self.address):
+        for kind, text in self.watchdog.check(reading, time.monotonic(), self.address):
+            hogs = actions.memory_hogs(self.front_seen, time.monotonic()) if kind == "memory" else []
+            if hogs:  # say which apps you aren't using hold the memory, and offer to close them
+                text = jarvis.memory_offer(self.address, reading["memory"]["used_percent"], hogs)
             log.info("watchdog: %s", text)
             if self.hud_on():
                 self.hud.alert(text)
-            if not self.day.get("quiet") and self.day.get("announce", True):
-                self.show("Jarvis", reply=text, hide_after=12)
+            speaking = not self.day.get("quiet") and self.day.get("announce", True)
+            if speaking:
+                self.show("Jarvis", reply=text, hide_after=20 if hogs else 12)
                 self.speak(text)
+            if hogs:
+                self.offer_to_close(hogs, listen=speaking and self.settings.speak_announcements and not self.paused)
+
+    def offer_to_close(self, hogs: list[dict], *, listen: bool) -> None:
+        """A HUD button (and, when Jarvis just said it, a spoken "yes") that closes those apps. Each
+        is asked to close as if you clicked its X, so one with unsaved work can still ask."""
+        done = threading.Event()
+
+        def close() -> None:
+            if done.is_set():
+                return
+            done.set()
+            if self.hud_on():
+                self.hud.offer(None)
+            closed = []
+            for app in hogs:
+                try:
+                    if actions.close_app(app["app"]).get("windows_closed"):
+                        closed.append(jarvis.app_name(app["app"]))
+                except actions.ActionError as exc:
+                    log.info("couldn't close %s: %s", app["app"], exc)
+            memory = SAMPLER.sample(with_apps=False)["memory"]["used_percent"]
+            text = (f"Closed {jarvis.names(closed)}, {self.address}. Memory is at {round(memory)}% now." if closed
+                    else f"They didn't close, {self.address}; one may be asking to save something.")
+            log.info("freed memory: %s", text)
+            if self.hud_on():
+                self.hud.log(f"close app · {', '.join(closed) or 'none'}")
+            self.show("Jarvis", reply=text, hide_after=8)
+            self.speak(text)
+
+        label = "Close " + jarvis.names([jarvis.app_name(a["app"]) for a in hogs])
+        if self.hud_on():
+            offer_id = f"offer-{time.monotonic_ns()}"
+            self.offers[offer_id] = close
+            self.hud.offer(label, offer_id)
+        if listen:
+            self.expect_reply(lambda said: close() if AFFIRMATIVE.search(said) else None)
 
     def refresh_day(self) -> None:
         """Every 5 minutes: your day and how to address you, from Custodian; every 30, the weather."""

@@ -1,0 +1,7 @@
+# Speech to text in the server itself (WHISPER_URL=local), instead of a Whisper container.
+#   pip install -r requirements-voice.txt
+# The two nvidia packages let it use an NVIDIA graphics card on Windows and Linux; without a
+# card it runs on the processor (the small model), and they're simply not used.
+faster-whisper>=1.2,<2
+nvidia-cublas-cu12>=12.4,<13; platform_machine != "arm64" and sys_platform != "darwin"
+nvidia-cudnn-cu12>=9,<10; platform_machine != "arm64" and sys_platform != "darwin"

@@ -20,7 +20,7 @@ import re
 
 import httpx
 
-from . import desktop
+from . import desktop, warmup
 from .config import get_settings
 
 SCREEN_ACTIONS = ("look", "click_on")
@@ -79,6 +79,7 @@ def ask(image_b64: str, prompt: str, max_tokens: int = 400) -> str:
         raise VisionError(f"The vision model didn't answer ({type(exc).__name__}); is it running?") from None
     if resp.status_code >= 400:
         raise VisionError(f"The vision model returned {resp.status_code}.")
+    warmup.release_soon(base, model)
     return (resp.json()["choices"][0]["message"].get("content") or "").strip()
 
 

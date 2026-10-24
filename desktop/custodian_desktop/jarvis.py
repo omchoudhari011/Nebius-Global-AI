@@ -69,6 +69,32 @@ def greeting(address: str, now: dt.datetime | None = None, *, warnings: list[str
     return f"{opening} {state}{upcoming}"
 
 
+APP_NAMES = {"chrome": "Chrome", "msedge": "Edge", "firefox": "Firefox", "brave": "Brave", "code": "VS Code",
+             "winword": "Word", "excel": "Excel", "powerpnt": "PowerPoint", "whatsapp.root": "WhatsApp",
+             "whatsapp": "WhatsApp", "ms-teams": "Teams", "spotify": "Spotify", "discord": "Discord", "steam": "Steam",
+             "steamwebhelper": "Steam", "docker desktop": "Docker Desktop", "notepad": "Notepad", "acrobat": "Acrobat", "obs64": "OBS", "vlc": "VLC"}
+
+
+def app_name(process: str) -> str:
+    """'whatsapp.root' -> 'WhatsApp': what you'd call an app, from its process name."""
+    stem = process.lower().removesuffix(".exe")
+    return APP_NAMES.get(stem, stem[:1].upper() + stem[1:])
+
+
+def names(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def memory_offer(address: str, percent: float, apps: list[dict]) -> str:
+    """'Memory is nearly full, sir: 95% in use. Steam and Discord are holding 1.8 GB and haven't
+    been used for a while. Shall I close them?'"""
+    held = sum(a["memory_mb"] for a in apps) / 1000
+    one = len(apps) == 1
+    return (f"Memory is nearly full, {address}: {round(percent)}% in use. {names([app_name(a['app']) for a in apps])} "
+            f"{'is' if one else 'are'} holding {held:.1f} GB and {'hasn' if one else 'haven'}'t been used for a while. "
+            f"Shall I close {'it' if one else 'them'}?")
+
+
 def failure(address: str) -> str:
     return f"I'm afraid something went wrong, {address}."
 

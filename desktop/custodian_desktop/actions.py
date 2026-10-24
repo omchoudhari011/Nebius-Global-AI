@@ -985,6 +985,39 @@ def app_process(name: str) -> str | None:
     return None
 
 
+def foreground_process() -> str:
+    """The process name of the app in front ("chrome.exe"), or "" when it can't be told."""
+    import psutil
+
+    pid = ctypes.c_ulong()
+    ctypes.windll.user32.GetWindowThreadProcessId(ctypes.windll.user32.GetForegroundWindow(), ctypes.byref(pid))
+    try:
+        return psutil.Process(pid.value).name().lower()
+    except (psutil.Error, ValueError):
+        return ""
+
+
+def memory_hogs(front_seen: dict[str, float], now: float, *, idle_minutes: float = 10, min_mb: int = 300,
+                limit: int = 2, windows: list | None = None, processes: list | None = None) -> list[dict]:
+    """The apps worth closing when memory runs out: the ones with a window that hold the most
+    memory (all their processes together - Chrome is dozens) and haven't been in front for
+    `idle_minutes` (`front_seen`: process name -> when it last was). Never Windows' own processes,
+    this app, or the app in front."""
+    import psutil
+
+    windows = _windows() if windows is None else windows
+    with_window = {p.lower() for _t, p, _pid, _h in windows} - SYSTEM_PROCESSES - {"?"}
+    candidates = {p for p in with_window if now - front_seen.get(p, -1e9) >= idle_minutes * 60}
+    held: dict[str, int] = {}
+    for proc in psutil.process_iter(["name", "memory_info"]) if processes is None else processes:
+        name = (proc.info.get("name") or "").lower()
+        if name in candidates and proc.info.get("memory_info"):
+            held[name] = held.get(name, 0) + proc.info["memory_info"].rss
+    hogs = [{"process": n, "app": n.removesuffix(".exe"), "memory_mb": round(b / 1e6)} for n, b in held.items()
+            if b / 1e6 >= min_mb]
+    return sorted(hogs, key=lambda a: -a["memory_mb"])[:limit]
+
+
 def close_app(name: str, **_: object) -> dict:
     import psutil
 

@@ -24,6 +24,7 @@ import os
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
@@ -128,8 +129,9 @@ async def transcribe(request: Request, language: str = "", user_id: int = Depend
     audio = await request.body()
     spoken = language or settings_store.get(user_id)["voice_language"]
     try:
-        return {"text": voice.transcribe(audio, request.headers.get("Content-Type", ""),
-                                         spoken if spoken in voice.LANGUAGES else None)}
+        # Off the event loop: a transcription takes a moment, and the server goes on answering meanwhile.
+        return {"text": await run_in_threadpool(voice.transcribe, audio, request.headers.get("Content-Type", ""),
+                                                spoken if spoken in voice.LANGUAGES else None)}
     except voice.VoiceError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
 

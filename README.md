@@ -177,13 +177,29 @@ that message (and follow-ups in the same chat) - attaching it is the permission,
 is needed. Files you add in Tools & Data stay available: ask about them later in everyday words ("what does my lease say about pets?"). The server
 extracts the text, judging the file by its content rather than its name: a PDF's text layer,
 or, for photos, a description and transcription by a vision model (`VISION_MODEL`, for
-example `llava` in Ollama on the same machine). The model reaches it only through **Files ·
-read**. Small vision models can misread numbers in a photo; use a stronger one for receipts.
+example `qwen3-vl:4b` in Ollama on the same machine). The model reaches it only through **Files ·
+read**. Small vision models can misread numbers in a photo: on a test receipt `llava` made up the
+café, the prices and the total, while `qwen3-vl:4b` read every figure right. A vision model on
+this machine is let go two minutes after each use (`VISION_KEEP_ALIVE`), since it's big (4 GB
+and more) and needed only now and then.
 
-**Voice**: the microphone records a message, the server transcribes it with a
-speech-to-text server, and the text lands in the message box for you to check before
-sending. Replies have a speaker button that reads them aloud with the device's own voice.
-For a Whisper server on this machine (nothing leaves it):
+**Voice**: the microphone records a message, the server transcribes it with Whisper, and the
+text lands in the message box for you to check before sending. Replies have a speaker button
+that reads them aloud with the device's own voice. Whisper can run inside the server itself, on
+the graphics card when there is one - no Docker, and nothing leaves the machine:
+
+```bash
+pip install -r backend/requirements-voice.txt   # faster-whisper, and NVIDIA's CUDA libraries
+# backend/.env:
+WHISPER_URL=local
+```
+
+With an NVIDIA card it uses `large-v3-turbo`, which hears Hindi, Marathi and Hinglish far better
+than the small model and takes about 0.4 s a request on a laptop RTX 5050; without one, `small`
+on the processor. The model loads when the desktop app hears "Hey Jarvis", so it loads while you
+talk, and is let go after `WHISPER_IDLE_MINUTES` (default 10) without a recording. Pick another
+with `WHISPER_LOCAL_MODEL`, or force the processor with `WHISPER_DEVICE=cpu`. Or use a Whisper
+server instead:
 
 ```bash
 docker run -d --name whisper -p 9000:9000 hwdsl2/whisper-server   # prints an API key on first start
@@ -277,7 +293,7 @@ it. Speech goes to your Whisper server (see Voice above), and replies are spoken
 [Piper](https://github.com/rhasspy/piper) voice on the PC, or Windows' own voice.
 
 ```powershell
-.\run-jarvis.ps1                    # everything at once: Docker's Whisper and SearXNG, Ollama, the server, Jarvis
+.\run-jarvis.ps1                    # everything at once: SearXNG (starting Docker Desktop), Ollama, the server, Jarvis
 .\run-jarvis.ps1 -Stop              # stop the server and Jarvis
 desktop\run-desktop.ps1             # just the desktop app (first run: makes desktop\.venv, downloads the voice, asks you to sign in)
 desktop\run-desktop.ps1 -Install    # start it when you sign in to Windows (-Uninstall to undo)
@@ -288,6 +304,9 @@ voice, live captions, the PC's vitals, your day and the weather; **Ctrl+Alt+J** 
 screen), a British voice that answers briefly and calls you "sir" (or what you set in the
 Jarvis tab), follow-ups without the wake word until you say "that's all", instant "system
 status" reports, and warnings on its own about a low battery, an overloaded PC or a full drive.
+When memory runs out it names the apps you haven't used for ten minutes that hold the most
+("Chrome and Steam are holding 2.2 GB...") and offers to close them: say "yes" or press the HUD's
+button. Each is closed as if you clicked its X, so one with unsaved work still asks.
 Typed chats keep Custodian's own voice.
 
 Settings are in `%APPDATA%\Custodian\desktop.json` (server, wake word on or off and its
@@ -508,8 +527,10 @@ Set in `backend/.env` (see `backend/.env.example` for every option).
 | `CUSTODIAN_PLAN` | `pro` in development | Development only: preview `free`, `pro` or `cloud` without a license |
 | `CUSTODIAN_PURCHASE_URL` | (unset) | Where **Get a license** goes (your store); unset hides it |
 | `NTFY_URL` / `NTFY_SHOW_TEXT` | (unset) / `false` | Push reminders to your phone through ntfy; include their text or not |
-| `WHISPER_URL` / `WHISPER_API_KEY` | (unset) | OpenAI-compatible speech-to-text server for voice messages |
-| `VISION_MODEL` / `VISION_BASE_URL` / `VISION_API_KEY` | (unset) / `NEBIUS_BASE_URL` | Vision model that reads uploaded photos, e.g. `llava` |
+| `WHISPER_URL` / `WHISPER_API_KEY` | (unset) | `local` (Whisper in the server) or an OpenAI-compatible speech-to-text server for voice messages |
+| `WHISPER_LOCAL_MODEL` / `WHISPER_DEVICE` / `WHISPER_IDLE_MINUTES` | `large-v3-turbo` on a GPU, else `small` / `auto` / `10` | The local Whisper model, where it runs, and when it's let go |
+| `VISION_MODEL` / `VISION_BASE_URL` / `VISION_API_KEY` | (unset) / `NEBIUS_BASE_URL` | Vision model that reads uploaded photos, e.g. `qwen3-vl:4b` |
+| `VISION_KEEP_ALIVE` | `2m` | How long a vision model on this machine stays loaded after a use |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` | (unset) | Your Google OAuth client, for Calendar, Gmail and Drive |
 | `LARGE_MODEL_ID` / `LARGE_MODEL_BASE_URL` / `LARGE_MODEL_API_KEY` | (unset) / Token Factory / `NEBIUS_API_KEY` | The larger model for **Think harder**, questions about the world, and escalation |
 | `SCREEN_VISION_MODEL` | `VISION_MODEL` | The vision model that reads the screen for `pc_look` and `pc_click_on`, e.g. `qwen2.5vl:7b` |

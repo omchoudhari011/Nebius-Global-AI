@@ -71,6 +71,24 @@ def warm(keep: str | None = None) -> None:
             log.debug("couldn't warm %s: %s", model, exc)
 
 
+def release_soon(base_url: str, model: str) -> None:
+    """After a photo or the screen was read: a vision model is big (4 GB and more) and used now and
+    then, so on this machine let Ollama free it after VISION_KEEP_ALIVE (default 2m) instead of its
+    usual five minutes - long enough for a look, a click and a look to check."""
+    root = _ollama_root(base_url)
+    if not root:
+        return
+    keep = os.getenv("VISION_KEEP_ALIVE", "").strip() or "2m"
+
+    def send() -> None:
+        try:
+            httpx.post(f"{root}/api/generate", json={"model": model, "keep_alive": keep}, timeout=30)
+        except httpx.HTTPError as exc:
+            log.debug("couldn't shorten %s's stay: %s", model, exc)
+
+    threading.Thread(target=send, daemon=True, name="vision-release").start()
+
+
 def used() -> None:
     """A message is being answered: keep the models warm for the next while."""
     global _last_used
@@ -98,6 +116,11 @@ def start() -> None:
 
 
 def warm_soon() -> None:
-    """warm(), without making the caller wait for the load."""
+    """warm(), without making the caller wait for the load - and the speech model, when it runs
+    in this process, since a recording is on its way."""
     used()
     threading.Thread(target=warm, args=("6m",), daemon=True).start()
+    from . import voice
+
+    if voice.local():
+        threading.Thread(target=voice.LOCAL.preload, daemon=True, name="whisper-preload").start()

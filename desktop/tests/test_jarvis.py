@@ -175,6 +175,95 @@ def test_a_nearly_full_drive_is_mentioned():
     assert said == [("disk C:\\", "Drive C: is almost full, sir: 9 GB left.")]
 
 
+# Freeing memory ---------------------------------------------------------------------------------
+
+class _Proc:
+    def __init__(self, name, mb):
+        self.info = {"name": name, "memory_info": type("M", (), {"rss": mb * 1_000_000})}
+
+
+WINDOWS = [("Inbox - Chrome", "chrome.exe", 1, 11), ("Steam", "steam.exe", 2, 12), ("Notes", "notepad.exe", 3, 13),
+           ("Explorer", "explorer.exe", 4, 14), ("main.py - VS Code", "Code.exe", 5, 15)]
+PROCESSES = [_Proc("chrome.exe", 900), _Proc("chrome.exe", 700), _Proc("steam.exe", 600), _Proc("notepad.exe", 20),
+             _Proc("explorer.exe", 400), _Proc("Code.exe", 1200), _Proc("svchost.exe", 2000)]
+
+
+def test_the_apps_offered_for_closing_are_big_unused_and_never_windows_own():
+    from custodian_desktop import actions
+
+    now = 10_000.0
+    seen = {"code.exe": now - 5, "chrome.exe": now - 3600}  # VS Code is in use; Chrome was an hour ago
+    hogs = actions.memory_hogs(seen, now, windows=WINDOWS, processes=PROCESSES)
+    assert hogs == [{"process": "chrome.exe", "app": "chrome", "memory_mb": 1600},  # all its processes together
+                    {"process": "steam.exe", "app": "steam", "memory_mb": 600}]
+    # Notepad is too small to matter; Explorer and svchost are Windows' own.
+    in_use = {"chrome.exe": now, "steam.exe": now, "code.exe": now}
+    assert actions.memory_hogs(in_use, now, windows=WINDOWS, processes=PROCESSES) == []
+
+
+def test_the_memory_warning_names_the_apps_and_offers_to_close_them():
+    hogs = [{"app": "chrome", "memory_mb": 1600}, {"app": "steamwebhelper", "memory_mb": 600}]
+    assert jarvis.memory_offer("sir", 94.6, hogs) == ("Memory is nearly full, sir: 95% in use. Chrome and Steam are "
+                                                      "holding 2.2 GB and haven't been used for a while. Shall I close them?")
+    assert jarvis.memory_offer("boss", 93, hogs[:1]).endswith("Chrome is holding 1.6 GB and hasn't been used for a while. "
+                                                              "Shall I close it?")
+    assert jarvis.app_name("WhatsApp.Root.exe") == "WhatsApp" and jarvis.app_name("figma") == "Figma"
+
+
+class _Hud:
+    visible, mode = True, "compact"
+
+    def __init__(self):
+        self.alerts, self.offers, self.logs = [], [], []
+
+    def running(self):
+        return True
+
+    def alert(self, text):
+        self.alerts.append(text)
+
+    def offer(self, label, offer_id=None):
+        self.offers.append((label, offer_id))
+
+    def log(self, text, warn=False):
+        self.logs.append(text)
+
+    def heard(self, text): pass
+    def reply(self, text): pass
+    def show(self, mode): pass
+    def hide_later(self, seconds): pass
+    def state(self, state): pass
+
+
+def test_saying_yes_to_the_memory_offer_closes_the_apps(monkeypatch):
+    from custodian_desktop import __main__ as main
+    from custodian_desktop import actions
+
+    app = _app("")
+    app.hud, app.offers, app.front_seen, app.watchdog = _Hud(), {}, {}, Watchdog()
+    app.day, app.address = {"quiet": False, "announce": True}, "sir"
+    app.settings.speak_announcements, app.paused = True, False
+    spoken, closed, expected = [], [], []
+    app.speak = spoken.append
+    app.expect_reply = lambda callback, seconds=8: expected.append(callback)
+    full = {"memory": {"used_percent": 95.0}, "cpu_percent": 10}
+    monkeypatch.setattr(main.SAMPLER, "sample", lambda **_: full)
+    monkeypatch.setattr(actions, "memory_hogs", lambda seen, now: [{"app": "chrome", "memory_mb": 1600}])
+    monkeypatch.setattr(actions, "close_app", lambda name: closed.append(name) or {"windows_closed": 1})
+    app.watchdog.high_since["memory"] = main.time.monotonic() - SUSTAINED - 1  # high for two minutes already
+    app.check_health()
+    assert spoken[-1].endswith("Chrome is holding 1.6 GB and hasn't been used for a while. Shall I close it?")
+    assert app.hud.offers[-1][0] == "Close Chrome" and len(expected) == 1
+
+    expected[0]("No.")
+    assert closed == []
+    full["memory"]["used_percent"] = 78.0
+    expected[0]("Yes, close it.")
+    assert closed == ["chrome"] and spoken[-1] == "Closed Chrome, sir. Memory is at 78% now."
+    app.offers.popitem()[1]()  # pressing the HUD button too does nothing more
+    assert closed == ["chrome"]
+
+
 # Vitals and weather -----------------------------------------------------------------------------
 
 def test_a_reading_has_everything_the_hud_and_the_status_report_use():

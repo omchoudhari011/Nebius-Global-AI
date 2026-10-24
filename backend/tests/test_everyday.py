@@ -233,6 +233,89 @@ def test_voice_is_transcribed_by_the_local_server(client, monkeypatch):
     assert seen["url"] == "http://127.0.0.1:9000/v1/audio/transcriptions" and seen["type"].startswith("multipart/form-data")
 
 
+class FakeWhisper:
+    """faster_whisper.WhisperModel's surface: transcribe() gives (segments, info)."""
+    made: list = []
+
+    def __init__(self, name, device, compute_type, download_root):
+        self.args = (name, device, compute_type)
+        self.calls = []
+        FakeWhisper.made.append(self)
+
+    def transcribe(self, audio, language=None, beam_size=5, vad_filter=False):
+        self.calls.append((audio.read(), language, vad_filter))
+        segment = type("Segment", (), {"text": " Open Spotify,"})
+        return iter([segment, type("Segment", (), {"text": " please. "})]), None
+
+
+@pytest.fixture
+def local_whisper(monkeypatch):
+    import sys
+    import types
+
+    FakeWhisper.made = []
+    monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=FakeWhisper))
+    monkeypatch.setitem(sys.modules, "ctranslate2", types.SimpleNamespace(get_cuda_device_count=lambda: 1))
+    monkeypatch.setenv("WHISPER_URL", "local")
+    monkeypatch.setenv("WHISPER_DEVICE", "auto")
+    monkeypatch.delenv("WHISPER_LOCAL_MODEL", raising=False)
+    engine = voice.LocalWhisper()
+    monkeypatch.setattr(voice, "LOCAL", engine)
+    yield engine
+    if engine._timer is not None:
+        engine._timer.cancel()
+
+
+def test_voice_can_be_heard_in_the_server_itself_on_the_graphics_card(client, local_whisper):
+    resp = client.post("/voice/transcribe?language=hi", content=b"OggS fake audio", headers={"Content-Type": "audio/ogg"})
+    assert resp.json() == {"text": "Open Spotify, please."}
+    (model,) = FakeWhisper.made
+    assert model.args == ("large-v3-turbo", "cuda", "int8_float16")  # the large model hears Hindi best
+    assert model.calls == [(b"OggS fake audio", "hi", True)]  # silence skipped: no imagined "Thank you."
+    client.post("/voice/transcribe", content=b"more", headers={"Content-Type": "audio/ogg"})
+    assert len(FakeWhisper.made) == 1  # loaded once
+    assert client.get("/features").json()["voice"] is True
+
+
+def test_the_local_speech_model_is_let_go_when_idle_and_loaded_again(client, local_whisper, monkeypatch):
+    monkeypatch.setenv("WHISPER_IDLE_MINUTES", "10")
+    client.post("/voice/transcribe", content=b"one", headers={"Content-Type": "audio/ogg"})
+    assert local_whisper.loaded() and local_whisper._timer is not None and local_whisper._timer.interval == 600
+    local_whisper.unload()  # what the timer does after 10 quiet minutes
+    assert not local_whisper.loaded()
+    client.post("/voice/transcribe", content=b"two", headers={"Content-Type": "audio/ogg"})
+    assert local_whisper.loaded() and len(FakeWhisper.made) == 2
+
+
+def test_without_a_graphics_card_the_small_model_runs_on_the_processor(local_whisper, monkeypatch):
+    import sys
+    import types
+
+    monkeypatch.setitem(sys.modules, "ctranslate2", types.SimpleNamespace(get_cuda_device_count=lambda: 0))
+    assert voice.transcribe(b"audio", "audio/wav") == "Open Spotify, please."
+    assert FakeWhisper.made[-1].args == ("small", "cpu", "int8")
+
+
+def test_hey_jarvis_loads_the_speech_model_while_you_talk(client, local_whisper, monkeypatch):
+    from app import warmup
+
+    started = threading.Event()
+    monkeypatch.setattr(warmup, "warm", lambda keep=None: None)
+    monkeypatch.setattr(local_whisper, "preload", started.set)
+    assert client.post("/warm").status_code == 204
+    assert started.wait(2)
+
+
+def test_local_speech_says_what_to_install_when_faster_whisper_is_missing(client, monkeypatch):
+    import sys
+
+    monkeypatch.setenv("WHISPER_URL", "local")
+    monkeypatch.setitem(sys.modules, "faster_whisper", None)  # import fails
+    monkeypatch.setattr(voice, "LOCAL", voice.LocalWhisper())
+    resp = client.post("/voice/transcribe", content=b"audio", headers={"Content-Type": "audio/ogg"})
+    assert resp.status_code == 400 and "requirements-voice.txt" in resp.json()["detail"]
+
+
 # Feedback ------------------------------------------------------------------------------------
 
 def test_a_rated_reply_becomes_a_training_example_only_when_shared(user_id, client):

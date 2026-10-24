@@ -3,9 +3,10 @@
 #   .\run-jarvis.ps1            start what isn't running yet, then Jarvis greets you
 #   .\run-jarvis.ps1 -Stop      stop the server and the Jarvis desktop app
 #
-# In order: Docker's speech-to-text and search containers (when Docker Desktop is running),
-# Ollama (your local model), the Custodian server in the background (its log is in
-# backend\data\server.log), and the Jarvis desktop app in the tray. Anything already running is
+# In order: Docker's web-search container (and its speech-to-text one, unless the server hears
+# speech itself; Docker Desktop is started when it's off), Ollama (your local models), the
+# Custodian server in the background (its log is in backend\data\server.log), and the Jarvis
+# desktop app in the tray. Anything already running is
 # left as it is. It doesn't start with Windows; run it when you want Jarvis.
 
 param(
@@ -40,22 +41,41 @@ if ($Stop) {
     return
 }
 
-# 1. Docker: speech to text (whisper) and web search (searxng). Docker reports problems on stderr,
-#    which Windows PowerShell would treat as fatal here: they're expected, so they aren't.
+# 1. Docker: web search (searxng), and speech to text (whisper) unless the server hears speech
+#    itself (WHISPER_URL=local in backend\.env). Docker Desktop is started when it's off; its
+#    containers start in the background once it's up (a minute or so), so Jarvis doesn't wait.
+#    Docker reports problems on stderr, which Windows PowerShell would treat as fatal here:
+#    they're expected, so they aren't.
 $ErrorActionPreference = "Continue"
+$envFile = Join-Path $backend ".env"
+$localSpeech = (Test-Path $envFile) -and (Select-String -Path $envFile -Pattern "^\s*WHISPER_URL\s*=\s*local\s*$" -Quiet)
+$containers = @("searxng") + $(if ($localSpeech) { @() } else { @("whisper") })
 $docker = Get-Command docker -ErrorAction SilentlyContinue
 if ($docker) {
     docker info --format "{{.ServerVersion}}" 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) {
-        foreach ($name in "whisper", "searxng") {
+        foreach ($name in $containers) {
             $state = docker inspect -f "{{.State.Running}}" $name 2>$null
             if ($LASTEXITCODE -ne 0) { Say "  (no '$name' container; see README to set it up)" Yellow; continue }
             if ($state -ne "true") { Say "Starting $name..."; docker start $name | Out-Null }
         }
     } else {
-        Say "Docker Desktop isn't running: voice input and web search will be off until it is." Yellow
+        $desktopExe = Join-Path $env:ProgramFiles "Docker\Docker\Docker Desktop.exe"
+        if (Test-Path $desktopExe) {
+            Say "Starting Docker Desktop; web search comes on in a minute or so."
+            if (-not (Get-Process "Docker Desktop" -ErrorAction SilentlyContinue)) {
+                Start-Process $desktopExe -WindowStyle Minimized
+            }
+            $names = ($containers | ForEach-Object { "'$_'" }) -join ","
+            $wait = "for (`$i = 0; `$i -lt 90; `$i++) { docker info 2>`$null | Out-Null; if (`$LASTEXITCODE -eq 0) { break }; Start-Sleep 2 }; " +
+                    "foreach (`$n in @($names)) { docker start `$n 2>`$null | Out-Null }"
+            Start-Process powershell -ArgumentList "-NoProfile", "-WindowStyle", "Hidden", "-Command", $wait -WindowStyle Hidden
+        } else {
+            Say "Docker Desktop isn't installed: web search$(if (-not $localSpeech) { ' and voice input' }) will be off." Yellow
+        }
     }
 }
+if ($localSpeech) { Say "Speech to text runs in the Custodian server (no Docker needed for voice)." Green }
 
 # 2. Ollama, for the local model.
 if (Get-Command ollama -ErrorAction SilentlyContinue) {

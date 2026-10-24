@@ -24,7 +24,7 @@ from html import unescape
 
 import httpx
 
-from . import sensitive
+from . import sensitive, warmup
 from .config import get_settings
 from .tools import documents_tool
 
@@ -89,6 +89,7 @@ def _image_text(data: bytes, content_type: str) -> str:
         raise DocumentError(f"The vision model didn't answer ({type(exc).__name__}).") from None
     if resp.status_code >= 400:
         raise DocumentError(f"The vision model returned {resp.status_code}.")
+    warmup.release_soon(base, model)
     text = _without_loops((resp.json()["choices"][0]["message"].get("content") or "").strip())
     if not text:
         raise DocumentError("The vision model couldn't describe that photo.")
