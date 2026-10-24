@@ -11,6 +11,7 @@ from pathlib import Path
 import keyring
 
 APP_DIR = Path(os.environ.get("APPDATA", Path.home())) / "Custodian"
+ROOT_DIR = Path(__file__).resolve().parents[2]  # the Custodian folder: run-jarvis.ps1, update.ps1
 SETTINGS_FILE = APP_DIR / "desktop.json"
 KEYRING_SERVICE = "Custodian desktop"
 

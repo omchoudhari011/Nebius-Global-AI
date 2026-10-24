@@ -8,10 +8,11 @@
 #                                      -BrowserAccess:$false takes it out again)
 #   .\run-desktop.ps1 -Hindi     also download the Hindi voice (replies in Hindi and Marathi)
 #   .\run-desktop.ps1 -VoiceId   also download the voice ID model (tray: "Only my voice")
+#   .\run-desktop.ps1 -SetupOnly set up (or update the packages) without starting it; install.ps1 uses this
 #
 # Needs Python 3.11+ and a running Custodian server (..\run-local.ps1).
 
-param([switch]$Install, [switch]$Uninstall, [switch]$BrowserAccess, [switch]$Hindi, [switch]$VoiceId)
+param([switch]$Install, [switch]$Uninstall, [switch]$BrowserAccess, [switch]$Hindi, [switch]$VoiceId, [switch]$SetupOnly)
 
 $ErrorActionPreference = "Stop"
 $here = $PSScriptRoot
@@ -104,6 +105,8 @@ if ($Install) {
     $link.Save()
     Write-Host "Custodian will start when you sign in to Windows." -ForegroundColor Green
 }
+
+if ($SetupOnly) { return }
 
 Start-Process -FilePath $pythonw -ArgumentList "-m", "custodian_desktop" -WorkingDirectory $here
 Write-Host "Custodian is starting in the tray. Say the wake word ('Hey Jarvis' unless you set your own) or press Ctrl+Alt+Space." -ForegroundColor Green

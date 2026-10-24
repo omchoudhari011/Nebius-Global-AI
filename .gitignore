@@ -31,3 +31,6 @@ Thumbs.db
 .pytest_cache/
 store.db
 cloud/
+
+# The installer, built by installer/build.ps1
+installer/dist/

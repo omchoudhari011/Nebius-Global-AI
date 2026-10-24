@@ -10,6 +10,7 @@ the proactive and learning features.
     GET  /learning · GET /learning/data · POST /learning/result   learning from your corrections overnight
     GET  /hud                               what the Jarvis HUD on the PC shows: your day, reminders, activity
     POST /briefing · POST /evening          the morning briefing; your day wrapped up (done, to do, tomorrow)
+    GET  /version?refresh=&wait=            this version, and whether an update is waiting on GitHub
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
-from .. import activity, approvals, desktop, hud, learning, memory, memory_graph, orchestrator, pc_index, proactive, routines, settings_store, watchers
+from .. import activity, approvals, desktop, hud, learning, memory, memory_graph, orchestrator, pc_index, proactive, routines, settings_store, version, watchers
 from ..auth import require_session
 from ..orchestrator import ConversationNotFound
 from .chat import origin_of
@@ -193,6 +194,17 @@ def evening_summary(user_id: int = Depends(require_session)) -> dict:
     """Your day wrapped up now (the desktop app's "Wrap up my day"): done, still to do, tomorrow.
     It's in the inbox, and said on the PC unless it's your quiet hours."""
     return proactive.evening_summary(user_id, force=True)
+
+
+@router.get("/version")
+def get_version(refresh: bool = False, wait: bool = False, user_id: int = Depends(require_session)) -> dict:
+    """This version (its commit), and whether newer commits are waiting upstream. `refresh` checks
+    now; `wait` waits (up to a minute) for that check to finish."""
+    out = version.status(refresh=refresh)
+    if wait:  # the check may have finished already, or still be running: either way, read it after
+        version.wait_for_check()
+        out = version.status()
+    return out
 
 
 @router.get("/watches")

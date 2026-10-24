@@ -484,6 +484,36 @@ class App:
             self.show("Your day", reply=result["text"], hide_after=45)
             self.talk(result["text"])
 
+    def check_updates(self) -> None:
+        """The tray's "Check for updates": ask the server (which asks GitHub), and offer to update."""
+        try:
+            found = self.client.version(refresh=True)
+        except Exception as exc:  # noqa: BLE001
+            self.show("Couldn't check for updates", reply=str(exc)[:200], hide_after=6)
+            return
+        if found.get("error"):
+            self.show("Couldn't check for updates", reply=found["error"], hide_after=8)
+        elif not found.get("update_available"):
+            self.show("Custodian is up to date", reply=f"Version {found.get('commit') or '?'}.", hide_after=6)
+        else:
+            news = "; ".join(found.get("new", [])[:3])
+            text = f"{found['behind']} update{'s' if found['behind'] != 1 else ''} waiting: {news}"
+            if self.hud_on():
+                offer_id = f"offer-{time.monotonic_ns()}"
+                self.offers[offer_id] = self.update_now
+                self.show("Update available", reply=text, hide_after=30)
+                self.hud.offer("Update now", offer_id)
+            else:
+                self.window.announce("Update available", text, "Update now", self.update_now)
+
+    def update_now(self) -> None:
+        """update.ps1 in a window of its own: it stops Jarvis, updates, and starts it again."""
+        import subprocess
+
+        script = config.ROOT_DIR / "update.ps1"
+        subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
+                         cwd=str(config.ROOT_DIR), creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
+
     def watch_presence(self) -> None:
         """Brief you when you arrive in the morning: the first touch of the keyboard or mouse after
         AWAY_SECONDS away, or the first minutes after the PC starts. The server says it once a day."""
@@ -722,6 +752,7 @@ class App:
             pystray.MenuItem("Only my voice (voice ID)", toggle_voice_id, checked=lambda _i: self.settings.voice_id),
             pystray.MenuItem("Set up voice ID again", lambda *_: self.start_enrolling()),
             pystray.MenuItem("Open Custodian", lambda *_: webbrowser.open(self.settings.server)),
+            pystray.MenuItem("Check for updates", lambda *_: threading.Thread(target=self.check_updates, daemon=True).start()),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Sign out", sign_out),
             pystray.MenuItem("Quit", lambda *_: self.quit()),

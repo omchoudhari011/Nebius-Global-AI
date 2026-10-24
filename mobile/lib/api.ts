@@ -15,6 +15,7 @@ import type {
   Activity,
   HudSnapshot,
   BackupStatus,
+  VersionInfo,
   PushInfo,
   Approval,
   LearningStatus,
@@ -201,6 +202,8 @@ export const getTaskRuns = (id: number) => request<TaskRun[]>(`/tasks/${id}/runs
 export const getPrivacy = () => request<PrivacySummary>("/privacy");
 export const updatePrivacy = (changes: { retention_days?: number | null; redact_secrets?: RedactMode }) =>
   request<PrivacySummary>("/privacy/settings", { method: "PATCH", body: changes });
+export const getVersion = (refresh = false) =>
+  request<VersionInfo>(`/version${refresh ? "?refresh=true&wait=true" : ""}`, { timeoutMs: 90_000 });
 export const getBackups = () => request<BackupStatus>("/privacy/backups");
 export const backUpNow = () => request<BackupStatus>("/privacy/backups", { method: "POST", timeoutMs: 120_000 });
 export const exportData = () => request<Record<string, unknown>>("/privacy/export", { timeoutMs: 120_000 });

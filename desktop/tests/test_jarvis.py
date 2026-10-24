@@ -322,3 +322,20 @@ def test_hud_messages_are_one_json_line_each_and_a_missing_window_never_breaks_t
     hud.reply("Opened Chrome, sir.")
     assert [json.loads(line) for line in Proc.stdin.lines] == [{"type": "level", "value": 1.0},
                                                               {"type": "reply", "text": "Opened Chrome, sir."}]
+
+
+def test_check_for_updates_offers_update_now_only_when_one_is_waiting(monkeypatch):
+    app = _app("")
+    app.hud, app.offers = None, {}  # no HUD: the small panel says it
+    started = []
+    monkeypatch.setattr(app, "update_now", lambda: started.append(True), raising=False)
+    app.client.version = lambda refresh=False: {"commit": "61cddc7", "update_available": False, "behind": 0}
+    app.check_updates()
+    assert app.offers == {} and app.window.shown[-1] == ("Custodian is up to date", "Version 61cddc7.")
+    app.hud = _Hud()
+    app.client.version = lambda refresh=False: {"commit": "61cddc7", "update_available": True, "behind": 2,
+                                                "new": ["Faster replies", "A new HUD"]}
+    app.check_updates()
+    assert app.hud.offers[-1][0] == "Update now"
+    app.offers.popitem()[1]()
+    assert started == [True]

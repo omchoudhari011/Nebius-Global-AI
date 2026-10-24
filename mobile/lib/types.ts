@@ -390,6 +390,19 @@ export type Prefs = {
   home_city: string; // for the HUD's weather; empty = the city your memories say
 };
 
+/** GET /version: this Custodian's commit, and whether newer ones are waiting on GitHub. */
+export type VersionInfo = {
+  commit: string | null;
+  date?: string;
+  git: boolean;
+  checking: boolean;
+  behind?: number | null;
+  new?: string[];
+  error?: string | null;
+  checked_at?: string;
+  update_available?: boolean;
+};
+
 /** GET /privacy/backups: the encrypted backups of everything (backend/app/backup.py). */
 export type BackupStatus = {
   folder: string;

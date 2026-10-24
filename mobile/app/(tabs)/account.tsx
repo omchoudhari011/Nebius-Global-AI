@@ -11,7 +11,7 @@ import * as api from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { confirmAction, formatDateTime, formatWhen } from "../../lib/format";
 import { radius, space, themed, useTokens } from "../../lib/tokens";
-import type { BackupStatus, Billing, DataService, Limit, Plan, PrivacySummary, RedactMode, ServiceLocation, Session } from "../../lib/types";
+import type { BackupStatus, VersionInfo, Billing, DataService, Limit, Plan, PrivacySummary, RedactMode, ServiceLocation, Session } from "../../lib/types";
 
 const RETENTION = [
   { value: "keep", label: "Until I delete them" },
@@ -158,6 +158,7 @@ export default function AccountScreen() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [privacy, setPrivacy] = useState<PrivacySummary | null>(null);
   const [backups, setBackups] = useState<BackupStatus | null>(null);
+  const [version, setVersion] = useState<VersionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -167,8 +168,9 @@ export default function AccountScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [b, p, d, k] = await Promise.all([api.getBilling(), api.getPrivacy(), api.getSessions(),
-                                              api.getBackups().catch(() => null)]);
+      const [b, p, d, k, v] = await Promise.all([api.getBilling(), api.getPrivacy(), api.getSessions(),
+                                                 api.getBackups().catch(() => null), api.getVersion().catch(() => null)]);
+      setVersion(v);
       setBilling(b);
       setPrivacy(p);
       setBackups(k);
@@ -221,6 +223,11 @@ export default function AccountScreen() {
   const setRedaction = (value: RedactMode) =>
     run("redact", async () => {
       setPrivacy(await api.updatePrivacy({ redact_secrets: value }));
+    });
+
+  const checkUpdates = () =>
+    run("version", async () => {
+      setVersion(await api.getVersion(true));
     });
 
   const backUp = () =>
@@ -433,6 +440,20 @@ export default function AccountScreen() {
               Custodian {server.version} · model {server.model} · {server.timezone} · scheduler {server.scheduler ? "on" : "off"}
               {api.getApiBase() ? ` · ${api.getApiBase()}` : ""}
             </Text>
+          ) : null}
+          {version?.git ? (
+            <>
+              <View style={s.divider} />
+              <Text style={s.body}>
+                Version {version.commit}{version.date ? ` · ${formatDateTime(version.date)}` : ""}
+                {version.update_available ? ` · ${version.behind} update${version.behind === 1 ? "" : "s"} waiting` : version.behind === 0 ? " · up to date" : ""}
+              </Text>
+              {version.update_available && version.new?.length ? (
+                <Text style={s.meta}>New: {version.new.slice(0, 3).join("; ")}. On the PC: Start menu › Custodian › Update Custodian, or the tray's Check for updates.</Text>
+              ) : null}
+              {version.error ? <Text style={s.meta}>Last check: {version.error}.</Text> : null}
+              <Button label="Check for updates" variant="secondary" icon="refresh-outline" onPress={checkUpdates} loading={busy === "version"} />
+            </>
           ) : null}
           <Button label="Sign out" variant="danger" icon="log-out-outline" onPress={() => void confirmSignOut()} />
         </Card>

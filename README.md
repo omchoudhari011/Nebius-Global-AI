@@ -52,6 +52,27 @@ Nebius-Global-AI-main/
 └── docker-compose.yml
 ```
 
+## Install on Windows
+
+**Custodian Setup.exe** (build it with `.\installer\build.ps1`; 30 KB, made with the C# compiler
+that comes with Windows) asks where to put Custodian, fetches it with git (installing git with
+winget if needed) and runs `install.ps1`; inside a Custodian folder it just runs `install.ps1`.
+`install.ps1` does everything, each step only when needed, and is safe to run again:
+
+- Python 3.11+ and Node.js (offered through winget), the server's packages - with speech to text
+  on the graphics card when there's an NVIDIA one (`WHISPER_URL=local`) - and `backend\.env` with
+  fresh secrets and a sign-in passcode (shown once: write it down);
+- the web app, the Jarvis desktop app and its voice, and with Ollama a local model (`-Model`,
+  default `qwen3:8b`) and the search-by-meaning model on a new setup;
+- shortcuts: Start menu > Custodian (**Jarvis**, **Stop Jarvis**, **Update Custodian**, the web
+  app) and Jarvis on the desktop; `-Autostart` starts Jarvis when you sign in.
+
+**Updates**: *Update Custodian* (or `.\update.ps1`, or `Custodian Setup.exe --update`) stops
+Jarvis, pulls the newest code, installs what changed and starts it again; your data and
+settings stay, and it refuses while you have local changes. The server checks GitHub twice a
+day without ever asking for a sign-in (`GET /version`): Account shows "N updates waiting", and
+the tray's *Check for updates* offers *Update now*.
+
 ## Run it locally
 
 You need Python 3.11+ and Node 20+.
