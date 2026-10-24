@@ -549,6 +549,11 @@ class App:
             if self.hud_on():
                 self.hud.state("idle")
             self.show("Didn't catch that", hide_after=2)
+        elif state == "wake word unavailable":  # Windows blocked a file it needs, say: the hotkey still works
+            self.show("“Hey Jarvis” isn't working right now", reply="Windows blocked a file the wake word needs. "
+                      "Press Ctrl+Alt+Space to talk - I'll keep trying, and tell you when it's back.", hide_after=12)
+        elif state == "wake word back":
+            self.show("“Hey Jarvis” is working again", hide_after=5)
         elif state == "conversation over":  # nothing said after a reply: go quiet, back to the wake word
             self.conversing = False
             if self.hud_on():

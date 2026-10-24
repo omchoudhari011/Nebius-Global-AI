@@ -41,6 +41,7 @@ SILENCE_SECONDS = 1.0
 EARLY_SILENCE = 0.45  # a pause this long starts transcribing what's been said so far
 MIN_SECONDS = 0.6
 BARGE_IN_SCORE = 0.75  # the wake word's score needed while Custodian is speaking
+WAKE_RETRY_SECONDS = 300  # the wake word couldn't be loaded: try again this often
 STALL_SECONDS = 4.0  # no sound at all for this long: the stream broke (sleep, a device change); open it again
 DEVANAGARI = re.compile(r"[ऀ-ॿ]")
 
@@ -73,6 +74,20 @@ def _loudness(frame: np.ndarray) -> float:
     return float(np.sqrt(np.mean(frame.astype(np.float32) ** 2)))
 
 
+def _without_verifier_training() -> None:
+    """Load openWakeWord without the part that trains custom verifiers, which Custodian doesn't use:
+    its package imports it, and it imports scikit-learn, whose compiled files Windows' Smart App
+    Control can block - and then "Hey Jarvis" wouldn't load at all."""
+    import sys
+    import types
+
+    name = "openwakeword.custom_verifier_model"
+    if name not in sys.modules:
+        stub = types.ModuleType(name)
+        stub.train_custom_verifier = None
+        sys.modules[name] = stub
+
+
 class Listener:
     """Runs on its own thread. on_speech(wav bytes, early) is called after the wake word or a
     trigger() - `early` is what on_early returned for the same words, or None; on_state(text)
@@ -94,6 +109,7 @@ class Listener:
         self._stop = threading.Event()
         self._model = None
         self._second = None  # wake.SecondOpinion, for the built-in "Hey Jarvis"
+        self._wake_failed_at = -1.0  # when loading the wake word last failed (monotonic), -1: it hasn't
         self.early = None  # what on_early returned for the last recording's words, when they're all of them
         self._early_frames = 0
 
@@ -119,9 +135,14 @@ class Listener:
         self._stop.set()
 
     def _load_model(self) -> None:
+        """The wake word's model. When it can't be loaded the hotkey still works, the window says
+        so, and it's tried again every WAKE_RETRY_SECONDS (a Windows block can be passing)."""
         if not self.wake_word or self._model is not None:
             return
+        if time.monotonic() - self._wake_failed_at < WAKE_RETRY_SECONDS:
+            return
         try:
+            _without_verifier_training()
             from openwakeword import utils
             from openwakeword.model import Model
 
@@ -135,8 +156,16 @@ class Listener:
                 if self.wake_model == "hey_jarvis":  # the second opinion was trained for this one (wake.py)
                     self._second = wake.load()
         except Exception as exc:  # noqa: BLE001 - keep working with the hotkey alone
-            log.warning("wake word unavailable (%s); use the hotkey", exc)
-            self.wake_word = False
+            first = self._wake_failed_at < 0
+            self._wake_failed_at = time.monotonic()
+            log.warning("wake word unavailable (%s); use the hotkey - trying again in a few minutes", exc)
+            if first:
+                self.on_state("wake word unavailable")
+            return
+        log.info("wake word ready (%s%s)", self.wake_model, ", with its second opinion" if self._second else "")
+        if self._wake_failed_at >= 0:
+            self.on_state("wake word back")
+        self._wake_failed_at = -1.0
 
     def heard_wake_word(self, frame: np.ndarray, speaking: bool) -> bool:
         if self._model is None:
@@ -189,6 +218,8 @@ class Listener:
             noise = deque(maxlen=40)  # recent loudness, for the silence threshold
             last = time.monotonic()
             while not self._stop.is_set():
+                if self.wake_word and self._model is None:
+                    self._load_model()  # it failed before: again, now and then (returns at once in between)
                 try:
                     frame = frames.get(timeout=0.5)
                 except queue.Empty:

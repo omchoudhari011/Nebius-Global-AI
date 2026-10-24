@@ -341,3 +341,21 @@ def test_the_listener_asks_the_second_opinion_only_for_hey_jarvis():
     assert listener.heard_wake_word(QUIET, speaking=False) is True
     listener._second = None
     assert listener.heard_wake_word(QUIET, speaking=False) is False  # a custom wake word: the threshold alone
+
+
+def test_when_the_wake_word_cant_load_it_says_so_once_and_tries_again_later(monkeypatch):
+    import sys
+
+    from custodian_desktop import voice
+
+    states = []
+    listener = Listener(lambda *a: None, states.append, wake_word=True)
+    monkeypatch.setitem(sys.modules, "openwakeword", None)  # "DLL load failed ... blocked this file"
+    listener._load_model()
+    listener._load_model()  # within the retry window: not tried again, and not said again
+    assert listener._model is None and states == ["wake word unavailable"]
+    monkeypatch.delitem(sys.modules, "openwakeword")
+    monkeypatch.setattr(voice, "WAKE_RETRY_SECONDS", 0)
+    listener._load_model()  # later, and it works
+    assert listener._model is not None and states[-1] == "wake word back"
+    assert not any(m.startswith("sklearn") for m in sys.modules if m.startswith("sklearn.metrics._pairwise_fast"))
