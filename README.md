@@ -321,8 +321,11 @@ in Windows Credential Manager. See [desktop/README.md](desktop/README.md).
 
 ## More Jarvis
 
-The **Jarvis** tab in the app holds most of these: a remote for the PC, actions waiting for
-your OK, routines, what Custodian did (with undo), the settings below, and the connected accounts.
+The **Jarvis** tab in the app holds most of these: the HUD (the PC's processor, memory, graphics
+card, battery and drive, the weather and your day, with its arc reactor - the desktop app sends
+its readings every 30 s, kept only in the server's memory), a remote for the PC, actions waiting
+for your OK, routines, what Custodian did (with undo), the settings below, and the connected
+accounts.
 
 **Search inside your files by meaning** (Jarvis → Settings → *Search inside my files*). The
 desktop app reads Documents, Downloads and Desktop (text, code, PDF, Word, PowerPoint, Excel,

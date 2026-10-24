@@ -13,6 +13,7 @@ import { Platform } from "react-native";
 
 import type {
   Activity,
+  HudSnapshot,
   Approval,
   LearningStatus,
   Prefs,
@@ -214,6 +215,7 @@ export const getFeatures = () => request<Features>("/features");
 /** Start loading the server's local model while the user types (no-op for a cloud model). */
 export const warm = () => request<void>("/warm", { method: "POST" });
 export const getDesktopStatus = () => request<{ connected: boolean; device: string | null }>("/desktop/status");
+export const getHud = () => request<HudSnapshot>("/hud");
 
 export const getNotifications = (unread = false) => request<AppNotification[]>(`/notifications${unread ? "?unread=true" : ""}`);
 export const markNotificationRead = (id: number) => request<void>(`/notifications/${id}/read`, { method: "POST" });

@@ -136,3 +136,21 @@ def test_the_hud_route_needs_a_session(client, anon_client):
     assert anon_client.get("/hud").status_code == 401
     body = client.get("/hud").json()
     assert {"events", "reminders", "activity", "address", "city", "unread"} <= set(body)
+
+
+def test_the_pcs_vitals_reach_the_hud_in_the_app_while_fresh(client, monkeypatch):
+    from app import desktop
+
+    desktop.reset()
+    reading = {"cpu_percent": 12.5, "memory": {"used_percent": 71}, "battery": {"percent": 88, "charging": True},
+               "weather": {"city": "Pune", "temperature_c": 29}, "secret": "dropped", "top_apps": [{"app": "chrome"}]}
+    assert client.post("/desktop/vitals", json=reading).status_code == 204
+    pc = client.get("/hud").json()["pc"]
+    assert pc["cpu_percent"] == 12.5 and pc["weather"]["city"] == "Pune" and pc["age_seconds"] <= 1
+    assert "secret" not in pc  # only what the HUD shows is kept
+    assert client.post("/desktop/vitals", content=b"[1, 2]").status_code == 400
+    assert client.post("/desktop/vitals", content=b"x" * 40_000).status_code == 413
+    clock = desktop.time.monotonic() + desktop.VITALS_FRESH + 1
+    monkeypatch.setattr(desktop.time, "monotonic", lambda: clock)
+    assert client.get("/hud").json()["pc"] is None  # old news isn't shown
+    desktop.reset()

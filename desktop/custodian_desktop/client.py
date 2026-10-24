@@ -59,6 +59,10 @@ class Client:
         """Today's events and reminders, recent actions and how to address you (GET /hud)."""
         return self._check(self._http.get("/hud", headers=self._headers(), timeout=30)).json()
 
+    def report_vitals(self, reading: dict) -> None:
+        """The PC's vitals and weather, for the HUD in the phone app (POST /desktop/vitals)."""
+        self._check(self._http.post("/desktop/vitals", json=reading, headers=self._headers(), timeout=10))
+
     def warm(self) -> None:
         """Ask the server to load its model now, while you're still talking."""
         try:

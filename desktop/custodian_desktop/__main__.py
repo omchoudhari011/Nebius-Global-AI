@@ -275,7 +275,8 @@ class App:
 
     def vitals(self) -> None:
         """Every 2 s: which app is in front (so Jarvis knows what you aren't using), and the PC's
-        vitals while the HUD shows. Every 30 s: the watchdog."""
+        vitals while the HUD shows. Every 30 s: the watchdog, and the vitals and weather to the
+        server for the HUD in the phone app."""
         tick = 0
         while not self.stopping.is_set():
             try:
@@ -285,15 +286,24 @@ class App:
                 if self.hud_on() and self.hud.visible:
                     apps = self.hud.mode == "full" and tick % 5 == 0  # the app list costs most: every 10 s
                     self.hud.send({"type": "stats", "data": SAMPLER.sample(with_apps=apps)})
-                if self.settings.watchdog and tick % 15 == 0:
-                    self.check_health()
+                if tick % 15 == 0:
+                    reading = SAMPLER.sample(with_apps=True)
+                    threading.Thread(target=self.report, args=(reading,), daemon=True).start()
+                    if self.settings.watchdog:
+                        self.check_health(reading)
             except Exception:  # noqa: BLE001 - a bad reading mustn't stop the loop
                 log.debug("vitals", exc_info=True)
             tick += 1
             self.stopping.wait(2)
 
-    def check_health(self) -> None:
-        reading = SAMPLER.sample(with_apps=True)
+    def report(self, reading: dict) -> None:
+        try:
+            self.client.report_vitals({**reading, "weather": self.weather} if self.weather else reading)
+        except Exception as exc:  # noqa: BLE001 - the server is restarting or we're signed out: next time
+            log.debug("couldn't report vitals: %s", exc)
+
+    def check_health(self, reading: dict | None = None) -> None:
+        reading = reading or SAMPLER.sample(with_apps=True)
         for kind, text in self.watchdog.check(reading, time.monotonic(), self.address):
             hogs = actions.memory_hogs(self.front_seen, time.monotonic()) if kind == "memory" else []
             if hogs:  # say which apps you aren't using hold the memory, and offer to close them

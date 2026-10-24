@@ -3,16 +3,17 @@
 // besides Google (Spotify, Microsoft 365, Home Assistant, Telegram).
 
 import { useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Linking, Platform, RefreshControl, ScrollView, View } from "react-native";
 
 import { ApprovalPrompt } from "../../components/ApprovalPrompt";
+import { PcHud } from "../../components/PcHud";
 import { Text } from "../../components/Typography";
 import { Button, Card, Chip, Field, IconButton, Notice, ScreenGradient, ScreenHeader, SectionTitle, Segmented, ToggleSwitch } from "../../components/ui";
 import * as api from "../../lib/api";
 import { confirmAction, formatWhen } from "../../lib/format";
 import { space, themed, useTokens } from "../../lib/tokens";
-import type { Activity, Integration, LearningStatus, Prefs, Routine, VoiceLanguage } from "../../lib/types";
+import type { Activity, HudSnapshot, Integration, LearningStatus, Prefs, Routine, VoiceLanguage } from "../../lib/types";
 
 type IconName = Parameters<typeof Button>[0]["icon"];
 
@@ -64,6 +65,8 @@ export default function JarvisScreen() {
   const s = useStyles();
   const t = useTokens();
   const [pc, setPc] = useState<{ connected: boolean; device: string | null } | null>(null);
+  const [hud, setHud] = useState<HudSnapshot | null>(null);
+  const [focused, setFocused] = useState(false);
   const [prefs, setPrefsState] = useState<Prefs | null>(null);
   const [address, setAddress] = useState("sir");
   const [city, setCity] = useState("");
@@ -87,8 +90,9 @@ export default function JarvisScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [desk, p, r, a, i, l] = await Promise.all([
+      const [desk, h, p, r, a, i, l] = await Promise.all([
         api.getDesktopStatus().catch(() => null),
+        api.getHud().catch(() => null),
         api.getPrefs(),
         api.getRoutines(),
         api.getActivity(),
@@ -96,6 +100,7 @@ export default function JarvisScreen() {
         api.getLearning().catch(() => null),
       ]);
       setPc(desk);
+      setHud(h);
       setPrefsState(p);
       setAddress(p.address);
       setCity(p.home_city);
@@ -116,8 +121,22 @@ export default function JarvisScreen() {
   useFocusEffect(
     useCallback(() => {
       void load();
+      setFocused(true);
+      return () => setFocused(false);
     }, [load]),
   );
+
+  // While this tab is open, the HUD follows the PC: its readings arrive every 30 s.
+  useEffect(() => {
+    if (!focused) return;
+    const timer = setInterval(() => {
+      void Promise.all([api.getHud().catch(() => null), api.getDesktopStatus().catch(() => null)]).then(([h, desk]) => {
+        if (h) setHud(h);
+        if (desk) setPc(desk);
+      });
+    }, 10_000);
+    return () => clearInterval(timer);
+  }, [focused]);
 
   async function run<T>(key: string, work: () => Promise<T>): Promise<T | undefined> {
     setBusy(key);
@@ -295,6 +314,8 @@ export default function JarvisScreen() {
         {error ? <Notice message={error} actionLabel="Dismiss" onAction={() => setError(null)} /> : null}
         {loading ? <ActivityIndicator color={t.accent2} /> : null}
         <ApprovalPrompt active={busy !== null} />
+
+        <PcHud hud={hud} connected={Boolean(pc?.connected)} />
 
         <SectionTitle title="Remote" hint="Control your PC from here. Anything risky asks you to allow it on this screen." />
         <Card>

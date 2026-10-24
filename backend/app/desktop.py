@@ -7,6 +7,7 @@ the desktop app, which keeps a long-poll open:
     GET  /desktop/next          the next action for this account (or 204 after ~25 s)
     POST /desktop/results/{id}  what happened
     GET  /desktop/status        whether a desktop app is connected (for the app's settings)
+    POST /desktop/vitals        the PC's vital signs and weather every 30 s, for the HUD in the app
 
 The desktop app decides on its own side, with a dialog on your screen, whether to go ahead
 with anything that changes or reveals something (registry `confirm`): the server can't skip
@@ -56,6 +57,9 @@ _ids = itertools.count(1)
 _queues: dict[int, queue.Queue[_Pending]] = {}
 _pending: dict[int, _Pending] = {}
 _seen: dict[int, dict] = {}  # user id -> {"at": monotonic time, "device": name}
+_vitals: dict[int, tuple[float, dict]] = {}  # user id -> (monotonic time, the PC's latest vitals); memory only
+VITALS_FRESH = 120  # seconds a reading is shown for
+VITAL_KEYS = ("cpu_percent", "memory", "gpu", "battery", "disks", "network", "uptime_hours", "top_apps", "weather")
 
 
 def _queue(user_id: int) -> queue.Queue[_Pending]:
@@ -74,6 +78,23 @@ def status(user_id: int) -> dict:
         seen = _seen.get(user_id)
     connected = bool(seen and time.monotonic() - seen["at"] < CONNECTED_SECONDS)
     return {"connected": connected, "device": seen.get("device") if seen else None}
+
+
+def report_vitals(user_id: int, reading: dict) -> None:
+    """The desktop app's latest reading (processor, memory, battery, drives, weather...). Only the
+    known keys are kept, only in memory, and only the newest."""
+    kept = {k: reading[k] for k in VITAL_KEYS if k in reading}
+    with _lock:
+        _vitals[user_id] = (time.monotonic(), kept)
+
+
+def vitals(user_id: int) -> dict | None:
+    """The PC's latest vitals with their age in seconds, or None when there's no fresh reading."""
+    with _lock:
+        got = _vitals.get(user_id)
+    if got is None or time.monotonic() - got[0] > VITALS_FRESH:
+        return None
+    return {**got[1], "age_seconds": round(time.monotonic() - got[0]), "device": status(user_id)["device"]}
 
 
 def run(user_id: int, function: str, args: dict, *, confirm: bool, description: str, approved: str | None = None) -> object:
@@ -156,3 +177,4 @@ def reset() -> None:
         _queues.clear()
         _pending.clear()
         _seen.clear()
+        _vitals.clear()

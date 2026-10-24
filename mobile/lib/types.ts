@@ -389,6 +389,36 @@ export type Prefs = {
   home_city: string; // for the HUD's weather; empty = the city your memories say
 };
 
+/** The PC's vital signs, sent by the desktop app every 30 s (GET /hud's `pc`). */
+export type PcVitals = {
+  cpu_percent: number;
+  memory: { used_percent: number; used_gb: number; total_gb: number };
+  gpu: { name: string; percent: number; memory_used_gb: number; memory_total_gb: number; temperature_c: number } | null;
+  battery: { percent: number; charging: boolean; minutes_left: number | null } | null;
+  disks: { drive: string; free_gb: number; total_gb: number; used_percent: number }[];
+  network: { online: boolean; down_kbps: number; up_kbps: number };
+  uptime_hours: number;
+  top_apps: { app: string; cpu_percent: number; memory_mb: number }[];
+  weather?: { city: string; temperature: number | null; condition: string; high: number | null; low: number | null; rain_chance: number | null } | null;
+  age_seconds: number;
+  device: string | null;
+};
+
+/** GET /hud: what the Jarvis HUD shows - your day, and the PC's vitals while it reports in. */
+export type HudSnapshot = {
+  name: string | null;
+  address: string;
+  city: string | null;
+  quiet: boolean;
+  events: { title: string; time: string; past: boolean; link: string | null }[];
+  reminders: { text: string; due: string }[];
+  activity: { label: string; when: string }[];
+  unread: number;
+  model: string;
+  now: string;
+  pc: PcVitals | null;
+};
+
 export type LearningStatus = {
   enabled: boolean;
   new_examples: number;

@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from . import activity, db, memory_graph, notifications, proactive, settings_store
+from . import activity, db, desktop, memory_graph, notifications, proactive, settings_store
 from .config import get_settings
 from .crypto import decrypt
 
@@ -76,4 +76,5 @@ def snapshot(user_id: int) -> dict:
         "unread": notifications.unread_count(user_id),
         "model": settings.nebius_model_id if settings.model_backend != "stub" else "offline",
         "now": now.isoformat(timespec="seconds"),
+        "pc": desktop.vitals(user_id),  # the PC's vitals and weather, when it reported in the last 2 minutes
     }

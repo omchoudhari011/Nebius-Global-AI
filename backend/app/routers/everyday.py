@@ -12,6 +12,7 @@ Google connection, and which of these this server has set up.
     POST /integrations/homeassistant       its address and a long-lived access token
     POST /integrations/telegram/link       a code to send the Telegram bot, to link your chat
     GET  /desktop/next · POST /desktop/results/{id} · GET /desktop/status   the desktop app's bridge
+    POST /desktop/vitals                   the PC's vitals and weather, for the HUD in the app
     POST /warm                             load the local model now ("Hey Jarvis" was heard)
     GET  /integrations/google/callback     Google's redirect after consent (no session: the
                                            signed `state` names the account)
@@ -20,6 +21,7 @@ Google connection, and which of these this server has set up.
 from __future__ import annotations
 
 import html
+import json
 import os
 from typing import Literal
 
@@ -286,6 +288,22 @@ def desktop_next(request: Request, user_id: int = Depends(require_session)) -> R
 def desktop_result(action_id: int, body: DesktopResult, user_id: int = Depends(require_session)) -> Response:
     if not desktop.finish(user_id, action_id, body.ok, body.result, body.error):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="That action is no longer waiting")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/desktop/vitals", status_code=status.HTTP_204_NO_CONTENT)
+async def desktop_vitals(request: Request, user_id: int = Depends(require_session)) -> Response:
+    """The PC's vital signs and weather (every 30 s from the desktop app), for the app's HUD."""
+    body = await request.body()
+    if len(body) > 32_000:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, detail="Too large")
+    try:
+        reading = json.loads(body or b"{}")
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Not JSON") from None
+    if not isinstance(reading, dict):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Expected an object")
+    desktop.report_vitals(user_id, reading)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
