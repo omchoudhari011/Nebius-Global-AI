@@ -124,6 +124,18 @@ def test_going_on_after_a_pause_throws_the_early_transcription_away():
     assert to_wav(audio) == started[1]
 
 
+def test_a_quiet_laptop_microphone_is_still_heard():
+    """A laptop mic array here gives a room noise of 9 and speech around 150: under the old fixed 350,
+    every request was "didn't catch that"."""
+    listener, _ = _listener()
+    speech, room = np.full(FRAME, 150, dtype=np.int16), np.full(FRAME, 9, dtype=np.int16)
+    frames: queue.Queue = queue.Queue()
+    for frame in [room] * 3 + [speech] * 15 + [room] * 20:
+        frames.put(frame)
+    audio = listener._record(frames, floor=9.0)
+    assert audio is not None and len(audio) >= FRAME * 15
+
+
 # Voice ID ---------------------------------------------------------------------------------------
 
 def test_filterbank_features_are_the_shape_the_speaker_model_takes():

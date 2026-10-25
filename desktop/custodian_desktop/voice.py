@@ -40,6 +40,10 @@ MAX_SECONDS = 20
 SILENCE_SECONDS = 1.0
 EARLY_SILENCE = 0.45  # a pause this long starts transcribing what's been said so far
 MIN_SECONDS = 0.6
+# Speech is what's louder than this (RMS), or than 2.5x the room's noise when that's higher. It was 350,
+# which a laptop's microphone array can stay under: one here gives a room noise of 9, and replaying
+# voice-lab's 852 recordings at a speech level of 150, 838 were never noticed (at 60: none).
+MIN_SPEECH = 60.0
 BARGE_IN_SCORE = 0.75  # the wake word's score needed while Custodian is speaking
 WAKE_RETRY_SECONDS = 300  # the wake word couldn't be loaded: try again this often
 STALL_SECONDS = 4.0  # no sound at all for this long: the stream broke (sleep, a device change); open it again
@@ -271,8 +275,8 @@ class Listener:
         self.on_state("following up" if following else "recording")
         for _ in range(min(frames.qsize(), 3)):  # drop the tail of the wake word, keep what follows
             frames.get_nowait()
-        threshold = max(floor * 2.5, 350.0)
-        chunks, quiet, started, spoke = [], 0.0, time.monotonic(), False
+        threshold = max(floor * 2.5, MIN_SPEECH)
+        chunks, quiet, started, spoke, loudest = [], 0.0, time.monotonic(), False, 0.0
         self.early = None
         while time.monotonic() - started < MAX_SECONDS and not self._stop.is_set():
             try:
@@ -281,6 +285,7 @@ class Listener:
                 break
             chunks.append(frame)
             volume = _loudness(frame)
+            loudest = max(loudest, volume)
             if self.on_level is not None:
                 self.on_level(min(1.0, volume / 3000.0))
             loud = volume > threshold
@@ -299,6 +304,9 @@ class Listener:
                 break
         _beep(660, 90)
         audio = np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.int16)
+        # Levels only (never the sound): what to look at when it "doesn't hear" someone.
+        log.info("recorded %.1f s: loudest %.0f, speech above %.0f (room %.0f) - %s", len(audio) / RATE, loudest,
+                 threshold, floor, "heard speech" if spoke else "no speech")
         if self.on_level is not None:
             self.on_level(0.0)
         if not spoke or len(audio) < RATE * MIN_SECONDS:
