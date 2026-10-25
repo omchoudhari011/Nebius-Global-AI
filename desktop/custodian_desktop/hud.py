@@ -24,6 +24,7 @@ from typing import Callable
 
 log = logging.getLogger(__name__)
 PACKAGE_PARENT = Path(__file__).resolve().parent.parent
+REVIVE_SECONDS = 30
 
 
 def available() -> bool:
@@ -43,11 +44,24 @@ class Hud:
         self.ready = threading.Event()
         self._lock = threading.Lock()
         self._hide_timer: threading.Timer | None = None
+        self._revived = -1e9  # when the HUD was last started again after going away (monotonic)
 
     # The process ------------------------------------------------------------------------------
 
     def running(self) -> bool:
         return self.proc is not None and self.proc.poll() is None
+
+    def revive(self) -> bool:
+        """Running - or started again if it went away by itself (its window closed), at most every
+        REVIVE_SECONDS. Stopped on purpose (stop(), proc None) it stays stopped."""
+        if self.running():
+            return True
+        if self.proc is None or time.monotonic() - self._revived < REVIVE_SECONDS:
+            return False
+        self._revived = time.monotonic()
+        log.info("the HUD went away; starting it again")
+        self.proc = None
+        return self.start()
 
     def start(self) -> bool:
         if self.running():

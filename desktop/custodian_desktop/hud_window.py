@@ -14,6 +14,7 @@ goes away (stdin closes), the window closes too.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 from pathlib import Path
@@ -72,6 +73,10 @@ def main() -> None:
     )
     loaded = threading.Event()
     window.events.loaded += loaded.set
+    # pywebview runs pump() in a thread that isn't a daemon, so once the window has gone (it can, around
+    # the PC sleeping) the process would wait on stdin forever with nothing to show, and the app would
+    # keep sending to it. Ending the process lets the app see that and start a new HUD.
+    window.events.closed += lambda: os._exit(0)
 
     def place(mode: str) -> None:
         screen, scale = webview.screens[0], display_scale()
@@ -112,6 +117,7 @@ def main() -> None:
         window.destroy()
 
     webview.start(pump, private_mode=True)
+    os._exit(0)  # the window is gone: don't wait for pump()
 
 
 if __name__ == "__main__":

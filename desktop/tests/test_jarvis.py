@@ -219,6 +219,9 @@ class _Hud:
     def running(self):
         return True
 
+    def revive(self):
+        return True
+
     def alert(self, text):
         self.alerts.append(text)
 
@@ -296,6 +299,27 @@ def test_the_weather_comes_from_open_meteo_by_city_name():
 
 
 # The HUD link -----------------------------------------------------------------------------------
+
+def test_a_hud_whose_window_went_away_is_started_again_but_not_over_and_over(monkeypatch):
+    hud = Hud(lambda message: None)
+    started = []
+    monkeypatch.setattr(hud, "start", lambda: started.append(1) or True)
+
+    class Gone:
+        def poll(self):
+            return 0  # the process ended: its window closed (around the PC sleeping)
+
+        def wait(self, timeout=None):
+            return 0
+
+    assert hud.revive() is False and started == []  # never started: nothing to bring back
+    hud.proc = Gone()
+    assert hud.revive() is True and started == [1]
+    hud.proc = Gone()
+    assert hud.revive() is False and started == [1]  # it went again at once: wait before the next try
+    hud.stop()
+    assert hud.revive() is False and started == [1]  # stopped on purpose: stays stopped
+
 
 def test_hud_messages_are_one_json_line_each_and_a_missing_window_never_breaks_the_app():
     hud = Hud(lambda message: None)

@@ -218,7 +218,7 @@ class App:
     # Jarvis: the HUD, your day, the watchdog ------------------------------------------------------------
 
     def hud_on(self) -> bool:
-        return self.hud is not None and self.hud.running()
+        return self.hud is not None and self.hud.revive()
 
     def show(self, status: str, heard: str | None = None, reply: str | None = None, *, hide_after: float | None = None) -> None:
         """What's happening, on the HUD when it runs, else on the small panel."""
