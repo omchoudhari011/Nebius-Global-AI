@@ -9,6 +9,7 @@ import httpx
 from . import __version__
 
 DEVICE = f"Custodian desktop on {platform.node() or 'Windows'}"
+NOTHING_HEARD = "Nothing was heard"  # how the server's /voice/transcribe says a recording had no words (app/voice.py)
 
 
 class NotSignedIn(RuntimeError):
@@ -76,9 +77,15 @@ class Client:
             pass
 
     def transcribe(self, wav: bytes) -> str:
+        """What was said; "" when the server heard no words in it (a cough, a "hmm", the room)."""
         resp = self._http.post("/voice/transcribe", headers={**self._headers(), "Content-Type": "audio/wav"},
                                content=wav, timeout=120)
-        return self._check(resp).json()["text"]
+        try:
+            return self._check(resp).json()["text"]
+        except RuntimeError as exc:
+            if resp.status_code == 400 and str(exc).startswith(NOTHING_HEARD):
+                return ""
+            raise
 
     def next_action(self) -> dict | None:
         """Long-poll for the next PC action (the server holds the request up to ~25 s)."""

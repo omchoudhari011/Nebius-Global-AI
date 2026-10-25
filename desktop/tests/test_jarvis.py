@@ -139,6 +139,29 @@ def test_noise_heard_as_a_follow_up_is_dropped():
     assert app.client.chats == [] and not app.conversing
 
 
+def test_a_recording_with_no_words_is_didnt_catch_that_not_something_went_wrong():
+    app = _app("")  # the server heard no words: a cough, a "hmm" (Client.transcribe gives "")
+    app.on_speech(b"wav")
+    assert app.client.chats == [] and app.window.shown[-1][0] == "Didn't catch that"
+
+
+def test_the_client_reads_nothing_heard_as_no_words(monkeypatch):
+    import httpx
+
+    from custodian_desktop.client import Client
+
+    def reply(request):
+        return httpx.Response(400, json={"detail": "Nothing was heard in that recording."})
+
+    client = Client("http://server", "token")
+    client._http = httpx.Client(base_url="http://server", transport=httpx.MockTransport(reply))
+    assert client.transcribe(b"wav") == ""
+    client._http = httpx.Client(base_url="http://server", transport=httpx.MockTransport(
+        lambda request: httpx.Response(400, json={"detail": "That recording couldn't be read."})))
+    with pytest.raises(RuntimeError):  # a real problem still says so
+        client.transcribe(b"wav")
+
+
 def test_the_hud_activity_list_names_actions_never_message_text():
     assert App.action_label("send_message", {"contact": "Tanishka", "text": "secret plans"}) == "send message · Tanishka"
     assert App.action_label("set_volume", {"level": 30}) == "set volume · 30"

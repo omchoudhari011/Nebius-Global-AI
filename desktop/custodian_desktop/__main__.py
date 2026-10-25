@@ -605,6 +605,9 @@ class App:
             if following and len(text.strip(" .!?,")) < 2:  # a follow-up that was only noise
                 self.on_state("conversation over")
                 return
+            if not text.strip():  # no words in it (a cough, the room): nothing to send, nothing went wrong
+                self.on_state("didn't catch that")
+                return
             if jarvis.ends_conversation(text):  # "that's all", "thank you": no request, just a polite close
                 self.show("Jarvis", heard=text, reply=jarvis.sign_off(self.address), hide_after=4)
                 if self.settings.speak_replies:
