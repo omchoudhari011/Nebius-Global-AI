@@ -49,7 +49,7 @@ REPAIR_TOOLS = {
     "unverified_send": ("gmail_send_email", "pc_send_message"),
     "unverified_draft": ("gmail_draft_email",),
     "unverified_pc_action": (),
-    "invented_failure": ("pc_play", "pc_media", "pc_open"),
+    "invented_failure": ("pc_send_message", "pc_play", "pc_media", "pc_open"),
     "false_excuse": (),
 }
 MAX_TOOL_ROUNDS = 6  # model turns that may call tools before it must answer (a PC task can take several)
@@ -653,6 +653,8 @@ def _handle(
         calendar_question=grounding.asks_about_calendar(message, skill.name if skill else None),
         memory_ids={m["id"] for m, _ in context_memories},
         switches=_switches(user_id, offered),
+        previous_message=next((t["content"] for t in reversed(history) if t["role"] == "user"), None),
+        previous_reply=next((t["content"] for t in reversed(history) if t["role"] == "assistant"), None),
     )
     def redaction() -> bool:  # withheld secrets depend on where the answering model runs
         return privacy.redaction_active(user_id, large_base_url() if escalated else None)
@@ -781,7 +783,11 @@ def _handle(
         # details ("take medicine with lemon") and answers Hindi in English.
         reply = confirmed
         _set_content(final_id, reply)
-    if findings:  # still wrong after the repair round (or no round was left): say so in the reply
+    if findings and not evidence.outcomes and all(f.kind in grounding.REPLACED_KINDS for f in findings):
+        # nothing was tried, and the reply still claims something happened or failed: say plainly that nothing did
+        reply = grounding.nothing_done(hindi=bool(message and DEVANAGARI.search(message)))
+        _set_content(final_id, reply)
+    elif findings:  # still wrong after the repair round (or no round was left): say so in the reply
         reply = grounding.annotate(reply, findings)
         _set_content(final_id, reply)
     unresolved = {f.kind for f in findings}

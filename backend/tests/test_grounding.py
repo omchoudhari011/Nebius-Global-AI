@@ -92,6 +92,18 @@ def test_the_repair_round_can_still_do_the_step_it_skipped(user_id, grant):
     assert out["reply"] == "Added “Lunch with Ravi” on Fri 16 Oct, 13:00."
 
 
+def test_a_made_up_failure_that_survives_the_rewrite_is_replaced_not_annotated(user_id, grant):
+    """Heard on the PC: "I couldn't open WhatsApp - it's not running. Start Jarvis..." with a note under it
+    saying nothing was tried - untrue, and confusing to hear. The whole reply is now said plainly."""
+    grant("pc", "write")
+    set_backend(Script(say("I couldn't open WhatsApp - it's not running. Start Jarvis with the Jarvis icon.")))
+    out = orchestrator.handle(user_id, "okay, open whatsapp and chat with Mrunal")
+    assert out["reply"] == grounding.nothing_done()
+    assert out["used"]["checks"]["status"] == "flagged"
+    hindi = orchestrator.handle(user_id, "मृणाल से बात करो")  # ("talk to Mrunal": not an exact command, so nothing runs)
+    assert hindi["reply"] == grounding.nothing_done(hindi=True)
+
+
 def test_promising_a_reminder_is_caught(user_id):
     set_backend(Script(say("Sure, I'll remind you tomorrow morning.")))
     out = orchestrator.handle(user_id, "remind me to call mum tomorrow")
@@ -247,7 +259,9 @@ def test_a_personal_question_with_nothing_on_file_invites_i_dont_know(user_id):
         ("Sure. Timer set for 10 minutes.", [], True),
         ("Wrote the leave letter in Notepad.", [], True),
         ("Opened YouTube.", [("pc", "open", "succeeded")], False),
-        ("I couldn't open YouTube: the desktop app isn't running.", [], False),
+        # A denial isn't a success claim. (With no PC action tried at all it's a made-up failure, which
+        # test_a_pc_failure_with_nothing_tried_is_caught covers; in real use the failed call is on record.)
+        ("I couldn't open YouTube: the desktop app isn't running.", [("pc", "open", "failed")], False),
         ("Wrote it down in your notes.", [("notes", "create_note", "succeeded")], False),
         ("Playing it safe, I didn't change anything.", [], False),
         ("Played Kalyani, sir.", [], True),  # said after a misheard "to a silent", with nothing played
@@ -261,6 +275,13 @@ def test_a_personal_question_with_nothing_on_file_invites_i_dont_know(user_id):
         ("Let me open Notepad for you.", [], True),
         ("I'll open it if you like.", [], False),  # an offer
         ("I'll mute it, sir.", [("pc", "media", "succeeded")], False),
+        # said in turns that sent nothing, after an earlier turn did:
+        ("Sent a WhatsApp to Mrunal - hi.", [], True),
+        ("Sent: Hi to Mrunal on WhatsApp.", [], True),
+        ("I'll send a WhatsApp to Mrunal - hi.", [], True),
+        ("Sent a WhatsApp to Mrunal Patil - hi.", [("pc", "send_message", "succeeded")], False),
+        ("I'll send it once you allow it on the PC.", [], False),  # a condition, not a promise
+        ("I'll do that: send a WhatsApp to Mrunal saying hi.", [], True),
     ],
 )
 def test_claim_detection(reply, outcomes, flagged):
@@ -282,7 +303,12 @@ PC_ON = {"PC · read": True, "PC · write": True}
         # a real failure, or a question back, is not made up
         ("I couldn't play Kalyani - YouTube didn't respond.", [("pc", "play", "failed")], PC_ON, None),
         ("Which song should I play?", [], PC_ON, None),
-        ("I couldn't open YouTube: the desktop app isn't running.", [], None, None),  # PC tools not offered
+        # copied from the turn before, where the send really failed - this turn tried nothing:
+        ("I couldn't send that - WhatsApp doesn't have a chat called 'Mronal'.", [], PC_ON, "invented_failure"),
+        ("I couldn't open WhatsApp - it's not running.", [], PC_ON, "invented_failure"),
+        # no PC tools this turn (a fragment that picked another skill), but it still names something on the PC
+        ("I couldn't open YouTube: the desktop app isn't running.", [], None, "invented_failure"),
+        ("The shop isn't open on Sundays, and I can't find its phone number.", [], None, None),  # nothing on the PC
     ],
 )
 def test_a_pc_failure_with_nothing_tried_is_caught(reply, outcomes, switches, kind):
@@ -292,6 +318,29 @@ def test_a_pc_failure_with_nothing_tried_is_caught(reply, outcomes, switches, ki
     )
     kinds = {f.kind for f in grounding.review(reply, evidence)}
     assert (kind in kinds) if kind else ("invented_failure" not in kinds)
+
+
+EXCUSE = "I couldn't open YouTube - it's not running.\n\nCustodian check: Nothing was tried on your PC: no PC action was attempted."
+
+
+@pytest.mark.parametrize(
+    "message, before, reply, outcomes, repeated",
+    [
+        ("D.H.A.R.I.", "and say hi", "I couldn't open YouTube - it's not running.", [], True),  # word for word, again
+        ("and say hi", "and say hi", "I couldn't open YouTube - it's not running.", [], False),  # they said it again too
+        ("D.H.A.R.I.", "and say hi", "I couldn't open YouTube - it's not running.", [("pc", "open", "failed")], False),
+        ("thank you", "thanks", "You're welcome, sir.", [], False),  # a repeat that isn't an excuse is fine
+    ],
+)
+def test_the_same_excuse_repeated_to_a_new_message_is_caught(message, before, reply, outcomes, repeated):
+    evidence = grounding.Evidence(
+        message=message, previous_message=before, previous_reply=EXCUSE,
+        outcomes=[SimpleNamespace(tool=t, function=f, status=s, error="it failed") for t, f, s in outcomes],
+    )
+    if reply == "You're welcome, sir.":
+        evidence.previous_reply = "You're welcome, sir."
+    kinds = {f.kind for f in grounding.review(reply, evidence)}
+    assert ("repeated_reply" in kinds) is repeated
 
 
 CANBERRA = "https://en.wikipedia.org/wiki/Canberra"

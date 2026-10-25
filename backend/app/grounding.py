@@ -144,6 +144,8 @@ class Evidence:
     # The switches ("Calendar · write") of the tools offered this turn, and which of them are off -
     # so "X is switched off" can be checked. None: not known (the excuse check is skipped).
     switches: dict[str, bool] | None = None
+    previous_message: str | None = None  # this chat's message and reply before this turn, if any
+    previous_reply: str | None = None
 
     def attempts(self, tool: str, function: str) -> list[Any]:
         return [o for o in self.outcomes if o.tool == tool and o.function == function]
@@ -273,8 +275,10 @@ _PC_CLAIM = re.compile(
 # An email sent or drafted: true only when Gmail sent or saved it in this turn.
 _EMAIL_SENT_CLAIM = re.compile(
     r"\b(?:i(?:'ve| have)?\s+(?:just\s+|now\s+)?)(?:sent|emailed|mailed|replied to)\b(?!\s+you\b)"
-    r"|\b(?:e-?mail|reply|response)\s+(?:is|has been|was)\s+(?:now\s+)?sent\b"
-    r"|(?:^\W*|[.!?]\s+)(?:done[\s,!-]+)?sent (?:the |your |an? )?(?:e-?mail|reply|response)\b",
+    r"|\b(?:e-?mail|reply|response|message|whatsapp|text|msg)\s+(?:is|has been|was)\s+(?:now\s+)?sent\b"
+    # "Sent a WhatsApp to Mrunal - hi." / "Sent: Hi to Mrunal on WhatsApp." as a reply starts
+    r"|(?:^\W*|[.!?]\s+)(?:done[\s,!-]+)?sent(?::|\s)\s*(?:the |your |an? )?(?:e-?mail|reply|response|whatsapp|message"
+    r"|text|msg|hi\b|[“\"']?\w+(?:\s+\w+){0,3}\s+to\s+\w+)",
     re.I | re.M,
 )
 _DRAFT_CLAIM = re.compile(
@@ -292,8 +296,9 @@ _SWITCH = re.compile(r"([A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)?) · (read|write)")
 # "I'll mute it, sir." as the whole answer: the turn ends there, so nothing is ever muted. (An offer - "I'll open
 # it if you like" - is a question, not a promise.)
 _PC_PROMISE = re.compile(
-    r"\b(?:i'?ll|i will|i'm going to|i am going to|let me)\s+(?:now\s+|just\s+)?(?:mute|unmute|pause|resume|play|open|"
-    r"close|quit|lock|skip|start|turn|set|launch|switch|dim)\b",
+    r"\b(?:i'?ll|i will|i'm going to|i am going to|let me)\s+(?:do\s+(?:that|it|so)\W+)?(?:now\s+|just\s+)?"
+    r"(?:mute|unmute|pause|resume|play|open|close|quit|lock|skip|start|turn|set|launch|switch|dim|send|message|text"
+    r"|whatsapp)\b",
     re.I,
 )
 _OFFER = re.compile(r"\b(?:if|when|once|whenever|shall|should|want|would you|do you)\b", re.I)
@@ -301,13 +306,28 @@ _OFFER = re.compile(r"\b(?:if|when|once|whenever|shall|should|want|would you|do 
 # requests ("whatsapp Tanishka: did you reach home?", "click voice call in whatsapp") as noise.
 MISHEARD = (" If their message doesn't make sense as a request (speech can be misheard, like \"to a silent\"), say "
             "you didn't catch it and ask them to say it again.")
-# "I couldn't play Kalyani - YouTube didn't respond." when no PC action was even tried: a failure made up.
+# "I couldn't play Kalyani - YouTube didn't respond." when no PC action was even tried: a failure made up. Also
+# "WhatsApp doesn't have a chat called 'Mronal'" and "WhatsApp isn't running", copied from an earlier turn.
 _PC_FAILURE_CLAIM = re.compile(
     r"\b(?:couldn'?t|could not|can'?t|cannot|wasn'?t able to|was unable to|unable to|failed to)\s+"
-    r"(?:open|play|start|launch|close|quit|pause|resume|skip|mute|unmute|lock|turn|set)\b"
-    r"|\b(?:didn'?t|did not|isn'?t|is not|wasn'?t|was not)\s+respond(?:ing)?\b|\bnot responding\b",
+    r"(?:open|play|start|launch|close|quit|pause|resume|skip|mute|unmute|lock|turn|set|send|message|text|call|reach"
+    r"|find|chat|click|type|write)\b"
+    r"|\b(?:didn'?t|did not|isn'?t|is not|wasn'?t|was not)\s+respond(?:ing)?\b|\bnot responding\b"
+    r"|\b(?:doesn'?t|does not)\s+have\s+a\s+(?:chat|contact)\b|\bno\s+(?:whatsapp\s+)?(?:chat|contact)\s+(?:called|named)\b"
+    r"|\b(?:isn'?t|is not|wasn'?t|was not)\s+running\b",
     re.I,
 )
+# Without PC tools this turn, a failure counts only when it names something on the PC ("the shop isn't open"
+# from a web answer isn't one).
+_PC_THING = re.compile(r"\b(?:whatsapp|youtube|spotify|chrome|edge|notepad|word|excel|vs code|jarvis|desktop app"
+                       r"|the app|your (?:pc|computer|laptop|screen)|chat)\b", re.I)
+# The excuse a small model repeats word for word to the next message, whatever it says.
+_EXCUSE = re.compile(r"\b(?:couldn'?t|could not|can'?t|cannot|unable|isn'?t|doesn'?t|wasn'?t|not)\b", re.I)
+# In a turn where nothing was tried at all, a draft still claiming one of these after its repair isn't shown
+# with a note added ("I'll message Mrunal on WhatsApp. Custodian check: Nothing was done..." is untrue and
+# confusing to hear): the whole reply is replaced by nothing_done(). When something was tried, the note stays -
+# it says what went wrong.
+REPLACED_KINDS = frozenset({"invented_failure", "repeated_reply", "unverified_pc_action", "unverified_send"})
 _CONTACT_CLAIM = re.compile(
     r"\b(?:i'?ll|i will|i'm going to|i am going to)\s+(?:also\s+)?(?:message|text|email|e-mail|call|phone|whatsapp)\s+you\b",
     re.I,
@@ -529,7 +549,8 @@ def review(reply: str, evidence: Evidence) -> list[Finding]:
             )
         )
     pc_done = any(o.tool == "pc" and o.status == "succeeded" for o in evidence.outcomes)
-    promised = any(_PC_PROMISE.search(s) and not _OFFER.search(s) for s in _statements(reply))
+    sentences = [s for s in _SENTENCES.findall(reply) if not s.rstrip().endswith("?")]  # whole: "I'll do that: send ..."
+    promised = any(_PC_PROMISE.search(s) and not _OFFER.search(s) for s in sentences)
     if not pc_done and (_says(reply, _PC_CLAIM) or promised):
         tried = [o for o in evidence.outcomes if o.tool == "pc"]
         why = _why_not(evidence, "pc", tried[-1].function) if tried else "no PC action was actually carried out"
@@ -543,13 +564,26 @@ def review(reply: str, evidence: Evidence) -> list[Finding]:
         )
     pc_offered = any(k.startswith("PC ·") for k in evidence.switches or {})
     pc_tried = any(o.tool == "pc" for o in evidence.outcomes)
-    if pc_offered and not pc_tried and any(_PC_FAILURE_CLAIM.search(s) for s in _statements(reply)):
+    failures = [s for s in _statements(reply) if _PC_FAILURE_CLAIM.search(s)]
+    if not pc_tried and failures and (pc_offered or any(_PC_THING.search(s) for s in failures)):
         findings.append(
             Finding(
                 "invented_failure",
                 "You said something on their PC failed, but you didn't call any pc tool in this turn, so nothing was "
-                "tried. Call the pc tool for what they asked now." + MISHEARD,
+                + ("tried. Call the pc tool for what they asked now." if pc_offered
+                   else "tried. Don't describe PC actions or failures; answer their message.") + MISHEARD,
                 "Nothing was tried on your PC: no PC action was attempted.",
+            )
+        )
+    if (evidence.previous_reply and not evidence.outcomes and _EXCUSE.search(reply)
+            and _plain(reply) == _plain(evidence.previous_reply)
+            and _plain(evidence.message or "") != _plain(evidence.previous_message or "")):
+        findings.append(
+            Finding(
+                "repeated_reply",
+                "You gave exactly the same answer as to their last message, but this is a new message: answer this "
+                "one, and call a tool if it asks for something." + MISHEARD,
+                "That was the same answer as before, so it may not fit what you just said.",
             )
         )
     message_sent = evidence.succeeded("gmail", "send_email") or evidence.succeeded("pc", "send_message")
@@ -560,7 +594,7 @@ def review(reply: str, evidence: Evidence) -> list[Finding]:
             Finding(
                 "unverified_send",
                 f"You said it was sent, but no gmail send_email (or pc send_message) call succeeded in this turn ({why}). "
-                "Say plainly that it wasn't sent, or save it as a draft.",
+                "Say plainly that it wasn't sent, or save it as a draft." + MISHEARD,
                 f"Nothing was sent: {why}.",
             )
         )
@@ -661,6 +695,20 @@ def review(reply: str, evidence: Evidence) -> list[Finding]:
 def repair_request(findings: list[Finding]) -> str:
     """The message that asks the model to fix its draft (sent as a user turn, never saved)."""
     return "\n".join([REPAIR_HEADER, *(f"- {f.repair}" for f in findings), REPAIR_FOOTER])
+
+
+def _plain(text: str) -> str:
+    """A reply as compared with another: without its check notes, case or punctuation."""
+    kept = [line for line in text.splitlines() if not line.startswith(NOTE_PREFIX)]
+    return " ".join(re.findall(r"\w+", " ".join(kept).lower()))
+
+
+def nothing_done(*, hindi: bool = False) -> str:
+    """What's said instead of a made-up failure that survived its repair: \"I couldn't open YouTube - it's not
+    running\" with a note under it saying nothing was tried was both untrue and confusing to hear."""
+    if hindi:
+        return "मैंने अभी कुछ नहीं किया - शायद मैं ठीक से सुन नहीं पाया। क्या आप फिर से बोल सकते हैं?"
+    return "I didn't actually do anything just then - I may not have caught what you said. Could you say it again?"
 
 
 def annotate(reply: str, findings: list[Finding]) -> str:
