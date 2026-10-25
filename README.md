@@ -294,7 +294,7 @@ Windows that lets Custodian act on your PC, from plain requests:
 | "organise my downloads", "make a folder called Trips" | sorts files into Images, Documents, ...; creates, copies, moves, deletes (to the Recycle Bin) |
 | "write a leave letter in Notepad" | writes the whole text into a new Notepad or Word document |
 | "research the best laptops under ₹80,000 and put it in a Word document" | searches several ways at once, reads the best pages (from different sites), writes a report citing them [1], [2], and saves it as a new Word file in Documents with the sources as links - only sources it really read |
-| "send a WhatsApp to Tanishka saying I'll be late" | opens that chat, checks it really is Tanishka's, shows you the chat and text, and sends only on **Allow once** |
+| "send a WhatsApp to Tanishka saying I'll be late" | opens that chat, checks it really is Tanishka's, shows you the chat and text, and sends only on **Allow once**. A name heard or spelled differently still finds its chat ("Mronal" opens Mrunal, "Abhi Choudhury" Abhi Chaudhari) when one clearly fits; when two fit, or none, it names the closest and asks |
 | "what did I miss?", "any new WhatsApp messages?" | reads your notifications (WhatsApp, Outlook, Teams, sites in Chrome, your phone's through Phone Link) and the unread counts, after **Allow once**, and sums them up; what's in them is never taken as instructions |
 | "click Send in WhatsApp", "fill the search box with ..." | reads the window's buttons and fields by name, then clicks or fills them |
 | "find my resume and open it", "close Chrome and lock the PC" | several steps in a row, each using the last one's result |

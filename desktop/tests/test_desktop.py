@@ -3,6 +3,7 @@ clicks or speaks)."""
 
 import queue
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -237,6 +238,74 @@ def test_whatsapp_rows_and_names_are_read_strictly():
     assert actions._same_person("tanishka", "Tanishka Sharma")
     assert not actions._same_person("mum", "Mumbai Trip")
     assert not actions._same_person("Tanishka", "+91 734 929 0925")
+
+
+@pytest.mark.parametrize("said, chat, fits", [
+    ("Mronal", "Mrunal Patil", True),  # how speech recognition wrote "Mrunal"
+    ("Abhi Choudhury", "Abhi Chaudhari", True),
+    ("abhi choudhary", "Abhi Choudhury", True),
+    ("tanishka", "Tanishka Sharma", True),
+    ("Abhi", "Abhishek", False),  # another person
+    ("mum", "Mumbai Trip", False),
+    ("Tanishka", "+91 734 929 0925", False),
+])
+def test_a_chat_name_fits_however_the_name_is_spelled_but_not_another_name(said, chat, fits):
+    assert (actions.name_score(said, chat) >= actions.NAME_MATCH) is fits
+
+
+class _WhatsApp:
+    """WhatsApp's chat list and search, as _open_chat sees them through UI Automation."""
+
+    def __init__(self, chats):
+        self.chats, self.query, self.opened, self.searched = chats, "", None, []
+
+    def first(self, name=None, control=None, *, contains=False):
+        if control == "Edit" and name == actions.COMPOSER_PREFIX.strip():
+            return SimpleNamespace(CurrentName=f"Type a message to {self.opened}") if self.opened else None
+        return "search box" if control == "Edit" else None
+
+    def set_value(self, element, text):
+        self.query = text
+        self.searched.append(text)
+
+    def rows(self):  # WhatsApp finds a chat by its exact letters
+        return [SimpleNamespace(CurrentName=f"{c} 1:46 pm see you", chat=c) for c in self.chats if self.query.lower() in c.lower()]
+
+
+@pytest.fixture
+def whatsapp(monkeypatch):
+    def make(*chats):
+        app = _WhatsApp(list(chats))
+        monkeypatch.setattr(actions, "_click_center", lambda row: setattr(app, "opened", row.chat))
+        monkeypatch.setattr(actions.time, "sleep", lambda seconds: None)
+        monkeypatch.setattr(actions, "SEARCH_SECONDS", 0.05)
+        return app
+    return make
+
+
+def test_a_misheard_or_misspelled_name_still_opens_the_one_chat_that_fits(whatsapp):
+    app = whatsapp("Mrunal Patil", "Mr Sharma", "Tanishka")
+    assert actions._open_chat(app, "Mronal") == "Mrunal Patil"  # "Mronal" lists nothing; "Mr" lists Mrunal
+    assert app.searched == ["Mronal", "Mr"]
+    app = whatsapp("Abhi Chaudhari", "Abhishek")
+    assert actions._open_chat(app, "Abhi Choudhury") == "Abhi Chaudhari"
+    assert actions._open_chat(whatsapp("Tanishka Sharma"), "tanishka") == "Tanishka Sharma"  # exact, as before
+
+
+def test_when_two_chats_fit_as_well_it_asks_which_and_opens_neither(whatsapp):
+    app = whatsapp("Rahul Sharma", "Rahul Verma")
+    with pytest.raises(actions.ActionError, match="closest are 'Rahul Sharma', 'Rahul Verma'.*nothing was sent"):
+        actions._open_chat(app, "Rahool")
+    assert app.opened is None
+    assert actions._open_chat(whatsapp("Zeenat"), "Zebra") is None  # nothing close: "no chat called ..."
+
+
+def test_a_message_said_to_a_misheard_name_shows_the_real_chat_before_sending(monkeypatch):
+    sent = _fake_whatsapp(monkeypatch, "Mrunal Patil")
+    asked = []
+    monkeypatch.setattr(actions, "confirm_hook", lambda title, details: asked.append(details) or True)
+    assert actions.run("send_message", {"contact": "Mronal", "text": "hi"}, PROTECTED)["sent_to"] == "Mrunal Patil"
+    assert asked == ["To: Mrunal Patil\n\nhi"] and sent == ["hi"]
 
 
 def _fake_whatsapp(monkeypatch, chat):

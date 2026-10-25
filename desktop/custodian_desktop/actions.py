@@ -1344,6 +1344,17 @@ class _Uia:
         pattern = element.GetCurrentPattern(self.ids.UIA_ValuePatternId).QueryInterface(self.ids.IUIAutomationValuePattern)
         pattern.SetValue(text)
 
+    def rows(self, limit: int = 40) -> list:
+        """The visible list rows - WhatsApp's chats, or what its search found."""
+        ids, found = self.ids, []
+        for control in ("DataItem", "ListItem"):
+            condition = self.iuia.CreateAndCondition(
+                self.iuia.CreatePropertyCondition(ids.UIA_IsOffscreenPropertyId, False),
+                self.iuia.CreatePropertyCondition(ids.UIA_ControlTypePropertyId, getattr(ids, f"UIA_{control}ControlTypeId")))
+            items = self.root.FindAll(ids.TreeScope_Descendants, condition)
+            found += [items.GetElement(i) for i in range(min(items.Length, limit))] if items else []
+        return found[:limit]
+
     def press(self, element) -> None:  # noqa: ANN001
         """Activate a list row or button the way a screen reader does (no mouse involved)."""
         for pattern_id, interface, method in (
@@ -1405,6 +1416,41 @@ def _same_person(wanted: str, chat: str) -> bool:
     return bool(want) and all(w in have for w in want)
 
 
+NAME_MATCH = 0.85  # how well a chat's name must fit the name said to be picked without asking which one
+NAME_CLOSE = 0.6  # ...and to be named as one they might mean ("Abhishek" for "Abhi", not "Zeenat" for "Zebra")
+SEARCH_SECONDS = 3.0  # how long WhatsApp's search gets to list what it found
+_NAME_FILLER = frozenset("on in to the my chat with whatsapp".split())
+
+
+def _name_key(word: str) -> str:
+    """How a name sounds, roughly, however it's spelled: 'Choudhury', 'Chaudhari' and 'Choudhary' are all
+    'cdr'; 'Mronal' (how speech recognition wrote Mrunal) and 'Mrunal' are both 'mrnl'."""
+    word = re.sub(r"[^a-z]", "", word.lower())
+    for spelled, said in (("ph", "f"), ("w", "v"), ("z", "j"), ("ck", "k"), ("q", "k"), ("x", "ks")):
+        word = word.replace(spelled, said)
+    word = re.sub(r"(?<=[bcdgjkpstv])h", "", word)  # dh, bh, kh, th, ch: d, b, k, t, c
+    if not word:
+        return ""
+    return re.sub(r"(.)\1+", r"\1", word[0] + re.sub(r"[aeiouy]", "", word[1:]))
+
+
+def name_score(wanted: str, chat: str) -> float:
+    """0-1: how well a chat's name fits a name as it was said - each word said must be there, spelled the same
+    or nearly ('Abhi Choudhury' fits 'Abhi Chaudhari' 1.0, 'mum' fits 'Mumbai Trip' 0.67)."""
+    import difflib
+
+    said = [w for w in re.findall(r"\w+", wanted.lower()) if w not in _NAME_FILLER]
+    have = re.findall(r"\w+", chat.lower())
+    if not said or not have:
+        return 0.0
+
+    def fits(word: str) -> float:
+        key = _name_key(word)
+        return max(1.0 if len(key) >= 2 and key == _name_key(h) else difflib.SequenceMatcher(None, word, h).ratio()
+                   for h in have)
+    return sum(fits(w) for w in said) / len(said)
+
+
 def _whatsapp_window() -> int:
     for attempt in range(30):
         found = next(((t, p, pid, h) for t, p, pid, h in _windows() if p.lower().startswith("whatsapp")), None)
@@ -1438,9 +1484,38 @@ def _composer_chat(ui: _Uia) -> str | None:
     return (composer.CurrentName or "")[len(COMPOSER_PREFIX):].strip() if composer is not None else None
 
 
+def _search_rows(ui: _Uia, search, query: str, contact: str) -> list[tuple[object, str]]:  # noqa: ANN001
+    """Type `query` into WhatsApp's search and read the rows it lists, as (row, chat name): once they stop
+    changing, or one is `contact` exactly, for up to 3 seconds."""
+    ui.set_value(search, query)
+    rows: list[tuple[object, str]] = []
+    deadline = time.monotonic() + SEARCH_SECONDS
+    while time.monotonic() < deadline:
+        time.sleep(0.4)
+        now = [(row, title) for row in ui.rows() if (title := _row_title(row.CurrentName or ""))]
+        if any(_same_person(contact, title) for _row, title in now) or (now and [t for _r, t in now] == [t for _r, t in rows]):
+            return now
+        rows = now
+    return rows
+
+
+def _open_row(ui: _Uia, row, title: str) -> str | None:  # noqa: ANN001
+    """Click a chat in the list; its name as the message box then reports it."""
+    _click_center(row)  # what a person does; focusing a row doesn't move WhatsApp's own selection
+    chat = None
+    for _ in range(15):
+        time.sleep(0.2)
+        chat = _composer_chat(ui)
+        if chat and _same_person(title, chat):
+            return chat
+    return chat
+
+
 def _open_chat(ui: _Uia, contact: str) -> str | None:
-    """Search for `contact` and open the first chat titled with that name. Returns the chat's
-    real name as WhatsApp's message box reports it ("Type a message to <name>"), or None."""
+    """Search for `contact` and open its chat: the one named exactly that, else the one whose name clearly fits
+    best (name_score) - "Mronal" opens Mrunal, "Abhi Choudhury" opens Abhi Chaudhari. Returns the chat's real
+    name as WhatsApp's message box reports it ("Type a message to <name>"), or None. When no chat clearly fits,
+    raises naming the closest, so the user can say which."""
     if (_composer_chat(ui) or "") and _same_person(contact, _composer_chat(ui) or ""):
         return _composer_chat(ui)  # already open
     # While it holds a search, the box loses its name; the message box always has one.
@@ -1454,21 +1529,30 @@ def _open_chat(ui: _Uia, contact: str) -> str | None:
         search = ui.first("Search or start a new chat", "Edit") or ui.first("", "Edit")
     if not search:
         raise ActionError("couldn't find WhatsApp's search box (is WhatsApp signed in?)")
-    ui.set_value(search, contact)
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        time.sleep(0.4)
-        row = ui.first(contact, "DataItem", contains=True) or ui.first(contact, "ListItem", contains=True)
-        if row is None or not _same_person(contact, _row_title(row.CurrentName or "")):
-            continue
-        _click_center(row)  # what a person does; focusing a row doesn't move WhatsApp's own selection
-        chat = None
-        for _ in range(15):
-            time.sleep(0.2)
-            chat = _composer_chat(ui)
-            if chat and _same_person(contact, chat):
-                return chat
-        return chat
+    words = [w for w in re.findall(r"\w+", contact) if w.lower() not in _NAME_FILLER]
+    # WhatsApp's search wants a name's exact letters, so next the first name alone ("Abhi" lists Abhi Chaudhari
+    # for "Abhi Choudhury"), then its first two letters ("Mr" lists Mrunal for "Mronal").
+    queries = [contact] + ([words[0]] if len(words) > 1 else []) + ([words[0][:2]] if words and len(words[0]) >= 4 else [])
+    close: dict[str, float] = {}
+    for query in dict.fromkeys(queries):
+        rows = _search_rows(ui, search, query, contact)
+        exact = next(((row, title) for row, title in rows if _same_person(contact, title)), None)
+        if exact:
+            return _open_row(ui, *exact)
+        best: dict[str, tuple[float, object]] = {}  # chat name -> (fit, its row); a name can be listed twice
+        for row, title in rows:
+            score = name_score(contact, title)
+            if score > best.get(title, (-1.0, None))[0]:
+                best[title] = (score, row)
+        ranked = sorted(best.items(), key=lambda item: -item[1][0])
+        if ranked and ranked[0][1][0] >= NAME_MATCH and (len(ranked) == 1 or ranked[1][1][0] < ranked[0][1][0] - 0.1):
+            return _open_row(ui, ranked[0][1][1], ranked[0][0])
+        for title, (score, _row) in ranked:
+            close[title] = max(close.get(title, 0.0), score)
+    nearest = [title for title, score in sorted(close.items(), key=lambda item: -item[1]) if score >= NAME_CLOSE][:3]
+    if nearest:
+        raise ActionError(f"no WhatsApp chat called {contact!r} was found; the closest are "
+                          + ", ".join(repr(n) for n in nearest) + " - ask which one they mean; nothing was sent")
     return None
 
 
@@ -1481,13 +1565,14 @@ def send_message(contact: str, text: str, app: str = "whatsapp", **_: object) ->
     chat = _open_chat(ui, contact)
     if chat is None:
         raise ActionError(f"no WhatsApp chat called {contact!r} was found; nothing was sent")
-    if not _same_person(contact, chat):
+    if not (_same_person(contact, chat) or name_score(contact, chat) >= NAME_MATCH):
         raise ActionError(f"the chat that opened is {chat!r}, not {contact!r}; nothing was sent")
+    # The dialog names the chat as WhatsApp does ("Mrunal Patil" for a "Mronal" that was said): that's the OK.
     if confirm_hook is None or not confirm_hook("Send a WhatsApp message", f"To: {chat}\n\n{text[:1500]}"):
         raise ActionError("The user declined this on the PC.")  # nobody to ask = never send
     refocus(hwnd)
     composer = ui.first(COMPOSER_PREFIX.strip(), "Edit", contains=True)
-    if composer is None or not _same_person(contact, (composer.CurrentName or "")[len(COMPOSER_PREFIX):]):
+    if composer is None or not _same_person(chat, (composer.CurrentName or "")[len(COMPOSER_PREFIX):]):
         raise ActionError("the chat changed before sending; nothing was sent")
     composer.SetFocus()
     time.sleep(0.15)
