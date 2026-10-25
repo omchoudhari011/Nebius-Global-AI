@@ -521,7 +521,13 @@ def _handle(
                 f"skill version {task.skill_id} is missing or rolled back; point the task at an active version"
             )
     else:
-        skill = skills.load_skill(skills.pick_skill_name(message or "")) or skills.load_skill(skills.DEFAULT_SKILL)
+        name = skills.pick_skill_name(message or "")
+        before = next((t["content"] for t in reversed(history) if t["role"] == "user"), "")
+        if name == skills.DEFAULT_SKILL and before and len((message or "").split()) <= 4:
+            # A short follow-up stays on the topic before it: "to a silent" (misheard) after "can you start the
+            # song?" got the general skill, with no PC tools, and the model made up "YouTube didn't respond".
+            name = skills.pick_skill_name(before)
+        skill = skills.load_skill(name) or skills.load_skill(skills.DEFAULT_SKILL)
     # Saying a routine's name ("work mode") runs it (app/routines.py); an exact everyday PC
     # command ("load localhost:3000") belongs to the PC skill whatever the keywords said
     # (app/fastpath.py runs it below).

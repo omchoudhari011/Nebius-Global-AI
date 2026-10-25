@@ -17,6 +17,18 @@ def test_denied_then_allowed(user_id, grant):
     assert second["conversation_id"] == first["conversation_id"]
 
 
+def test_a_short_follow_up_stays_on_the_topic_before_it(user_id):
+    first = orchestrator.handle(user_id, "can you start the song on youtube")
+    assert first["used"]["skill"]["name"] == "pc"
+    # misheard; on its own it matches no skill, and the general one has no PC tools to act with
+    after = orchestrator.handle(user_id, "to a silent", conversation_id=first["conversation_id"])
+    assert after["used"]["skill"]["name"] == "pc"
+    fresh = orchestrator.handle(user_id, "to a silent")  # a new chat: nothing to follow on from
+    assert fresh["used"]["skill"]["name"] == skills.DEFAULT_SKILL
+    longer = orchestrator.handle(user_id, "tell me a fun fact about the moon please", conversation_id=first["conversation_id"])
+    assert longer["used"]["skill"]["name"] == skills.DEFAULT_SKILL  # a real new question picks for itself
+
+
 def test_remember_saves_memory_linked_to_the_message(user_id):
     out = orchestrator.handle(user_id, "Remember that I prefer aisle seats")
     saved = out["used"]["remembered"]
