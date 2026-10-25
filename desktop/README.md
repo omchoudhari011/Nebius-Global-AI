@@ -85,7 +85,10 @@ Some details:
   not pixels.
 - `send_message` opens the WhatsApp chat by name and reads whose chat it is from WhatsApp's own message
   box ("Type a message to Tanishka"). A different or missing chat means nothing is sent. Its dialog
-  shows that real name and the exact text, and it sends only on **Allow once**.
+  shows that real name and the exact text, and it sends only on **Allow once**. WhatsApp redraws its
+  list while search results come in, so a row that's gone by the time it's read or clicked means the
+  search starts again (Windows' own text for that error, "An event was unable to invoke any of the
+  subscribers", is never shown).
 - A window or app is matched by what you mean: "WhatsApp" is the WhatsApp app, not a file
   called `whatsapp_bot.py` open in an editor. The dialog names the exact window first.
 - For web pages in Chrome or Edge, run `.\run-desktop.ps1 -BrowserAccess` once and restart the

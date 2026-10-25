@@ -200,6 +200,8 @@ class App:
             if self.hud_on() and function != "confirm_plan":
                 self.hud.log(self.action_label(function, args))
         except Exception as exc:  # noqa: BLE001 - reported to the model
+            if not isinstance(exc, actions.ActionError):  # unexpected: where it broke, to fix it
+                log.warning("%s failed", function, exc_info=True)
             self.client.send_result(action["id"], False, error=f"{type(exc).__name__}: {exc}"[:500])
             if self.hud_on():
                 self.hud.log(f"{self.action_label(function, args)} · failed", warn=True)

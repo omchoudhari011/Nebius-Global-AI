@@ -272,10 +272,42 @@ class _WhatsApp:
         return [SimpleNamespace(CurrentName=f"{c} 1:46 pm see you", chat=c) for c in self.chats if self.query.lower() in c.lower()]
 
 
+class COMError(Exception):  # what comtypes raises when a UI Automation call fails
+    pass
+
+
+def _gone():
+    return COMError(actions.UIA_E_ELEMENTNOTAVAILABLE, "An event was unable to invoke any of the subscribers", (None,) * 5)
+
+
+class _Redrawn:
+    """A row WhatsApp replaced after it was found: reading it fails."""
+
+    @property
+    def CurrentName(self):  # noqa: N802 - UI Automation's name
+        raise _gone()
+
+
+class _Redrawing(_WhatsApp):
+    """WhatsApp redrawing its list as each search's results come in: the first read after typing fails."""
+
+    redrawing = False
+
+    def set_value(self, element, text):
+        super().set_value(element, text)
+        self.redrawing = True
+
+    def rows(self):
+        if self.redrawing:
+            self.redrawing = False
+            return [_Redrawn()]
+        return super().rows()
+
+
 @pytest.fixture
 def whatsapp(monkeypatch):
-    def make(*chats):
-        app = _WhatsApp(list(chats))
+    def make(*chats, kind=_WhatsApp):
+        app = kind(list(chats))
         monkeypatch.setattr(actions, "_click_center", lambda row: setattr(app, "opened", row.chat))
         monkeypatch.setattr(actions.time, "sleep", lambda seconds: None)
         monkeypatch.setattr(actions, "SEARCH_SECONDS", 0.05)
@@ -298,6 +330,27 @@ def test_when_two_chats_fit_as_well_it_asks_which_and_opens_neither(whatsapp):
         actions._open_chat(app, "Rahool")
     assert app.opened is None
     assert actions._open_chat(whatsapp("Zeenat"), "Zebra") is None  # nothing close: "no chat called ..."
+
+
+def test_whatsapp_redrawing_its_list_mid_search_does_not_stop_it(whatsapp):
+    app = whatsapp("Mrunal Patil", "Mr Sharma", kind=_Redrawing)
+    assert actions._open_chat(app, "Mronal") == "Mrunal Patil"  # was: COMError "...invoke any of the subscribers"
+    assert app.searched == ["Mronal", "Mr"]
+
+
+def test_a_chat_redrawn_just_before_its_click_is_searched_for_again(whatsapp, monkeypatch):
+    app = whatsapp("Tanishka Sharma")
+    clicks = []
+
+    def click(row):
+        clicks.append(row.chat)
+        if len(clicks) == 1:
+            raise _gone()
+        app.opened = row.chat
+
+    monkeypatch.setattr(actions, "_click_center", click)
+    assert actions._open_chat(app, "tanishka") == "Tanishka Sharma"
+    assert clicks == ["Tanishka Sharma", "Tanishka Sharma"]
 
 
 def test_a_message_said_to_a_misheard_name_shows_the_real_chat_before_sending(monkeypatch):
@@ -349,6 +402,20 @@ def test_a_different_chat_is_never_messaged(monkeypatch):
     with pytest.raises(actions.ActionError, match="not 'Tanishka'; nothing was sent"):
         actions.run("send_message", {"contact": "Tanishka", "text": "hi"}, PROTECTED)
     assert sent == []
+
+
+def test_when_whatsapp_keeps_redrawing_the_error_is_said_in_words_and_nothing_is_sent(monkeypatch):
+    sent = _fake_whatsapp(monkeypatch, "Tanishka")
+    monkeypatch.setattr(actions, "confirm_hook", lambda title, details: True)
+
+    def redrawn(ui, contact):
+        raise _gone()
+
+    monkeypatch.setattr(actions, "_open_chat", redrawn)
+    with pytest.raises(actions.ActionError) as error:
+        actions.run("send_message", {"contact": "Tanishka", "text": "hi"}, PROTECTED)
+    assert "redrew its window" in str(error.value) and "nothing was sent" in str(error.value)
+    assert "subscribers" not in str(error.value) and sent == []
 
 
 def test_the_mouse_in_a_corner_stops_an_action_with_a_clear_message(monkeypatch):

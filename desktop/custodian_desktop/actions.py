@@ -15,6 +15,7 @@ import datetime as dt
 import fnmatch
 import glob
 import io
+import logging
 import os
 import re
 import shutil
@@ -24,6 +25,7 @@ from pathlib import Path
 
 from . import browser, notices
 
+log = logging.getLogger(__name__)
 MAX_READ = 8000
 MAX_LIST = 40  # a long list costs the model seconds to write out; it says how many more
 SKIP_DIRS = {"AppData", "node_modules", ".git", "$Recycle.Bin", "Windows", ".venv", "venv", "__pycache__", "site-packages",
@@ -1310,6 +1312,14 @@ def fill_field(name: str, text: str, window: str = "", **_: object) -> dict:
 
 confirm_hook = None  # set by the app: (title, details) -> bool, for actions that confirm what they found
 COMPOSER_PREFIX = "type a message to "
+# UI Automation's "that element isn't there any more": the app redrew it between finding it and using it, as
+# WhatsApp does while its search results come in. (Windows' own text for the code, "An event was unable to
+# invoke any of the subscribers", says nothing useful.)
+UIA_E_ELEMENTNOTAVAILABLE = 0x80040201 - (1 << 32)
+
+
+def _gone(exc: BaseException) -> bool:
+    return type(exc).__name__ == "COMError" and bool(exc.args) and exc.args[0] == UIA_E_ELEMENTNOTAVAILABLE
 
 
 class _Uia:
@@ -1479,9 +1489,35 @@ def _click_center(element) -> None:  # noqa: ANN001
     user32.mouse_event(0x0004, 0, 0, 0, 0)  # left up
 
 
+def _composer(ui: _Uia):  # noqa: ANN202
+    """WhatsApp's message box and the chat it's for ("Type a message to <name>"), or None. Opening a chat
+    replaces the box, so one found a moment before can be gone when it's read: then look again."""
+    for _ in range(3):
+        box = ui.first(COMPOSER_PREFIX.strip(), "Edit", contains=True)
+        if box is None:
+            return None
+        try:
+            return box, (box.CurrentName or "")[len(COMPOSER_PREFIX):].strip()
+        except Exception as exc:
+            if not _gone(exc):
+                raise
+        time.sleep(0.2)
+    return None
+
+
 def _composer_chat(ui: _Uia) -> str | None:
-    composer = ui.first(COMPOSER_PREFIX.strip(), "Edit", contains=True)
-    return (composer.CurrentName or "")[len(COMPOSER_PREFIX):].strip() if composer is not None else None
+    found = _composer(ui)
+    return found[1] if found else None
+
+
+def _listed(ui: _Uia) -> list[tuple[object, str]] | None:
+    """The rows WhatsApp lists now, as (row, chat name); None while it's still redrawing them."""
+    try:
+        return [(row, title) for row in ui.rows() if (title := _row_title(row.CurrentName or ""))]
+    except Exception as exc:
+        if _gone(exc):
+            return None
+        raise
 
 
 def _search_rows(ui: _Uia, search, query: str, contact: str) -> list[tuple[object, str]]:  # noqa: ANN001
@@ -1492,7 +1528,9 @@ def _search_rows(ui: _Uia, search, query: str, contact: str) -> list[tuple[objec
     deadline = time.monotonic() + SEARCH_SECONDS
     while time.monotonic() < deadline:
         time.sleep(0.4)
-        now = [(row, title) for row in ui.rows() if (title := _row_title(row.CurrentName or ""))]
+        now = _listed(ui)
+        if now is None:  # a row went while it was being read: the list is still changing
+            continue
         if any(_same_person(contact, title) for _row, title in now) or (now and [t for _r, t in now] == [t for _r, t in rows]):
             return now
         rows = now
@@ -1515,7 +1553,20 @@ def _open_chat(ui: _Uia, contact: str) -> str | None:
     """Search for `contact` and open its chat: the one named exactly that, else the one whose name clearly fits
     best (name_score) - "Mronal" opens Mrunal, "Abhi Choudhury" opens Abhi Chaudhari. Returns the chat's real
     name as WhatsApp's message box reports it ("Type a message to <name>"), or None. When no chat clearly fits,
-    raises naming the closest, so the user can say which."""
+    raises naming the closest, so the user can say which. WhatsApp redraws its list as search results come in,
+    so a row read a moment before can be gone when it's clicked: then it starts again (nothing is sent before
+    the chat is open and checked)."""
+    for attempt in range(3):
+        try:
+            return _search_and_open(ui, contact)
+        except Exception as exc:
+            if not _gone(exc) or attempt == 2:
+                raise
+            time.sleep(0.5)
+    return None
+
+
+def _search_and_open(ui: _Uia, contact: str) -> str | None:
     if (_composer_chat(ui) or "") and _same_person(contact, _composer_chat(ui) or ""):
         return _composer_chat(ui)  # already open
     # While it holds a search, the box loses its name; the message box always has one.
@@ -1571,9 +1622,10 @@ def send_message(contact: str, text: str, app: str = "whatsapp", **_: object) ->
     if confirm_hook is None or not confirm_hook("Send a WhatsApp message", f"To: {chat}\n\n{text[:1500]}"):
         raise ActionError("The user declined this on the PC.")  # nobody to ask = never send
     refocus(hwnd)
-    composer = ui.first(COMPOSER_PREFIX.strip(), "Edit", contains=True)
-    if composer is None or not _same_person(chat, (composer.CurrentName or "")[len(COMPOSER_PREFIX):]):
+    found = _composer(ui)
+    if found is None or not _same_person(chat, found[1]):
         raise ActionError("the chat changed before sending; nothing was sent")
+    composer = found[0]
     composer.SetFocus()
     time.sleep(0.15)
     _paste_into_focus(text)
@@ -1608,6 +1660,7 @@ ACTIONS = {
     "recycle_created": recycle_created, "restore_backup": restore_backup, "cancel_timer": cancel_timer,
 }
 SELF_CONFIRMING = {"send_message", "browser_click", "browser_fill"}  # they ask once they know exactly what they'll do
+_NOTHING_DONE = {"send_message": "nothing was sent - ask again"}
 # Of those, the ones the server doesn't mark "confirm": they ask only when what they found is risky
 # (a submit or "Place order" button, Enter in a form), so following a link never asks.
 ASK_WHEN_RISKY = {"browser_click", "browser_fill"}
@@ -1626,6 +1679,12 @@ def run(function: str, args: dict, protected: list[str]) -> object:
         if type(exc).__name__ == "FailSafeException":  # pyautogui's emergency stop
             raise ActionError("stopped: the mouse is in a corner of the screen (Custodian's emergency stop); "
                               "move it away and ask again") from None
+        if type(exc).__name__ == "COMError":  # Windows UI Automation's codes, in words
+            log.warning("%s: UI Automation error", function, exc_info=True)
+            code = exc.args[0] if exc.args and isinstance(exc.args[0], int) else 0
+            what = ("the app redrew its window while Jarvis was reading it" if _gone(exc)
+                    else f"Windows couldn't read or use the app's window (UI Automation error {code & 0xFFFFFFFF:#010x})")
+            raise ActionError(f"{what}, so it stopped; {_NOTHING_DONE.get(function, 'ask again')}") from None
         raise
 
 
