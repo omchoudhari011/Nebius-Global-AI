@@ -432,6 +432,19 @@ def _attached(files: list[dict]) -> str:
             + "\n".join(blocks))
 
 
+def _last_skill(conversation_id: int) -> str | None:
+    """The skill the conversation's latest reply used."""
+    with db.connect() as conn:
+        row = conn.execute(
+            """
+            SELECT s.name FROM messages m JOIN skills s ON s.id = m.skill_id
+            WHERE m.conversation_id = ? AND m.role = 'assistant' ORDER BY m.id DESC LIMIT 1
+            """,
+            (conversation_id,),
+        ).fetchone()
+    return row["name"] if row else None
+
+
 def _save_trace(message_id: int, trace: dict) -> None:
     with db.connect() as conn:
         conn.execute("UPDATE messages SET trace = ? WHERE id = ?", (encrypt_json(trace), message_id))
@@ -522,11 +535,11 @@ def _handle(
             )
     else:
         name = skills.pick_skill_name(message or "")
-        before = next((t["content"] for t in reversed(history) if t["role"] == "user"), "")
-        if name == skills.DEFAULT_SKILL and before and len((message or "").split()) <= 4:
-            # A short follow-up stays on the topic before it: "to a silent" (misheard) after "can you start the
-            # song?" got the general skill, with no PC tools, and the model made up "YouTube didn't respond".
-            name = skills.pick_skill_name(before)
+        if name == skills.DEFAULT_SKILL and history and len((message or "").split()) <= 4:
+            # A short follow-up stays on the topic of the reply before it: "to a silent" (misheard) after "can you
+            # start the song?" got the general skill, with no PC tools, and the model made up "YouTube didn't
+            # respond". The reply's skill, not the message's, so it holds through several misheard fragments.
+            name = _last_skill(conversation_id) or name
         skill = skills.load_skill(name) or skills.load_skill(skills.DEFAULT_SKILL)
     # Saying a routine's name ("work mode") runs it (app/routines.py); an exact everyday PC
     # command ("load localhost:3000") belongs to the PC skill whatever the keywords said

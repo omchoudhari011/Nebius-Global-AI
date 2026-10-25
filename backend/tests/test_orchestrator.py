@@ -23,6 +23,8 @@ def test_a_short_follow_up_stays_on_the_topic_before_it(user_id):
     # misheard; on its own it matches no skill, and the general one has no PC tools to act with
     after = orchestrator.handle(user_id, "to a silent", conversation_id=first["conversation_id"])
     assert after["used"]["skill"]["name"] == "pc"
+    again = orchestrator.handle(user_id, "you", conversation_id=first["conversation_id"])  # misheard twice running
+    assert again["used"]["skill"]["name"] == "pc"
     fresh = orchestrator.handle(user_id, "to a silent")  # a new chat: nothing to follow on from
     assert fresh["used"]["skill"]["name"] == skills.DEFAULT_SKILL
     longer = orchestrator.handle(user_id, "tell me a fun fact about the moon please", conversation_id=first["conversation_id"])

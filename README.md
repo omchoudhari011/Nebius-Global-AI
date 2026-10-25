@@ -654,6 +654,12 @@ prompt (`app/grounding.py`):
   or say plainly what didn't happen. If the rewrite still fails, the reply ends with a
   `Custodian check:` note saying what really happened. The app marks such replies
   ("Corrected before sending" / "Unverified claim flagged") and Active Context lists the details.
+  When nothing at all was tried in the turn and the rewrite still claims something happened on the
+  PC, or failed there ("Sent it to Mrunal", "I couldn't open WhatsApp - it's not running"), the
+  reply is replaced: "I didn't actually do anything just then - I may not have caught what you
+  said. Could you say it again?" A claim with a note under it contradicting it is confusing to hear.
+  The same excuse repeated word for word to a new message counts as made up, and a short follow-up
+  ("it's Mrunal", or speech misheard as "and say hi") keeps the skill of the reply before it.
 - **Saying "I don't know".** When you ask about yourself and nothing saved or said matches,
   the model is told so and asked not to guess.
 
