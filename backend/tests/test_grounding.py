@@ -250,6 +250,17 @@ def test_a_personal_question_with_nothing_on_file_invites_i_dont_know(user_id):
         ("I couldn't open YouTube: the desktop app isn't running.", [], False),
         ("Wrote it down in your notes.", [("notes", "create_note", "succeeded")], False),
         ("Playing it safe, I didn't change anything.", [], False),
+        ("Played Kalyani, sir.", [], True),  # said after a misheard "to a silent", with nothing played
+        ("Playing Kalyani by Arijit Singh.", [], True),
+        ("Started the song.", [], True),
+        ("Played Kalyani, sir.", [("pc", "play", "succeeded")], False),
+        ("Pausing the song, sir.", [], True),  # said with nothing paused
+        ("Opening YouTube now.", [], True),
+        ("Pausing the song, sir.", [("pc", "media", "succeeded")], False),
+        ("I'll mute it, sir.", [], True),  # a promise as the whole answer: nothing will ever mute it
+        ("Let me open Notepad for you.", [], True),
+        ("I'll open it if you like.", [], False),  # an offer
+        ("I'll mute it, sir.", [("pc", "media", "succeeded")], False),
     ],
 )
 def test_claim_detection(reply, outcomes, flagged):
@@ -257,6 +268,30 @@ def test_claim_detection(reply, outcomes, flagged):
         message="hi", outcomes=[SimpleNamespace(tool=t, function=f, status=s, error=None) for t, f, s in outcomes]
     )
     assert bool(grounding.review(reply, evidence)) is flagged
+
+
+PC_ON = {"PC · read": True, "PC · write": True}
+
+
+@pytest.mark.parametrize(
+    "reply, outcomes, switches, kind",
+    [
+        # "Can you start the song?" answered without calling anything:
+        ("I couldn't play Kalyani - YouTube didn't respond.", [], PC_ON, "invented_failure"),
+        ("Spotify isn't responding right now.", [], PC_ON, "invented_failure"),
+        # a real failure, or a question back, is not made up
+        ("I couldn't play Kalyani - YouTube didn't respond.", [("pc", "play", "failed")], PC_ON, None),
+        ("Which song should I play?", [], PC_ON, None),
+        ("I couldn't open YouTube: the desktop app isn't running.", [], None, None),  # PC tools not offered
+    ],
+)
+def test_a_pc_failure_with_nothing_tried_is_caught(reply, outcomes, switches, kind):
+    evidence = grounding.Evidence(
+        message="can you start the song", switches=switches,
+        outcomes=[SimpleNamespace(tool=t, function=f, status=s, error="YouTube didn't respond") for t, f, s in outcomes],
+    )
+    kinds = {f.kind for f in grounding.review(reply, evidence)}
+    assert (kind in kinds) if kind else ("invented_failure" not in kinds)
 
 
 CANBERRA = "https://en.wikipedia.org/wiki/Canberra"

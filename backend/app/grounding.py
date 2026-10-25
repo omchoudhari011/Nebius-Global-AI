@@ -263,7 +263,9 @@ _PC_CLAIM = re.compile(
     r"(?:set|muted|unmuted|paused|playing|locked|open|opened|closed)\b"
     # The short form a reply starts with: "Opened YouTube.", "Playing “Kalyani” on YouTube."
     r"|(?:^\W*|[.!?]\s+)(?:done[\s,!-]+)?(?:opened|launched|closed|quit|locked|muted|unmuted|paused|resumed|skipped|typed"
-    r"|pressed|clicked|dimmed|playing\s+\S.*\bon (?:youtube|spotify)|set the (?:volume|brightness)|switched windows"
+    r"|pressed|clicked|dimmed|played|playing\s+(?!it\s+safe)[“\"']?\w+|started (?:the |your )?(?:song|music|video|playback)"
+    r"|(?:pausing|resuming|muting|unmuting|skipping|opening|closing|launching|locking|starting)\s+(?:it|that|the|your|[“\"']?[A-Z]\w*)"
+    r"|set the (?:volume|brightness)|switched windows"
     r"|turned (?:the volume|the brightness|it) (?:up|down)|sorted \d+ files|created the \S.* folder|started an? \S.*timer"
     r"|timer set|wrote (?:the |a |your )?\S.* in (?:notepad|word)|filled|moved (?:it|the file)|copied (?:it|the file))\b",
     re.I | re.M,
@@ -287,6 +289,25 @@ _EXCUSE_CLAIM = re.compile(
     re.I,
 )
 _SWITCH = re.compile(r"([A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)?) · (read|write)")
+# "I'll mute it, sir." as the whole answer: the turn ends there, so nothing is ever muted. (An offer - "I'll open
+# it if you like" - is a question, not a promise.)
+_PC_PROMISE = re.compile(
+    r"\b(?:i'?ll|i will|i'm going to|i am going to|let me)\s+(?:now\s+|just\s+)?(?:mute|unmute|pause|resume|play|open|"
+    r"close|quit|lock|skip|start|turn|set|launch|switch|dim)\b",
+    re.I,
+)
+_OFFER = re.compile(r"\b(?:if|when|once|whenever|shall|should|want|would you|do you)\b", re.I)
+# Said in the repair round of a false PC claim, not in the skill's prompt: there, a 4B model began treating clear
+# requests ("whatsapp Tanishka: did you reach home?", "click voice call in whatsapp") as noise.
+MISHEARD = (" If their message doesn't make sense as a request (speech can be misheard, like \"to a silent\"), say "
+            "you didn't catch it and ask them to say it again.")
+# "I couldn't play Kalyani - YouTube didn't respond." when no PC action was even tried: a failure made up.
+_PC_FAILURE_CLAIM = re.compile(
+    r"\b(?:couldn'?t|could not|can'?t|cannot|wasn'?t able to|was unable to|unable to|failed to)\s+"
+    r"(?:open|play|start|launch|close|quit|pause|resume|skip|mute|unmute|lock|turn|set)\b"
+    r"|\b(?:didn'?t|did not|isn'?t|is not|wasn'?t|was not)\s+respond(?:ing)?\b|\bnot responding\b",
+    re.I,
+)
 _CONTACT_CLAIM = re.compile(
     r"\b(?:i'?ll|i will|i'm going to|i am going to)\s+(?:also\s+)?(?:message|text|email|e-mail|call|phone|whatsapp)\s+you\b",
     re.I,
@@ -508,15 +529,27 @@ def review(reply: str, evidence: Evidence) -> list[Finding]:
             )
         )
     pc_done = any(o.tool == "pc" and o.status == "succeeded" for o in evidence.outcomes)
-    if not pc_done and _says(reply, _PC_CLAIM):
+    promised = any(_PC_PROMISE.search(s) and not _OFFER.search(s) for s in _statements(reply))
+    if not pc_done and (_says(reply, _PC_CLAIM) or promised):
         tried = [o for o in evidence.outcomes if o.tool == "pc"]
         why = _why_not(evidence, "pc", tried[-1].function) if tried else "no PC action was actually carried out"
         findings.append(
             Finding(
                 "unverified_pc_action",
                 f"You said you did something on their PC, but no pc action succeeded in this turn ({why}). Call the "
-                "pc tool if you can, or say plainly what didn't happen.",
+                "pc tool if you can, or say plainly what didn't happen." + MISHEARD,
                 f"Nothing was done on your PC: {why}.",
+            )
+        )
+    pc_offered = any(k.startswith("PC ·") for k in evidence.switches or {})
+    pc_tried = any(o.tool == "pc" for o in evidence.outcomes)
+    if pc_offered and not pc_tried and any(_PC_FAILURE_CLAIM.search(s) for s in _statements(reply)):
+        findings.append(
+            Finding(
+                "invented_failure",
+                "You said something on their PC failed, but you didn't call any pc tool in this turn, so nothing was "
+                "tried. Call the pc tool for what they asked now." + MISHEARD,
+                "Nothing was tried on your PC: no PC action was attempted.",
             )
         )
     message_sent = evidence.succeeded("gmail", "send_email") or evidence.succeeded("pc", "send_message")
