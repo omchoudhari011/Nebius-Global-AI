@@ -362,6 +362,23 @@ def test_custodians_own_wake_phrase_wakes_after_steps_in_a_row_and_is_stricter_w
     assert wake.own("../hey_vitrus") is None and wake.own("hey_nobody") is None
 
 
+def test_hey_vitrus_through_the_real_listener_hands_the_request_on():
+    """It woke, recorded, then crashed on the listener's reset() ('Detector' has no reset), so nothing
+    said after "Hey Vitrus" ever reached Custodian. The shipped model, loaded the way the app loads it."""
+    from custodian_desktop import wake
+
+    listener, heard = _listener(wake_model="hey_vitrus")
+    listener.wake_word = True
+    listener._load_model()
+    assert isinstance(listener._model, wake.Detector)
+    listener.heard_wake_word = lambda frame, speaking: frame is LOUD  # "Hey Vitrus" heard
+    frames: queue.Queue = queue.Queue()
+    for frame in [LOUD] * 15 + [QUIET] * 20:
+        frames.put(frame)
+    assert listener.step(LOUD, frames, deque([float(QUIET.std())] * 10)) is True  # a quiet room before it
+    assert len(heard) == 1  # the request went on to be transcribed and answered
+
+
 def test_the_listener_asks_the_second_opinion_only_for_hey_jarvis():
     class Pre:
         def get_features(self, n):

@@ -61,6 +61,11 @@ class Detector:
         self.run = int(data["run"]) if "run" in data.files else 2
         self.features, self.streak = features, 0
 
+    def reset(self) -> None:
+        """Forget what it heard (the Listener does after each recording, as with an openWakeWord model)."""
+        self.streak = 0
+        self.features.reset()
+
     def probability(self, frame: np.ndarray) -> float:
         self.features(frame)
         return self.net.probability(self.features.get_features(16))
@@ -69,8 +74,7 @@ class Detector:
         threshold = max(self.threshold, self.STRICT) if strict else self.threshold
         self.streak = self.streak + 1 if self.probability(frame) >= threshold else 0
         if self.streak >= self.run:
-            self.streak = 0
-            self.features.reset()  # its features look back ~2 s: the same "Hey Vitrus" mustn't wake it twice
+            self.reset()  # its features look back ~2 s: the same "Hey Vitrus" mustn't wake it twice
             return True
         return False
 
