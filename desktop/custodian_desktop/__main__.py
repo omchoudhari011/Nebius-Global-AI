@@ -3,7 +3,7 @@
     .venv\\Scripts\\pythonw -m custodian_desktop        (desktop\\run-desktop.ps1 does this)
 
 Threads: the window (main thread), the PC-action bridge (long-polls the server), the
-microphone listener (wake word "Hey Jarvis"), the global hotkey, and the tray icon.
+microphone listener (wake word "Hey Vitrus"), the global hotkey, and the tray icon.
 """
 
 from __future__ import annotations
@@ -315,7 +315,7 @@ class App:
                 self.hud.alert(text)
             speaking = not self.day.get("quiet") and self.day.get("announce", True)
             if speaking:
-                self.show("Jarvis", reply=text, hide_after=20 if hogs else 12)
+                self.show("Custodian", reply=text, hide_after=20 if hogs else 12)
                 self.speak(text)
             if hogs:
                 self.offer_to_close(hogs, listen=speaking and self.settings.speak_announcements and not self.paused)
@@ -344,7 +344,7 @@ class App:
             log.info("freed memory: %s", text)
             if self.hud_on():
                 self.hud.log(f"close app · {', '.join(closed) or 'none'}")
-            self.show("Jarvis", reply=text, hide_after=8)
+            self.show("Custodian", reply=text, hide_after=8)
             self.speak(text)
 
         label = "Close " + jarvis.names([jarvis.app_name(a["app"]) for a in hogs])
@@ -390,7 +390,7 @@ class App:
         warnings = [f"the battery is at {battery['percent']}%"] if battery and not battery["charging"] and battery["percent"] <= 20 else []
         upcoming = next((e for e in self.day.get("events", []) if not e.get("past")), None)
         text = jarvis.greeting(self.address, warnings=warnings, next_event=upcoming)
-        self.show("Jarvis", reply=text, hide_after=10)
+        self.show("Custodian", reply=text, hide_after=10)
         self.speak(text)
 
     @staticmethod
@@ -552,10 +552,10 @@ class App:
                 self.hud.state("idle")
             self.show("Didn't catch that", hide_after=2)
         elif state == "wake word unavailable":  # Windows blocked a file it needs, say: the hotkey still works
-            self.show("“Hey Jarvis” isn't working right now", reply="Windows blocked a file the wake word needs. "
+            self.show(f"“{self.settings.wake_phrase}” isn't working right now", reply="Windows blocked a file the wake word needs. "
                       "Press Ctrl+Alt+Space to talk - I'll keep trying, and tell you when it's back.", hide_after=12)
         elif state == "wake word back":
-            self.show("“Hey Jarvis” is working again", hide_after=5)
+            self.show(f"“{self.settings.wake_phrase}” is working again", hide_after=5)
         elif state == "conversation over":  # nothing said after a reply: go quiet, back to the wake word
             self.conversing = False
             if self.hud_on():
@@ -611,7 +611,7 @@ class App:
                 self.on_state("didn't catch that")
                 return
             if jarvis.ends_conversation(text):  # "that's all", "thank you": no request, just a polite close
-                self.show("Jarvis", heard=text, reply=jarvis.sign_off(self.address), hide_after=4)
+                self.show("Custodian", heard=text, reply=jarvis.sign_off(self.address), hide_after=4)
                 if self.settings.speak_replies:
                     self.talk(jarvis.sign_off(self.address))
                 if self.hud_on() and self.hud.mode != "full":
@@ -811,7 +811,7 @@ class App:
             if self.settings.greet and self.settings.speak_announcements:
                 threading.Thread(target=self.greet, daemon=True, name="greeting").start()
             else:
-                self.show("Jarvis is online", reply=hint, hide_after=5)
+                self.show("Custodian is online", reply=hint, hide_after=5)
 
         self.start_tray()
         threading.Thread(target=start, daemon=True, name="start").start()

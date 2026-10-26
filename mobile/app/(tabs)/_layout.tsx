@@ -60,7 +60,7 @@ export default function TabsLayout() {
         }}
       >
         <Tabs.Screen name="index" options={{ title: "Chat", tabBarIcon: icon("chatbubble-ellipses") }} />
-        <Tabs.Screen name="jarvis" options={{ title: "Jarvis", tabBarIcon: icon("desktop") }} />
+        <Tabs.Screen name="jarvis" options={{ title: "Custodian", tabBarIcon: icon("desktop") }} />
         <Tabs.Screen name="scheduled" options={{ title: "Scheduled", tabBarIcon: icon("alarm") }} />
         <Tabs.Screen name="tools-data" options={{ title: "Tools & Data", tabBarIcon: icon("shield-checkmark") }} />
         <Tabs.Screen name="account" options={{ title: "Account", tabBarIcon: icon("person-circle") }} />

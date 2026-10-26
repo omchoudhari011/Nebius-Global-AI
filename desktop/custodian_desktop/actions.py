@@ -1784,7 +1784,7 @@ def run(function: str, args: dict, protected: list[str]) -> object:
         if type(exc).__name__ == "COMError":  # Windows UI Automation's codes, in words
             log.warning("%s: UI Automation error", function, exc_info=True)
             code = exc.args[0] if exc.args and isinstance(exc.args[0], int) else 0
-            what = ("the app redrew its window while Jarvis was reading it" if _gone(exc)
+            what = ("the app redrew its window while Custodian was reading it" if _gone(exc)
                     else f"Windows couldn't read or use the app's window (UI Automation error {code & 0xFFFFFFFF:#010x})")
             raise ActionError(f"{what}, so it stopped; {_NOTHING_DONE.get(function, 'ask again')}") from None
         raise

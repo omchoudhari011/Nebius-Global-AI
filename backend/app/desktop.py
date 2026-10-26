@@ -30,7 +30,7 @@ ACTION_TIMEOUT = 45
 
 
 NOT_CONNECTED = ("The Custodian desktop app isn't running on the PC, so I can't control it right now. "
-                 "Start Jarvis with the Jarvis icon on the desktop, or Start menu > Custodian > Jarvis, and ask again.")
+                 "Start Custodian with the Custodian icon on the desktop, or from the Start menu, and ask again.")
 
 
 class DesktopUnavailable(RuntimeError):

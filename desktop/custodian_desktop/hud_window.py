@@ -68,7 +68,7 @@ def main() -> None:
     import webview
 
     window = webview.create_window(
-        "J.A.R.V.I.S.", url=PAGE.as_uri(), js_api=Bridge(), width=COMPACT[0], height=COMPACT[1],
+        "CUSTODIAN", url=PAGE.as_uri(), js_api=Bridge(), width=COMPACT[0], height=COMPACT[1],
         frameless=True, on_top=True, hidden=True, background_color="#03070d", resizable=True, focus=False,
     )
     loaded = threading.Event()

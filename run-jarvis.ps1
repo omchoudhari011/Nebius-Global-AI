@@ -1,13 +1,13 @@
-# Starts Jarvis: everything Custodian needs on this PC, in one go.
+# Starts Custodian: everything Custodian needs on this PC, in one go.
 #
-#   .\run-jarvis.ps1            start what isn't running yet, then Jarvis greets you
-#   .\run-jarvis.ps1 -Stop      stop the server and the Jarvis desktop app
+#   .\run-jarvis.ps1            start what isn't running yet, then Custodian greets you
+#   .\run-jarvis.ps1 -Stop      stop the server and the Custodian desktop app
 #
 # In order: Docker's web-search container (and its speech-to-text one, unless the server hears
 # speech itself; Docker Desktop is started when it's off), Ollama (your local models), the
-# Custodian server in the background (its log is in backend\data\server.log), and the Jarvis
+# Custodian server in the background (its log is in backend\data\server.log), and the Custodian
 # desktop app in the tray. Anything already running is
-# left as it is. It doesn't start with Windows; run it when you want Jarvis.
+# left as it is. It doesn't start with Windows; run it when you want Custodian.
 
 param(
     [switch]$Stop,
@@ -37,13 +37,13 @@ function DesktopProcesses { Get-CimInstance Win32_Process -Filter "Name='pythonw
 if ($Stop) {
     DesktopProcesses | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     ServerProcesses | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-    Say "Jarvis and the Custodian server are stopped." Green
+    Say "Custodian and its server are stopped." Green
     return
 }
 
 # 1. Docker: web search (searxng), and speech to text (whisper) unless the server hears speech
 #    itself (WHISPER_URL=local in backend\.env). Docker Desktop is started when it's off; its
-#    containers start in the background once it's up (a minute or so), so Jarvis doesn't wait.
+#    containers start in the background once it's up (a minute or so), so Custodian doesn't wait.
 #    Docker reports problems on stderr, which Windows PowerShell would treat as fatal here:
 #    they're expected, so they aren't.
 $ErrorActionPreference = "Continue"
@@ -108,11 +108,11 @@ if (-not (Healthy)) {
 }
 Say "Custodian server: $server" Green
 
-# 4. Jarvis on the desktop.
+# 4. Custodian on the desktop.
 if (DesktopProcesses) {
-    Say "Jarvis is already running (tray icon)." Green
+    Say "Custodian is already running (tray icon)." Green
 } else {
     & (Join-Path $root "desktop\run-desktop.ps1")
 }
-Say "Say `"Hey Jarvis`", press Ctrl+Alt+Space to talk, or Ctrl+Alt+J for the HUD." Green
+Say "Say `"Hey Vitrus`", press Ctrl+Alt+Space to talk, or Ctrl+Alt+J for the HUD." Green
 exit 0  # Docker's own exit code (it may be off) isn't a failure of this script

@@ -316,15 +316,16 @@ _PC_FAILURE_CLAIM = re.compile(
     r"|\b(?:didn'?t|did not|isn'?t|is not|wasn'?t|was not)\s+respond(?:ing)?\b|\bnot responding\b"
     r"|\b(?:doesn'?t|does not)\s+have\s+a\s+(?:chat|contact)\b|\bno\s+(?:whatsapp\s+)?(?:chat|contact)\s+(?:called|named)\b"
     r"|\b(?:isn'?t|is not|wasn'?t|was not)\s+running\b"
-    # "I couldn't do that - Jarvis says: <an error from an earlier turn>": the desktop app quoted, unasked.
-    r"|\b(?:jarvis|the desktop app|the pc)\s+(?:says|said|reports|reported)\b",
+    # "I couldn't do that - Custodian says: <an error from an earlier turn>": the desktop app quoted, unasked.
+    # (Jarvis was its name before.)
+    r"|\b(?:custodian|jarvis|the desktop app|the pc)\s+(?:says|said|reports|reported)\b",
     re.I,
 )
 # "I couldn't do that": a failure too, unless it blames a switch (false_excuse checks those).
 _DID_NOT_DO = re.compile(r"\b(?:couldn'?t|could not|wasn'?t able to|was unable to|failed to)\s+do\s+(?:that|it|this|so)\b", re.I)
 _SWITCH_BLAMED = re.compile(r"\bswitch|\bturned off\b|tools\s*&\s*data|\bpermission|\baccess\b", re.I)
 # "Why didn't it send?" is answered with the earlier failure: nothing needs trying for that.
-_ASKS_WHY = re.compile(r"^\W*(?:why|how come|what (?:happened|went wrong|was the (?:error|problem)|did (?:it|jarvis|the pc) say))\b"
+_ASKS_WHY = re.compile(r"^\W*(?:why|how come|what (?:happened|went wrong|was the (?:error|problem)|did (?:it|jarvis|custodian|the pc) say))\b"
                        r"|क्यों|क्यूँ|का\s?नाही", re.I)
 # Without PC tools this turn, a failure counts only when it names something on the PC ("the shop isn't open"
 # from a web answer isn't one).

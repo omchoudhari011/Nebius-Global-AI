@@ -34,7 +34,7 @@ PRINT_FILE = DIR / "voiceprint.npy"
 THRESHOLD = 0.45
 MIN_SECONDS = 1.0  # shorter than this says too little about a voice to judge
 PHRASES = (
-    "Hey Jarvis, what's on my calendar today?",
+    "Hey Vitrus, what's on my calendar today?",
     "Play some music and turn the volume down a little.",
     "Remind me to call my mother at six in the evening.",
 )

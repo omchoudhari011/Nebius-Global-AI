@@ -253,7 +253,7 @@ def learning_status(user_id: int = Depends(require_session)) -> dict:
 def learning_data(user_id: int = Depends(require_session)) -> dict:
     """The shared ratings to train on, decrypted - for backend/finetune/nightly.py on your PC."""
     if not learning.status(user_id)["enabled"]:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="Learning overnight is switched off in Jarvis → Settings")
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Learning overnight is switched off in Custodian → Settings")
     return learning.training_data(user_id)
 
 

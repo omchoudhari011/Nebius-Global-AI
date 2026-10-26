@@ -93,7 +93,7 @@ def test_a_spoken_request_to_the_pc_is_answered_as_jarvis(user_id, pc):
     backend = Recorder()
     set_backend(backend)
     orchestrator.handle(user_id, "tell me a joke", origin="desktop", voice=True)
-    assert "speaking out loud as Jarvis" in backend.prompts[-1] and "“sir”" in backend.prompts[-1]
+    assert "speaking out loud as Custodian" in backend.prompts[-1] and "“sir”" in backend.prompts[-1]
 
 
 def test_typed_chats_and_the_plain_persona_keep_custodians_own_voice(user_id, pc):

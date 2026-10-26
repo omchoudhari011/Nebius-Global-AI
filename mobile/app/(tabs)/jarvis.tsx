@@ -40,7 +40,7 @@ const SETTINGS: { key: keyof Prefs; label: string; hint: string }[] = [
 ];
 
 const PERSONAS: { value: Prefs["persona"]; label: string }[] = [
-  { value: "jarvis", label: "Jarvis" },
+  { value: "jarvis", label: "Custodian" },
   { value: "plain", label: "Plain" },
 ];
 const LANGUAGES: { value: VoiceLanguage; label: string }[] = [
@@ -318,7 +318,7 @@ export default function JarvisScreen() {
   return (
     <View style={s.screen}>
       <ScreenGradient />
-      <ScreenHeader title="Jarvis" subtitle={pc?.connected ? `Connected to ${pc.device ?? "your PC"}` : "Your PC isn't connected"} />
+      <ScreenHeader title="Custodian" subtitle={pc?.connected ? `Connected to ${pc.device ?? "your PC"}` : "Your PC isn't connected"} />
       <ScrollView
         contentContainerStyle={s.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} tintColor={t.accent2} />}
@@ -412,8 +412,8 @@ export default function JarvisScreen() {
             <View style={s.divider} />
             <Text style={s.body}>How the PC talks when you speak to it</Text>
             <Segmented options={PERSONAS} value={prefs.persona} onChange={(v) => void savePrefs("persona", { persona: v })} />
-            <Text style={s.meta}>Jarvis is calm, brief and polite, and calls you what you choose below. Typed chats keep Custodian's own voice.</Text>
-            <Field label="Jarvis calls you" value={address} onChangeText={setAddress} placeholder="sir" maxLength={40} autoCorrect={false} />
+            <Text style={s.meta}>Custodian is calm, brief and polite, and calls you what you choose below. Typed chats keep Custodian's own voice.</Text>
+            <Field label="Custodian calls you" value={address} onChangeText={setAddress} placeholder="sir" maxLength={40} autoCorrect={false} />
             <Field label="Your city, for the weather" value={city} onChangeText={setCity} maxLength={40}
               placeholder="Empty: the city your memories say you live in" />
             <Field label="Wrap up my day at" value={evening} onChangeText={setEvening} maxLength={5} autoCorrect={false}

@@ -18,7 +18,7 @@ from typing import Callable
 
 from .model_backends.base import ModelBackend, ModelResponse, ToolCallRequest
 
-_FILLER = re.compile(r"^(?:hey jarvis|jarvis|hey custodian|ok|okay|please|can you|could you|would you|will you|"
+_FILLER = re.compile(r"^(?:hey vitrus|vitrus|hey jarvis|jarvis|hey custodian|custodian|ok|okay|please|can you|could you|would you|will you|"
                      r"just|now)\s+|\s+(?:please|right now|now|for me|thanks|thank you)$")
 
 # Numbers as they're said - "volume forty", "a timer for ten minutes", "दस मिनट" - as digits. Tried

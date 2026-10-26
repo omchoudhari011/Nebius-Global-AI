@@ -1,4 +1,4 @@
-# Starts Custodian for the desktop: the "Hey Jarvis" voice assistant that controls this PC.
+# Starts Custodian for the desktop: the "Hey Vitrus" voice assistant that controls this PC.
 #
 #   .\run-desktop.ps1             set up on first run (venv, voice), then start in the tray
 #   .\run-desktop.ps1 -Install    also start it automatically when you sign in to Windows
@@ -64,11 +64,11 @@ if (-not (Test-Path $installed) -or (Get-Content $installed -Raw).Trim() -ne $wa
     Set-Content -Path $installed -Value $wanted -Encoding ascii
 }
 
-# Jarvis's voice: a British male Piper voice (about 60 MB), once. Without it, Windows' own voice is used.
+# The assistant's voice: a British male Piper voice (about 60 MB), once. Without it, Windows' own voice is used.
 $voices = Join-Path $env:APPDATA "Custodian\voices"
 $voice = Join-Path $voices "en_GB-alan-medium.onnx"
 if (-not (Test-Path $voice)) {
-    Write-Host "Downloading Jarvis's voice..." -ForegroundColor Cyan
+    Write-Host "Downloading Custodian's voice..." -ForegroundColor Cyan
     New-Item -ItemType Directory -Force $voices | Out-Null
     $base = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alan/medium/en_GB-alan-medium.onnx"
     curl.exe -sSL --fail -o $voice $base  # much faster than Invoke-WebRequest for a big file
@@ -109,4 +109,4 @@ if ($Install) {
 if ($SetupOnly) { return }
 
 Start-Process -FilePath $pythonw -ArgumentList "-m", "custodian_desktop" -WorkingDirectory $here
-Write-Host "Custodian is starting in the tray. Say the wake word ('Hey Jarvis' unless you set your own) or press Ctrl+Alt+Space." -ForegroundColor Green
+Write-Host "Custodian is starting in the tray. Say the wake word ('Hey Vitrus' unless you set your own) or press Ctrl+Alt+Space." -ForegroundColor Green

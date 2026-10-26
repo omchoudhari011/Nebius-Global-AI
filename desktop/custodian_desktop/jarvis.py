@@ -18,13 +18,13 @@ _CLOSING = re.compile(
     r"|we'?re\s+done|i'?m\s+done|bas(?:\s+itna\s+hi)?|dhanyavaad|shukriya|thik\s+hai|बस|धन्यवाद|शुक्रिया|ठीक\s+है)",
     re.IGNORECASE,
 )
-_SOFTENERS = re.compile(r"\b(?:ok(?:ay)?|alright|all\s+right|right|great|perfect|cool|fine|jarvis|sir|buddy|and|then|so)\b",
+_SOFTENERS = re.compile(r"\b(?:ok(?:ay)?|alright|all\s+right|right|great|perfect|cool|fine|jarvis|vitrus|custodian|sir|buddy|and|then|so)\b",
                         re.IGNORECASE)
 _HUD_SHOW = re.compile(r"^\W*(?:(?:show|open|bring\s+up|display)\s+(?:the\s+|your\s+|my\s+)?(?:hud|heads[\s-]?up\s+display|dashboard|interface)"
                        r"|(?:go\s+)?full[\s-]?screen(?:\s+mode)?|hud(?:\s+on)?)\W*$", re.IGNORECASE)
 _HUD_HIDE = re.compile(r"^\W*(?:(?:hide|close|dismiss)\s+(?:the\s+|your\s+|my\s+)?(?:hud|heads[\s-]?up\s+display|dashboard|interface)"
                        r"|exit\s+full[\s-]?screen|hud\s+off)\W*$", re.IGNORECASE)
-_FILLER = re.compile(r"^\W*(?:hey\s+)?jarvis\W+", re.IGNORECASE)
+_FILLER = re.compile(r"^\W*(?:hey\s+)?(?:vitrus|custodian|jarvis)\W+", re.IGNORECASE)
 
 SIGN_OFFS = ("Very well, {a}.", "As you wish, {a}.", "I'll be here, {a}.", "Of course, {a}.")
 STANDING_BY = ("At your service, {a}.", "Yes, {a}?", "Standing by, {a}.")
@@ -61,13 +61,13 @@ def part_of_day(hour: int) -> str:
 
 def greeting(address: str, now: dt.datetime | None = None, *, warnings: list[str] | None = None,
              next_event: dict | None = None) -> str:
-    """"Good evening, sir. Jarvis is online and all systems are normal." plus what's next today."""
+    """"Good evening, sir. Custodian is online and all systems are normal." plus what's next today."""
     now = now or dt.datetime.now()
     if now.hour < 4:
         opening = f"Working late, {address}?"
     else:
         opening = f"Good {part_of_day(now.hour)}, {address}."
-    state = ("Jarvis is online. " + (f"One thing: {warnings[0]}." if warnings else "All systems are normal."))
+    state = ("Custodian is online. " + (f"One thing: {warnings[0]}." if warnings else "All systems are normal."))
     upcoming = ""
     if next_event:
         upcoming = f" Your next appointment, {next_event['title']}, is at {next_event['time']}."

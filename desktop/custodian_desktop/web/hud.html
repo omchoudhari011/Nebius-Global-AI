@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>J.A.R.V.I.S.</title>
+<title>CUSTODIAN</title>
 <!-- The Jarvis HUD. Shown by custodian_desktop/hud_window.py (pywebview), which passes in
      messages from the desktop app with hud.receive({...}); hud.html?demo shows made-up data in
      any browser. Everything is in this file: no fonts or scripts from the internet. -->
@@ -179,7 +179,7 @@ body.compact .heard { font-size: 13px; }
 <div class="frame">
   <header class="topbar pywebview-drag-region">
     <div class="brand">
-      <span class="wordmark">J.A.R.V.I.S.</span>
+      <span class="wordmark">CUSTODIAN</span>
       <span class="link label"><span class="dot" id="linkDot"></span><span id="linkText">Custodian online</span></span>
     </div>
     <span class="clock value" id="clock">--:--:--</span>
@@ -206,7 +206,7 @@ body.compact .heard { font-size: 13px; }
       </div>
     </section>
 
-    <section class="core-wrap" aria-label="Jarvis">
+    <section class="core-wrap" aria-label="Custodian">
       <div>
         <div class="reactor" id="reactor">
           <div class="halo"></div>
@@ -473,7 +473,7 @@ body.compact .heard { font-size: 13px; }
       battery: { percent: 84, charging: true }, disks: [{ drive: "C:\\", free_gb: 120.5, total_gb: 476 }, { drive: "D:\\", free_gb: 312, total_gb: 931 }],
       network: { online: true, down_kbps: 4200, up_kbps: 380 }, top_apps: [{ app: "chrome", cpu_percent: 6.1, memory_mb: 1210 }, { app: "Code", cpu_percent: 2.3, memory_mb: 640 }] };
     cpuHistory.pop(); stats(reading);
-    receive({ type: "heard", text: "Jarvis, what's my day looking like?" });
+    receive({ type: "heard", text: "Vitrus, what's my day looking like?" });
     receive({ type: "reply", text: "Good afternoon, sir. You have a design review at four and the gym at half past six. It's 26 degrees and overcast in Pune." });
     receive({ type: "state", state: query.get("state") || "speaking" });
     target = 0.6;

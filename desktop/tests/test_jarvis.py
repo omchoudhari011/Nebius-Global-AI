@@ -41,10 +41,10 @@ def test_the_hud_is_shown_and_hidden_by_voice(said, command):
 
 
 def test_the_greeting_fits_the_time_and_the_day():
-    assert jarvis.greeting("sir", dt.datetime(2026, 10, 24, 19, 5)) == "Good evening, sir. Jarvis is online. All systems are normal."
+    assert jarvis.greeting("sir", dt.datetime(2026, 10, 24, 19, 5)) == "Good evening, sir. Custodian is online. All systems are normal."
     late = jarvis.greeting("boss", dt.datetime(2026, 10, 24, 2, 30), warnings=["the battery is at 12%"],
                            next_event={"title": "Standup", "time": "09:30"})
-    assert late == "Working late, boss? Jarvis is online. One thing: the battery is at 12%. Your next appointment, Standup, is at 09:30."
+    assert late == "Working late, boss? Custodian is online. One thing: the battery is at 12%. Your next appointment, Standup, is at 09:30."
 
 
 # Follow-ups -------------------------------------------------------------------------------------
