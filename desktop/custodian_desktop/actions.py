@@ -37,7 +37,7 @@ APPS = {
     "file explorer": "explorer", "files": "explorer", "task manager": "taskmgr", "settings": "ms-settings:",
     "chrome": "chrome", "google chrome": "chrome", "edge": "msedge", "microsoft edge": "msedge", "firefox": "firefox",
     "word": "winword", "excel": "excel", "powerpoint": "powerpnt", "outlook": "outlook", "vs code": "code",
-    "vscode": "code", "visual studio code": "code", "spotify": "spotify:", "camera": "microsoft.windows.camera:",
+    "vscode": "code", "visual studio code": "code", "spotify": "spotify:", "whatsapp": "whatsapp:", "camera": "microsoft.windows.camera:",
     "clock": "ms-clock:", "mail": "outlookmail:", "store": "ms-windows-store:", "terminal": "wt", "cmd": "cmd",
 }
 # Sites people name without ".com" ("open youtube").

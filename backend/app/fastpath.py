@@ -273,7 +273,10 @@ def parse(message: str, *, routine: bool = False) -> Intent | None:
         return _media("next", "next")
     if re.fullmatch(rf"(?:play\s+)?(?:the\s+)?previous{words}|go\s+back\s+a\s+(?:song|track)|last\s+song", text):
         return _media("previous", "previous")
-    if re.fullmatch(r"pause(?:\s+(?:the\s+)?(?:music|song|video|it|playback|spotify|youtube))?|stop\s+(?:the\s+)?(?:music|song|video)", text):
+    # "can you just stop?" (said right after a song started) and "stop playing" too: the desktop app ends a
+    # conversation on a bare "stop" itself, so one that reaches here is about what's playing.
+    if re.fullmatch(r"pause(?:\s+(?:the\s+)?(?:music|song|video|it|playback|spotify|youtube))?"
+                    r"|stop(?:\s+(?:it|playing|playback|the\s+(?:music|song|video)))?", text):
         return _media("play_pause", "pause")
     if re.fullmatch(r"(?:resume|unpause|continue)(?:\s+(?:the\s+)?(?:music|song|video|playing|playback|it))?", text):
         return _media("play_pause", "resume")

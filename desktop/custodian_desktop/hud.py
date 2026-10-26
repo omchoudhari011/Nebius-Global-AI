@@ -92,8 +92,8 @@ class Hud:
             if message.get("event") == "ready":
                 self.ready.set()
                 continue
-            if message.get("cmd") == "hide":
-                self.visible = False
+            if message.get("cmd") == "hide":  # ✕ or Esc: the window hides only when told to, so tell it
+                self.hide()
             elif message.get("cmd") == "mode":
                 self.show(message.get("mode", "compact"))
                 continue

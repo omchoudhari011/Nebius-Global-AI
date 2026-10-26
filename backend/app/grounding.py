@@ -163,7 +163,9 @@ class Finding:
 
 # Reading claims out of a reply -------------------------------------------------------------
 
-_SENTENCES = re.compile(r"[^.!?\n]+[.!?]*")
+# A quoted title stays inside its sentence: in 'Playing “... What We Cookin?” on YouTube.' the "?" ends no
+# question (one that did hid the claim from every check).
+_SENTENCES = re.compile(r"(?:“[^”\n]*”|\"[^\"\n]*\"|[^.!?\n])+[.!?]*")
 _CLAUSE_BREAK = re.compile(
     r"[;:]|\s[-–—]\s|,\s*(?=(?:but|though|although|however|so|and|yet)\b)|\s+(?=(?:but|although|though|however)\b)", re.I
 )

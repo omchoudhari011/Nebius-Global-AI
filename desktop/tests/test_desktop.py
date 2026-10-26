@@ -759,3 +759,11 @@ def test_the_real_dialog_denies_when_nobody_answers(monkeypatch):
     worker.join(timeout=10)
     window.root.destroy()
     assert answers == [False]
+
+
+def test_whatsapp_opens_by_its_own_link(monkeypatch):
+    """WhatsApp is a Store app with no .exe to find: "open whatsapp" said it wasn't installed."""
+    opened = []
+    monkeypatch.setattr(actions.os, "startfile", lambda target: opened.append(target), raising=False)
+    assert actions.run("open", {"target": "WhatsApp"}, PROTECTED)["opened"] in ("whatsapp:", "WhatsApp", "whatsapp")
+    assert opened == ["whatsapp:"]

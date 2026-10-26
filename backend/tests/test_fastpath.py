@@ -16,6 +16,8 @@ from app.model_backends.base import ModelBackend
         ("Hey Jarvis, skip this song", "pc_media", {"action": "next", "steps": 1}),
         ("pause the music", "pc_media", {"action": "play_pause", "steps": 1}),
         ("resume", "pc_media", {"action": "play_pause", "steps": 1}),
+        ("Can you just stop?", "pc_media", {"action": "play_pause", "steps": 1}),  # right after a song started
+        ("stop playing", "pc_media", {"action": "play_pause", "steps": 1}),
         ("volume up", "pc_media", {"action": "volume_up", "steps": 5}),
         ("set the volume to 40%", "pc_set_volume", {"level": 40}),
         ("volume 70 percent", "pc_set_volume", {"level": 70}),

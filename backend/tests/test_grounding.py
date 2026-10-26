@@ -267,6 +267,9 @@ def test_a_personal_question_with_nothing_on_file_invites_i_dont_know(user_id):
         ("Played Kalyani, sir.", [], True),  # said after a misheard "to a silent", with nothing played
         ("Playing Kalyani by Arijit Singh.", [], True),
         ("Started the song.", [], True),
+        # a title with a "?" in it is still a claim, not a question (it hid this one, copied to new requests):
+        ("Playing “KALYANI - ARJN x KDS x FIFTY4 x RONN | What We Cookin?” on YouTube, sir.", [], True),
+        ("Which one: “Kalyani” or “What We Cookin?”", [], False),
         ("Played Kalyani, sir.", [("pc", "play", "succeeded")], False),
         ("Pausing the song, sir.", [], True),  # said with nothing paused
         ("Opening YouTube now.", [], True),

@@ -344,6 +344,25 @@ def test_a_hud_whose_window_went_away_is_started_again_but_not_over_and_over(mon
     assert hud.revive() is False and started == [1]  # stopped on purpose: stays stopped
 
 
+def test_the_close_button_really_hides_the_hud():
+    """✕ only told the app it was hidden; nothing told the window to hide, so it stayed."""
+    import io
+
+    hud = Hud(lambda message: None)
+    written = []
+
+    class Proc:
+        stdin = type("Pipe", (), {"write": lambda self, text: written.append(json.loads(text)), "flush": lambda self: None})()
+        stdout = io.StringIO('{"event": "ready"}\n{"cmd": "hide"}\n')
+
+        def poll(self):
+            return None
+
+    hud.proc, hud.visible = Proc(), True
+    hud._read(Proc())
+    assert {"type": "hide"} in written and hud.visible is False
+
+
 def test_hud_messages_are_one_json_line_each_and_a_missing_window_never_breaks_the_app():
     hud = Hud(lambda message: None)
     hud.send({"type": "state", "state": "listening"})  # not started: nothing happens, nothing raises
