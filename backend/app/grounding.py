@@ -301,10 +301,13 @@ _SWITCH = re.compile(r"([A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)?) · (read|write)")
 _PC_PROMISE = re.compile(
     r"\b(?:i'?ll|i will|i'm going to|i am going to|let me)\s+(?:do\s+(?:that|it|so)\W+)?(?:now\s+|just\s+)?"
     r"(?:mute|unmute|pause|resume|play|open|close|quit|lock|skip|start|turn|set|launch|switch|dim|send|message|text"
-    r"|whatsapp|call|ring|dial)\b",
+    r"|whatsapp|call|ring|dial|search|find|look)\b",
     re.I,
 )
 _OFFER = re.compile(r"\b(?:if|when|once|whenever|shall|should|want|would you|do you)\b", re.I)
+# "I did - I searched for Tanishka28 on Pinterest" with nothing searched: true only if some tool ran this turn.
+_SEARCH_CLAIM = re.compile(r"\bi(?:'ve| have)?\s+(?:just\s+|already\s+)?(?:searched|looked\s+(?:up|for))\b"  # not "found": a memory can be
+                           r"|(?:^\W*|[.!?]\s+)(?:searching|looking)\s+for\s+\w+", re.I | re.M)
 # Said in the repair round of a false PC claim, not in the skill's prompt: there, a 4B model began treating clear
 # requests ("whatsapp Tanishka: did you reach home?", "click voice call in whatsapp") as noise.
 MISHEARD = (" If their message doesn't make sense as a request (speech can be misheard, like \"to a silent\"), say "
@@ -563,7 +566,8 @@ def review(reply: str, evidence: Evidence) -> list[Finding]:
     pc_done = any(o.tool == "pc" and o.status == "succeeded" for o in evidence.outcomes)
     sentences = [s for s in _SENTENCES.findall(reply) if not s.rstrip().endswith("?")]  # whole: "I'll do that: send ..."
     promised = any(_PC_PROMISE.search(s) and not _OFFER.search(s) for s in sentences)
-    if not pc_done and (_says(reply, _PC_CLAIM) or promised):
+    searched = not any(o.status == "succeeded" for o in evidence.outcomes) and _says(reply, _SEARCH_CLAIM)
+    if not pc_done and (_says(reply, _PC_CLAIM) or promised or searched):
         tried = [o for o in evidence.outcomes if o.tool == "pc"]
         why = _why_not(evidence, "pc", tried[-1].function) if tried else "no PC action was actually carried out"
         findings.append(

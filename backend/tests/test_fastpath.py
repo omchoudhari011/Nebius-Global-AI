@@ -53,6 +53,15 @@ from app.model_backends.base import ModelBackend
         ("show me my documents folder", "pc_open", {"target": "documents"}),
         ("open desktop", "pc_open", {"target": "desktop"}),
         ("Open WhatsApp from my PC.", "pc_open", {"target": "whatsapp"}),
+        # WhatsApp messages with who and what said plainly (the PC still asks before sending)
+        ("Open Whatsapp, search for Piyush and send him a message saying hi.", "pc_send_message", {"contact": "Piyush", "text": "hi"}),
+        ("open whatsapp and send a message to piyush saying hi", "pc_send_message", {"contact": "piyush", "text": "hi"}),
+        ("send a whatsapp to Tanishka saying I'll be late", "pc_send_message", {"contact": "Tanishka", "text": "I'll be late"}),
+        ("whatsapp Karan: did you reach home?", "pc_send_message", {"contact": "Karan", "text": "did you reach home?"}),
+        ("message Abhi Choudhury saying hi", "pc_send_message", {"contact": "Abhi Choudhury", "text": "hi"}),
+        ("I said, search Piyush on my WhatsApp.", "pc_open_chat", {"contact": "Piyush"}),
+        ("Let's open WhatsApp and search for Piyush.", "pc_open_chat", {"contact": "Piyush"}),
+        ("open my chat with Mrunal", "pc_open_chat", {"contact": "Mrunal"}),
     ],
 )
 def test_exact_everyday_commands_are_recognised(said, function, args):
@@ -66,6 +75,8 @@ def test_exact_everyday_commands_are_recognised(said, function, args):
     "play it", "open", "volume", "timer", "open report.pdf", "load my notes", "search for my notes on cooking",
     "find my resume", "play Kalyani and set the volume to 40", "close chrome and then lock the pc",
     "open notepad and write a poem",
+    "send a message saying hi", "send an email to Rahul saying it is done", "send the report to Rahul saying it is done",
+    "remind me to message mum saying hi", "send him a message saying hi",
 ])
 def test_anything_else_goes_to_the_model(said):
     assert fastpath.match(said) is None
@@ -165,3 +176,11 @@ def test_commands_as_theyre_said(said, function, args):
     assert intent is not None and intent.function == function
     for key, value in args.items():
         assert intent.args[key] == value
+
+
+def test_a_search_right_after_whatsapp_was_used_means_in_whatsapp():
+    for said in ("Now search for Piyush", "search for Piyush.", "ok find Mrunal"):
+        intent = fastpath.whatsapp_follow_up(said)
+        assert intent is not None and intent.function == "pc_open_chat", said
+    assert fastpath.whatsapp_follow_up("Now search for Piyush").args == {"contact": "Piyush"}
+    assert fastpath.whatsapp_follow_up("open youtube") is None  # only a search follows on

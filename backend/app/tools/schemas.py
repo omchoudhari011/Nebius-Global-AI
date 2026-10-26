@@ -410,6 +410,11 @@ class PcSendMessageArgs(ToolArgs):
     app: Literal["whatsapp"] = "whatsapp"
 
 
+class PcOpenChatArgs(ToolArgs):
+    contact: SafeLine = Field(min_length=1, max_length=100, description="The chat's name, as the user said it.")
+    app: Literal["whatsapp"] = "whatsapp"
+
+
 class PcCallArgs(ToolArgs):
     contact: SafeLine = Field(min_length=1, max_length=100, description="Who to call: the name the user said, as they said it.")
     video: bool = Field(default=False, description="true for a video call; false (the default) for a voice call.")

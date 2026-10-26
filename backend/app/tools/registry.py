@@ -60,6 +60,7 @@ from .schemas import (
     PcWriteInAppArgs,
     PcSendMessageArgs,
     PcCallArgs,
+    PcOpenChatArgs,
     PcClickOnArgs,
     PcLookArgs,
     PcBrowserDownloadArgs,
@@ -426,6 +427,9 @@ FUNCTIONS: tuple[ToolFunction, ...] = (
             ("alarm", "write", "system", False, PcAlarmArgs,
              "Set an alarm on the PC for a time of day (the next time it comes round); it rings and speaks."),
             ("say", "write", "speak", False, PcSayArgs, "Say something out loud on the PC's speakers."),
+            # Never offered to the model: "search Piyush on WhatsApp", run by app/fastpath.py (a new tool in the
+            # model's list costs a small model accuracy elsewhere).
+            ("open_chat", "write", "internal", False, PcOpenChatArgs, "Open a WhatsApp chat by name; nothing is sent."),
             # Never offered to the model: a routine's single approval for all its steps (app/routines.py).
             ("confirm_plan", "write", "internal", True, PcPlanArgs, "Ask the user once to allow a list of steps."),
         )

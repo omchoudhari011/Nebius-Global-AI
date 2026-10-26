@@ -767,3 +767,18 @@ def test_whatsapp_opens_by_its_own_link(monkeypatch):
     monkeypatch.setattr(actions.os, "startfile", lambda target: opened.append(target), raising=False)
     assert actions.run("open", {"target": "WhatsApp"}, PROTECTED)["opened"] in ("whatsapp:", "WhatsApp", "whatsapp")
     assert opened == ["whatsapp:"]
+
+
+def test_searching_a_name_on_whatsapp_opens_that_chat_and_sends_nothing(monkeypatch):
+    sent = _fake_whatsapp(monkeypatch, "Piyush Sharma")
+    assert actions.run("open_chat", {"contact": "piyush"}, PROTECTED) == {"opened_chat": "Piyush Sharma", "app": "WhatsApp"}
+    assert sent == []
+
+
+def test_edges_web_view_is_never_offered_for_closing():
+    """It runs WhatsApp, Teams and Custodian's own HUD: "Msedgewebview2 ... Shall I close them?" was offered."""
+    windows = [("WhatsApp", "msedgewebview2.exe", 1, 1), ("Docs - Chrome", "chrome.exe", 2, 2)]
+    processes = [SimpleNamespace(info={"name": "msedgewebview2.exe", "memory_info": SimpleNamespace(rss=2_000_000_000)}),
+                 SimpleNamespace(info={"name": "chrome.exe", "memory_info": SimpleNamespace(rss=900_000_000)})]
+    hogs = actions.memory_hogs({}, 10_000.0, windows=windows, processes=processes)
+    assert [h["process"] for h in hogs] == ["chrome.exe"]

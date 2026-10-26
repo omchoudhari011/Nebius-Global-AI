@@ -33,7 +33,7 @@ from zoneinfo import ZoneInfo
 
 from . import accounts, activity, approvals, conversations, db, documents, fastpath, grounding, history_search, memory, memory_graph, permissions, persona, plans, privacy, routines, sensitive, skills, usage, vectors, warmup
 from .config import get_settings
-from .crypto import decrypt, encrypt, encrypt_json
+from .crypto import decrypt, decrypt_json, encrypt, encrypt_json
 from .model_backends import ModelError, get_backend, get_large_backend, large_base_url
 from .model_backends.base import ToolCallRequest
 from .tools import registry, sandbox
@@ -445,6 +445,31 @@ def _last_skill(conversation_id: int) -> str | None:
     return row["name"] if row else None
 
 
+def _in_whatsapp(conversation_id: int | None) -> bool:
+    """The conversation's last PC action was in WhatsApp (opened it, a chat, a message, a call), in the last
+    10 minutes: then "now search for Piyush" means in WhatsApp."""
+    if conversation_id is None:
+        return False
+    with db.connect() as conn:
+        row = conn.execute(
+            """
+            SELECT tc.function, tc.args FROM tool_calls tc JOIN messages m ON m.id = tc.message_id JOIN tools t ON t.id = tc.tool_id
+            WHERE m.conversation_id = ? AND t.name = 'pc' AND tc.created_at >= datetime('now', '-10 minutes')
+            ORDER BY tc.id DESC LIMIT 1
+            """,
+            (conversation_id,),
+        ).fetchone()
+    if row is None:
+        return False
+    if row["function"] in ("open_chat", "send_message", "call"):
+        return True
+    try:
+        args = decrypt_json(row["args"]) or {}
+    except Exception:  # noqa: BLE001 - unreadable: not WhatsApp, as far as anyone can tell
+        return False
+    return row["function"] == "open" and "whatsapp" in str(args.get("target", "")).lower()
+
+
 def _save_trace(message_id: int, trace: dict) -> None:
     with db.connect() as conn:
         conn.execute("UPDATE messages SET trace = ? WHERE id = ?", (encrypt_json(trace), message_id))
@@ -548,6 +573,8 @@ def _handle(
     if routine is not None:
         skill = skills.load_skill("routines") or skill
     intent = fastpath.match(message) if message is not None and not task and not deep and routine is None else None
+    if intent is None and message is not None and not task and not deep and routine is None and _in_whatsapp(conversation_id):
+        intent = fastpath.whatsapp_follow_up(message)  # "now search for Piyush", right after opening WhatsApp
     if intent and intent.function == "pc_press_keys" and intent.args.get("keys") == "ctrl+z" \
             and activity.latest_undoable(user_id, within_minutes=10) is not None:
         intent = fastpath.Intent("undo_last_action", {}, lambda r: f"Done - I {r.get('undone', 'undid that')}.")  # "undo that" right after an action

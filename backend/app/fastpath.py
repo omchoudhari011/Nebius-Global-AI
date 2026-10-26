@@ -223,9 +223,75 @@ def match(message: str | None) -> Intent | None:
     return found
 
 
+# A WhatsApp message with who and what said plainly: "open WhatsApp and send a message to Piyush saying hi",
+# "search for Piyush and send him a message saying hi", "whatsapp Karan: did you reach home?". After one send
+# failed, the small model went on answering these with that failure, never trying; here they're sent as
+# said (the PC still shows the chat it found and the text, and sends only on Allow once).
+_MESSAGE = re.compile(
+    r"^\W*(?:(?:hey\s+)?(?:vitrus|custodian|jarvis)\W+)?(?:(?:please|can you|could you|would you|will you|just)\s+)*"
+    r"(?:open\s+whatsapp\W*(?:and\s+|then\s+)?)?"
+    r"(?:(?:search\s+for|find|look\s+for)\s+(?P<found>[^\W\d_][\w.'-]*(?:\s+[^\W\d_][\w.'-]*){0,3}?)\W*\s+(?:and\s+)?"
+    r"(?:send|text|message)\s+(?:him|her|them)(?:\s+(?:a|an)\s+(?:whatsapp\s+)?(?:message|msg|text))?"
+    r"|(?:send|text|message|whatsapp|contact)\s+(?:(?:a|an)\s+(?:whatsapp\s+)?(?:message|msg|text)\s+to\s+|a\s+whatsapp\s+to\s+|to\s+)?"
+    r"(?P<named>[^\W\d_][\w.'-]*(?:\s+[^\W\d_][\w.'-]*){0,3}?)(?:\s+on\s+whatsapp)?)"
+    r"(?:\s*,?\s+(?:saying|that\s+says|and\s+say|telling\s+(?:him|her|them))\s+|\s*:\s*)[\"“]?(?P<text>.+?)[\"”]?\.?\s*$",
+    re.IGNORECASE,
+)
+_NOT_A_NAME = frozenset("a an and the to my your his her him them this that it me us email mail file report link photo "
+                        "picture document whatsapp message text".split())
+
+
+def _whatsapp_message(message: str) -> Intent | None:
+    m = _MESSAGE.match(message.strip())
+    if not m:
+        return None
+    who = (m.group("found") or m.group("named") or "").strip(" .,'")
+    words = who.lower().split()
+    if not words or any(w in _NOT_A_NAME for w in words) or not m.group("text").strip():
+        return None
+    text = m.group("text").strip()
+    return Intent("pc_send_message", {"contact": who, "text": text},
+                  lambda r: f"Sent “{text}” to {r['sent_to']} on WhatsApp.")
+
+
+# "search Piyush on my WhatsApp", "open WhatsApp and search for Piyush", "open Piyush's chat": the chat opened,
+# nothing sent. (Asked with no tool for it, the model said "I'll search for Piyush in WhatsApp" and did
+# nothing, then claimed it had searched for someone else on Pinterest.)
+_NAME = r"(?P<who>[^\W\d_][\w.'-]*(?:\s+[^\W\d_][\w.'-]*){0,3}?)"
+_CHAT = re.compile(
+    r"^\W*(?:(?:hey\s+)?(?:vitrus|custodian|jarvis)\W+)?(?:i\s+said\W*)?(?:(?:please|can you|could you|would you|will you|just"
+    r"|now|let'?s|then|ok|okay)\s+)*"
+    r"(?:(?:open\s+whatsapp\W*(?:and\s+|then\s+)?(?:now\s+)?(?:search|find|look)\s+(?:for\s+)?" + _NAME + r")"
+    r"|(?:(?:search|find|look)\s+(?:for\s+)?" + _NAME.replace("who", "who2") + r"\s+(?:on|in)\s+(?:my\s+)?whatsapp)"
+    r"|(?:open\s+(?:my\s+chat\s+with\s+|the\s+chat\s+with\s+)" + _NAME.replace("who", "who3") + r"(?:\s+(?:on|in)\s+whatsapp)?)"
+    r"|(?:open\s+" + _NAME.replace("who", "who4") + r"'s\s+chat(?:\s+(?:on|in)\s+whatsapp)?))\W*$",
+    re.IGNORECASE,
+)
+
+
+def _whatsapp_chat(message: str) -> Intent | None:
+    m = _CHAT.match(message.strip())
+    if not m:
+        return None
+    who = next(g for g in (m.group("who"), m.group("who2"), m.group("who3"), m.group("who4")) if g).strip(" .,'")
+    if any(w in _NOT_A_NAME for w in who.lower().split()):
+        return None
+    return Intent("pc_open_chat", {"contact": who}, lambda r: f"Opened your chat with {r['opened_chat']} on WhatsApp.")
+
+
+def whatsapp_follow_up(message: str) -> Intent | None:
+    """"now search for Piyush" said with WhatsApp just used: the chat, as if "on WhatsApp" had been said."""
+    if not ENABLED or not re.fullmatch(r"\W*(?:(?:now|then|and|ok(?:ay)?|please|can you|just)\W+)*(?:search|find|look)\b.*",
+                                       message.strip(), re.IGNORECASE):
+        return None
+    return _whatsapp_chat(message.strip().rstrip(".!? ") + " on WhatsApp")
+
+
 def parse(message: str, *, routine: bool = False) -> Intent | None:
     """match() without the on/off switch: also how a routine's steps ("open vs code", "volume 30")
     become tool calls (app/routines.py), where `routine` also allows a bare "say ..."."""
+    if not routine and (sent := _whatsapp_message(message) or _whatsapp_chat(message)) is not None:
+        return sent
     text = translate(normalise(message))
     compound = re.search(r"\s(?:and|then|after\s+that|also)\s", text) is not None
     two_step = re.fullmatch(r".+\s+and\s+open\s+the\s+(?:first|top).*|(?:open|go\s+to)\s+\S+(?:\s+\S+)?\s+and\s+(?:search|play)\s.+", text)

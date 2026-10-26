@@ -194,6 +194,7 @@ class FakeDesktop:
             "click_element": {"clicked": args.get("name"), "type": "Button", "window": args.get("window") or "WhatsApp"},
             "send_message": {"sent_to": str(args.get("contact", "")).title(), "app": "WhatsApp",
                              "characters": len(str(args.get("text", "")))},
+            "open_chat": {"opened_chat": str(args.get("contact", "")).title(), "app": "WhatsApp"},
             "call": {"calling": str(args.get("contact", "")).title(), "app": "WhatsApp",
                      "kind": "video call" if args.get("video") else "voice call"},
             "fill_field": {"filled": args.get("name"), "type": "Edit", "characters": len(str(args.get("text", ""))),

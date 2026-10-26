@@ -286,6 +286,11 @@ def test_a_personal_question_with_nothing_on_file_invites_i_dont_know(user_id):
         ("I'll send it once you allow it on the PC.", [], False),  # a condition, not a promise
         ("I'll do that: send a WhatsApp to Mrunal saying hi.", [], True),
         # calls: "calling" said with no call placed
+        # "search Piyush on WhatsApp" answered with a promise, then a search that never happened:
+        ("I'll search for Piyush in WhatsApp, sir.", [], True),
+        ("I did - I searched for Tanishka28 on Pinterest, sir.", [], True),
+        ("I searched the web: it's 25°C in Pune.", [("web", "search", "succeeded")], False),
+        ("Shall I search for it on YouTube?", [], False),
         ("Calling Piyush on WhatsApp now.", [], True),
         ("I'm calling Piyush, sir.", [], True),
         ("I've called Mrunal on WhatsApp.", [], True),

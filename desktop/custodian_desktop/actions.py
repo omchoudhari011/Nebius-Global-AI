@@ -70,7 +70,8 @@ SETTINGS_PAGES = {
 # Never closed by close_app: Windows itself, and this app.
 SYSTEM_PROCESSES = {"system", "csrss.exe", "wininit.exe", "winlogon.exe", "services.exe", "lsass.exe", "svchost.exe",
                     "smss.exe", "dwm.exe", "explorer.exe", "fontdrvhost.exe", "sihost.exe", "ctfmon.exe", "python.exe",
-                    "pythonw.exe", "pythonw3.11.exe", "python3.11.exe"}
+                    "pythonw.exe", "pythonw3.11.exe", "python3.11.exe",
+                    "msedgewebview2.exe"}  # Edge's web view: WhatsApp, Teams and Custodian's own HUD run in it
 FILE_TYPES = {
     "Images": {"jpg", "jpeg", "png", "gif", "bmp", "webp", "heic", "svg", "tif", "tiff"},
     "Documents": {"pdf", "doc", "docx", "txt", "rtf", "odt", "md", "xls", "xlsx", "csv", "ppt", "pptx", "epub"},
@@ -1670,6 +1671,12 @@ def send_message(contact: str, text: str, app: str = "whatsapp", **_: object) ->
     return {"sent_to": chat, "app": "WhatsApp", "characters": len(text)}
 
 
+def open_chat(contact: str, app: str = "whatsapp", **_: object) -> dict:
+    """Find the chat named `contact` in WhatsApp and open it - "search Piyush on WhatsApp". Nothing is sent."""
+    _hwnd, _ui, chat = _chat_for(contact, "no chat was opened")
+    return {"opened_chat": chat, "app": "WhatsApp"}
+
+
 CALL_SECONDS = 6.0  # how long WhatsApp gets to show its call screen
 _HANG_UP = ("End call", "Hang up", "Leave call")
 
@@ -1747,7 +1754,7 @@ ACTIONS = {
     "list_apps": list_apps, "close_app": close_app, "copy_file": copy_file, "create_folder": create_folder,
     "organize_folder": organize_folder, "write_in_app": write_in_app, "write_document": write_document,
     "read_screen": read_screen,
-    "click_element": click_element, "fill_field": fill_field, "send_message": send_message, "call": call,
+    "click_element": click_element, "fill_field": fill_field, "send_message": send_message, "call": call, "open_chat": open_chat,
     "do_not_disturb": do_not_disturb, "alarm": alarm, "say": say, "confirm_plan": confirm_plan,
     "notifications": lambda **a: notices.read(int(a.get("hours") or 24), str(a.get("app") or "")),
     # The vision model's eyes and hands (backend app/vision.py): only after you allowed pc_look or pc_click_on.
