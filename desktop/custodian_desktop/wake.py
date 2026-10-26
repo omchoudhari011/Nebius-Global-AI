@@ -47,6 +47,42 @@ def heard(stock: float, ours: float | None, threshold: float = 0.5) -> bool:
     return (stock >= threshold and ours >= AGREE) or ours >= ALONE
 
 
+class Detector:
+    """A wake phrase of Custodian's own - "Hey Vitrus" - with no openWakeWord model behind it: its network
+    (models/<name>.npz, from voice-lab/wake_vitrus_train.py) reads openWakeWord's speech features at each
+    80 ms step, and it wakes when `run` steps in a row score `threshold` or more (the file says which)."""
+
+    STRICT = 0.98  # while Custodian is speaking: its own voice mustn't wake it
+
+    def __init__(self, path: Path, features) -> None:  # noqa: ANN001 - openwakeword.utils.AudioFeatures
+        data = np.load(path)
+        self.net = SecondOpinion(path)
+        self.threshold = float(data["threshold"]) if "threshold" in data.files else 0.9
+        self.run = int(data["run"]) if "run" in data.files else 2
+        self.features, self.streak = features, 0
+
+    def probability(self, frame: np.ndarray) -> float:
+        self.features(frame)
+        return self.net.probability(self.features.get_features(16))
+
+    def heard(self, frame: np.ndarray, *, strict: bool = False) -> bool:
+        threshold = max(self.threshold, self.STRICT) if strict else self.threshold
+        self.streak = self.streak + 1 if self.probability(frame) >= threshold else 0
+        if self.streak >= self.run:
+            self.streak = 0
+            self.features.reset()  # its features look back ~2 s: the same "Hey Vitrus" mustn't wake it twice
+            return True
+        return False
+
+
+def own(name: str) -> Path | None:
+    """The weights of Custodian's own wake phrase called `name` ("hey_vitrus"), or None."""
+    if not name.isidentifier():  # a path to a model of your own, say
+        return None
+    path = WEIGHTS.with_name(f"{name}.npz")
+    return path if path.exists() else None
+
+
 def load() -> SecondOpinion | None:
     try:
         return SecondOpinion() if WEIGHTS.exists() else None

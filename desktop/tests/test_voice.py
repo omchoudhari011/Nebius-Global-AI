@@ -322,6 +322,46 @@ def test_the_second_opinion_stops_lookalikes_and_hears_what_the_stock_model_miss
     assert second is not None and 0.0 <= second.probability(np.zeros((1, 16, 96), dtype=np.float32)) <= 1.0
 
 
+def test_custodians_own_wake_phrase_wakes_after_steps_in_a_row_and_is_stricter_while_speaking(tmp_path):
+    from custodian_desktop import wake
+
+    # A one-layer network whose probability is sigmoid(feature[0]): what each step "hears" is set below.
+    w = np.zeros((16 * 96, 1), dtype=np.float32)
+    w[0, 0] = 1.0
+    path = tmp_path / "hey_test.npz"
+    np.savez(path, w0=w, b0=np.zeros(1, dtype=np.float32), threshold=np.float32(0.9), run=np.int64(2))
+
+    class Features:
+        def __init__(self):
+            self.logit = 0.0
+
+        def __call__(self, frame):
+            pass
+
+        def reset(self):
+            self.resets = getattr(self, "resets", 0) + 1
+
+        def get_features(self, n):
+            x = np.zeros((1, n, 96), dtype=np.float32)
+            x[0, 0, 0] = self.logit
+            return x
+
+    features = Features()
+    detector = wake.Detector(path, features)
+    frame = np.zeros(1280, dtype=np.int16)
+
+    def step(probability, **kw):
+        features.logit = float(np.log(probability / (1 - probability)))
+        return detector.heard(frame, **kw)
+
+    assert [step(p) for p in (0.95, 0.5, 0.95, 0.95)] == [False, False, False, True]  # two in a row
+    assert features.resets == 1  # what it heard is forgotten, so the same phrase can't wake it twice
+    assert [step(p, strict=True) for p in (0.95, 0.95, 0.95)] == [False, False, False]  # its own voice doesn't
+    assert [step(p, strict=True) for p in (0.99, 0.99)] == [False, True]
+    assert wake.own("hey_vitrus") == wake.WEIGHTS.with_name("hey_vitrus.npz")  # shipped with the app
+    assert wake.own("../hey_vitrus") is None and wake.own("hey_nobody") is None
+
+
 def test_the_listener_asks_the_second_opinion_only_for_hey_jarvis():
     class Pre:
         def get_features(self, n):

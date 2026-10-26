@@ -21,10 +21,10 @@ class Settings:
     server: str = "http://localhost:8001"
     wake_word: bool = True  # listen for the wake word
     wake_threshold: float = 0.5  # openWakeWord score that counts as the wake word
-    # openWakeWord's "hey_jarvis", or your own model's name in APP_DIR/wakewords ("hey_custodian" for
-    # hey_custodian.onnx); wake_phrase is what the app tells you to say.
-    wake_model: str = "hey_jarvis"
-    wake_phrase: str = "Hey Jarvis"
+    # "hey_vitrus" (Custodian's own, models/hey_vitrus.npz), openWakeWord's "hey_jarvis", or your own model's
+    # name in APP_DIR/wakewords ("hey_custodian" for hey_custodian.onnx); wake_phrase is what the app tells you to say.
+    wake_model: str = "hey_vitrus"
+    wake_phrase: str = "Hey Vitrus"
     barge_in: bool = True  # saying the wake word while Custodian speaks cuts it off
     fast_transcribe: bool = True  # start transcribing at the first pause in what you say
     hotkey: str = "<ctrl>+<alt>+<space>"

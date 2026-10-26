@@ -1,8 +1,8 @@
 """Listening and speaking.
 
 Listener: the microphone streams 16 kHz audio into openWakeWord on this PC; when it hears the
-wake word - "Hey Jarvis", or your own ("Hey Custodian": any openWakeWord model in
-%APPDATA%\\Custodian\\wakewords) - or you press the hotkey, it records until you stop talking and
+wake word - "Hey Vitrus" (Custodian's own, wake.Detector), openWakeWord's "Hey Jarvis", or any
+openWakeWord model of yours in %APPDATA%\\Custodian\\wakewords - or you press the hotkey, it records until you stop talking and
 hands the WAV to a callback. Nothing is recorded or sent before the wake word.
 - Faster: the moment you pause, what you said so far is handed to `on_early` (the app starts
   transcribing it); if you don't go on, that transcription is used and about half a second is saved.
@@ -151,7 +151,12 @@ class Listener:
             from openwakeword.model import Model
 
             path = Path(self.wake_model)
-            if path.suffix in (".onnx", ".tflite") and path.exists():  # your own wake word
+            if wake.own(self.wake_model):  # Custodian's own phrase ("Hey Vitrus"): openWakeWord's features only
+                from openwakeword.utils import AudioFeatures
+
+                utils.download_models(model_names=["embedding_model"])  # names no wake model: the features alone
+                self._model = wake.Detector(wake.own(self.wake_model), AudioFeatures(inference_framework="onnx"))
+            elif path.suffix in (".onnx", ".tflite") and path.exists():  # your own wake word
                 framework = "onnx" if path.suffix == ".onnx" else "tflite"
                 self._model = Model(wakeword_models=[str(path)], inference_framework=framework)
             else:
@@ -174,6 +179,8 @@ class Listener:
     def heard_wake_word(self, frame: np.ndarray, speaking: bool) -> bool:
         if self._model is None:
             return False
+        if isinstance(self._model, wake.Detector):
+            return self._model.heard(frame, strict=speaking)
         scores = self._model.predict(frame)
         score = max(scores.values()) if scores else 0.0
         threshold = max(BARGE_IN_SCORE, self.threshold) if speaking else self.threshold
