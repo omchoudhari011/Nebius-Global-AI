@@ -258,7 +258,7 @@ _REMINDER_CLAIM = re.compile(
 # Something done on the PC: true only when a pc tool call succeeded this turn.
 _PC_CLAIM = re.compile(
     r"\b(?:i(?:'ve| have)?|done[\s,!-]*i(?:'ve)?)\s+(?:just\s+|now\s+)?(?:opened|launched|started|closed|locked|muted|unmuted|paused"
-    r"|resumed|played|skipped|typed|pressed|clicked|turned (?:up|down)"
+    r"|resumed|played|skipped|typed|pressed|clicked|called|rang|turned (?:up|down)"
     r"|set the volume|raised the volume|lowered the volume|taken a screenshot|took a screenshot"
     r"|(?:deleted|moved|renamed|copied|created) (?:the |your |that |a |this )?(?:file|folder))\b"
     r"|\b(?:volume|the music|playback|your (?:pc|computer|screen)|spotify|chrome|notepad)\s+(?:is|has been)\s+(?:now\s+)?"
@@ -266,6 +266,7 @@ _PC_CLAIM = re.compile(
     # The short form a reply starts with: "Opened YouTube.", "Playing “Kalyani” on YouTube."
     r"|(?:^\W*|[.!?]\s+)(?:done[\s,!-]+)?(?:opened|launched|closed|quit|locked|muted|unmuted|paused|resumed|skipped|typed"
     r"|pressed|clicked|dimmed|played|playing\s+(?!it\s+safe)[“\"']?\w+|started (?:the |your )?(?:song|music|video|playback)"
+    r"|(?:calling|ringing)\s+(?!it\b)[“\"']?\w+|i'?m\s+(?:now\s+)?(?:calling|ringing)\s+\w+"
     r"|(?:pausing|resuming|muting|unmuting|skipping|opening|closing|launching|locking|starting)\s+(?:it|that|the|your|[“\"']?[A-Z]\w*)"
     r"|set the (?:volume|brightness)|switched windows"
     r"|turned (?:the volume|the brightness|it) (?:up|down)|sorted \d+ files|created the \S.* folder|started an? \S.*timer"
@@ -298,7 +299,7 @@ _SWITCH = re.compile(r"([A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)?) · (read|write)")
 _PC_PROMISE = re.compile(
     r"\b(?:i'?ll|i will|i'm going to|i am going to|let me)\s+(?:do\s+(?:that|it|so)\W+)?(?:now\s+|just\s+)?"
     r"(?:mute|unmute|pause|resume|play|open|close|quit|lock|skip|start|turn|set|launch|switch|dim|send|message|text"
-    r"|whatsapp)\b",
+    r"|whatsapp|call|ring|dial)\b",
     re.I,
 )
 _OFFER = re.compile(r"\b(?:if|when|once|whenever|shall|should|want|would you|do you)\b", re.I)
@@ -314,9 +315,17 @@ _PC_FAILURE_CLAIM = re.compile(
     r"|find|chat|click|type|write)\b"
     r"|\b(?:didn'?t|did not|isn'?t|is not|wasn'?t|was not)\s+respond(?:ing)?\b|\bnot responding\b"
     r"|\b(?:doesn'?t|does not)\s+have\s+a\s+(?:chat|contact)\b|\bno\s+(?:whatsapp\s+)?(?:chat|contact)\s+(?:called|named)\b"
-    r"|\b(?:isn'?t|is not|wasn'?t|was not)\s+running\b",
+    r"|\b(?:isn'?t|is not|wasn'?t|was not)\s+running\b"
+    # "I couldn't do that - Jarvis says: <an error from an earlier turn>": the desktop app quoted, unasked.
+    r"|\b(?:jarvis|the desktop app|the pc)\s+(?:says|said|reports|reported)\b",
     re.I,
 )
+# "I couldn't do that": a failure too, unless it blames a switch (false_excuse checks those).
+_DID_NOT_DO = re.compile(r"\b(?:couldn'?t|could not|wasn'?t able to|was unable to|failed to)\s+do\s+(?:that|it|this|so)\b", re.I)
+_SWITCH_BLAMED = re.compile(r"\bswitch|\bturned off\b|tools\s*&\s*data|\bpermission|\baccess\b", re.I)
+# "Why didn't it send?" is answered with the earlier failure: nothing needs trying for that.
+_ASKS_WHY = re.compile(r"^\W*(?:why|how come|what (?:happened|went wrong|was the (?:error|problem)|did (?:it|jarvis|the pc) say))\b"
+                       r"|क्यों|क्यूँ|का\s?नाही", re.I)
 # Without PC tools this turn, a failure counts only when it names something on the PC ("the shop isn't open"
 # from a web answer isn't one).
 _PC_THING = re.compile(r"\b(?:whatsapp|youtube|spotify|chrome|edge|notepad|word|excel|vs code|jarvis|desktop app"
@@ -564,8 +573,10 @@ def review(reply: str, evidence: Evidence) -> list[Finding]:
         )
     pc_offered = any(k.startswith("PC ·") for k in evidence.switches or {})
     pc_tried = any(o.tool == "pc" for o in evidence.outcomes)
-    failures = [s for s in _statements(reply) if _PC_FAILURE_CLAIM.search(s)]
-    if not pc_tried and failures and (pc_offered or any(_PC_THING.search(s) for s in failures)):
+    failures = [s for s in _statements(reply)
+                if _PC_FAILURE_CLAIM.search(s) or (_DID_NOT_DO.search(s) and not _SWITCH_BLAMED.search(reply))]
+    asked_why = bool(_ASKS_WHY.search(evidence.message or ""))
+    if not pc_tried and failures and not asked_why and (pc_offered or any(_PC_THING.search(s) for s in failures)):
         findings.append(
             Finding(
                 "invented_failure",

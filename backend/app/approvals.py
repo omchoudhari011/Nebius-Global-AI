@@ -166,6 +166,7 @@ _SHOWN = {
     "click_element": lambda a: f"Click “{a['name']}”" + (f" in “{a['window']}”" if a.get("window") else ""),
     "fill_field": lambda a: f"Type into “{a['name']}”:\n\n{a['text'][:300]}",
     "send_message": lambda a: f"Send a WhatsApp message\nTo: {a['contact']}\n\n{a['text'][:1500]}",
+    "call": lambda a: f"Start a WhatsApp {'video' if a.get('video') else 'voice'} call\nTo: {a['contact']}",
     "confirm_plan": lambda a: "\n".join(f"• {s}" for s in a["steps"][:12]),
     "look": lambda a: f"Take a screenshot and have it read to answer:\n{a.get('question', '')}",
     "click_on": lambda a: f"Look at the screen, click {a['target']}, then check it worked",

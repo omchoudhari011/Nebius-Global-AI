@@ -228,3 +228,20 @@ def test_what_did_i_miss_reaches_the_notifications_on_the_pc(said):
     assert registry.find("pc_notifications").confirm  # other people's messages: only after you allow it
     assert approvals.describe("notifications", {"hours": 24, "app": "WhatsApp"}) == (
         "Send your WhatsApp notifications from the last 24 hours, and the unread counts, to Custodian")
+
+
+@pytest.mark.parametrize("said", ["open whatsapp and call to piyush", "call Mrunal on WhatsApp", "video call Tanishka",
+                                  "call piyush"])
+def test_a_call_reaches_whatsapp_on_the_pc_and_is_always_asked_about(said):
+    from app import approvals, skills
+
+    assert skills.pick_skill_name(said) == "pc"
+    offered = {f.exposed_name for f in registry.offer(registry.for_scopes(None), said)}
+    assert "pc_call" in offered
+    assert registry.find("pc_call").confirm  # it reaches someone: only after you allow it
+    assert approvals.describe("call", {"contact": "Piyush", "video": True}) == "Start a WhatsApp video call\nTo: Piyush"
+
+
+def test_a_button_to_click_is_not_a_call_to_someone_guessed():
+    offered = {f.exposed_name for f in registry.offer(registry.for_scopes(None), "click voice call in whatsapp")}
+    assert "pc_call" not in offered and {"pc_read_screen", "pc_click_element"} <= offered

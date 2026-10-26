@@ -165,6 +165,7 @@ PC = {
     "pc_create_folder": {"path": "~/Desktop/Trips"}, "pc_organize_folder": {"path": "~/Downloads"},
     "pc_write_in_app": {"text": "Dear Sir,"}, "pc_read_screen": {}, "pc_click_element": {"name": "Send"},
     "pc_fill_field": {"name": "Search", "text": "hello"}, "pc_send_message": {"contact": "Tanishka", "text": "on my way"}, "pc_notifications": {"hours": 24, "app": "whatsapp"},
+    "pc_call": {"contact": "Piyush", "video": False},
     "pc_write_document": {"title": "Report", "sections": [{"heading": "Summary", "text": "Short."}]},
     "pc_do_not_disturb": {"on": True}, "pc_alarm": {"time": "07:00"}, "pc_say": {"text": "Good morning"},
     "pc_confirm_plan": {"title": "Run “Work mode”", "steps": ["Open vs code"]},

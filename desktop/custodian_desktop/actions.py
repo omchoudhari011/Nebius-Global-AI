@@ -1384,6 +1384,31 @@ class _Uia:
 
         UIAWrapper(UIAElementInfo(element)).click_input()
 
+    def names(self, control: str, limit: int = 80) -> list[str]:
+        """The names of the visible elements of a control type."""
+        condition = self.iuia.CreateAndCondition(
+            self.iuia.CreatePropertyCondition(self.ids.UIA_IsOffscreenPropertyId, False),
+            self.iuia.CreatePropertyCondition(self.ids.UIA_ControlTypePropertyId, getattr(self.ids, f"UIA_{control}ControlTypeId")))
+        items = self.root.FindAll(self.ids.TreeScope_Descendants, condition)
+        found = []
+        for i in range(min(items.Length, limit) if items else 0):
+            try:
+                found.append(items.GetElement(i).CurrentName or "")
+            except Exception:  # noqa: BLE001 - redrawn meanwhile
+                continue
+        return found
+
+    def expand(self, element) -> bool:  # noqa: ANN001
+        """Open a menu button's menu - only that: Expand never presses the button. False when it has no menu."""
+        try:
+            pattern = element.GetCurrentPattern(self.ids.UIA_ExpandCollapsePatternId)
+            if not pattern:
+                return False
+            pattern.QueryInterface(self.ids.IUIAutomationExpandCollapsePattern).Expand()
+            return True
+        except Exception:  # noqa: BLE001 - not a menu button, or gone
+            return False
+
 
 def _keystroke(*keys: int) -> None:
     """Press a key combination with keyboard events only: no mouse involved, so it works
@@ -1549,16 +1574,16 @@ def _open_row(ui: _Uia, row, title: str) -> str | None:  # noqa: ANN001
     return chat
 
 
-def _open_chat(ui: _Uia, contact: str) -> str | None:
+def _open_chat(ui: _Uia, contact: str, nothing: str = "nothing was sent") -> str | None:
     """Search for `contact` and open its chat: the one named exactly that, else the one whose name clearly fits
     best (name_score) - "Mronal" opens Mrunal, "Abhi Choudhury" opens Abhi Chaudhari. Returns the chat's real
     name as WhatsApp's message box reports it ("Type a message to <name>"), or None. When no chat clearly fits,
     raises naming the closest, so the user can say which. WhatsApp redraws its list as search results come in,
-    so a row read a moment before can be gone when it's clicked: then it starts again (nothing is sent before
-    the chat is open and checked)."""
+    so a row read a moment before can be gone when it's clicked: then it starts again (nothing is sent or
+    called before the chat is open and checked)."""
     for attempt in range(3):
         try:
-            return _search_and_open(ui, contact)
+            return _search_and_open(ui, contact, nothing)
         except Exception as exc:
             if not _gone(exc) or attempt == 2:
                 raise
@@ -1566,7 +1591,7 @@ def _open_chat(ui: _Uia, contact: str) -> str | None:
     return None
 
 
-def _search_and_open(ui: _Uia, contact: str) -> str | None:
+def _search_and_open(ui: _Uia, contact: str, nothing: str) -> str | None:
     if (_composer_chat(ui) or "") and _same_person(contact, _composer_chat(ui) or ""):
         return _composer_chat(ui)  # already open
     # While it holds a search, the box loses its name; the message box always has one.
@@ -1603,35 +1628,112 @@ def _search_and_open(ui: _Uia, contact: str) -> str | None:
     nearest = [title for title, score in sorted(close.items(), key=lambda item: -item[1]) if score >= NAME_CLOSE][:3]
     if nearest:
         raise ActionError(f"no WhatsApp chat called {contact!r} was found; the closest are "
-                          + ", ".join(repr(n) for n in nearest) + " - ask which one they mean; nothing was sent")
+                          + ", ".join(repr(n) for n in nearest) + f" - ask which one they mean; {nothing}")
     return None
+
+
+def _chat_for(contact: str, nothing: str) -> tuple[int, _Uia, str]:
+    """WhatsApp with the chat named `contact` open and checked: (its window, its UI, the chat's real name)."""
+    hwnd = _whatsapp_window()
+    refocus(hwnd)
+    ui = _Uia(hwnd)
+    chat = _open_chat(ui, contact, nothing)
+    if chat is None:
+        raise ActionError(f"no WhatsApp chat called {contact!r} was found; {nothing}")
+    if not (_same_person(contact, chat) or name_score(contact, chat) >= NAME_MATCH):
+        raise ActionError(f"the chat that opened is {chat!r}, not {contact!r}; {nothing}")
+    return hwnd, ui, chat
+
+
+def _still_open(ui: _Uia, chat: str, doing: str, nothing: str):  # noqa: ANN202
+    """The message box, when `chat` is still the one open (after the dialog, the user may have clicked another)."""
+    found = _composer(ui)
+    if found is None or not _same_person(chat, found[1]):
+        raise ActionError(f"the chat changed before {doing}; {nothing}")
+    return found[0]
 
 
 def send_message(contact: str, text: str, app: str = "whatsapp", **_: object) -> dict:
     """Open the chat named `contact` in WhatsApp, check it really is that chat, show the user who
     and what, and send only if they allow it."""
-    hwnd = _whatsapp_window()
-    refocus(hwnd)
-    ui = _Uia(hwnd)
-    chat = _open_chat(ui, contact)
-    if chat is None:
-        raise ActionError(f"no WhatsApp chat called {contact!r} was found; nothing was sent")
-    if not (_same_person(contact, chat) or name_score(contact, chat) >= NAME_MATCH):
-        raise ActionError(f"the chat that opened is {chat!r}, not {contact!r}; nothing was sent")
+    hwnd, ui, chat = _chat_for(contact, "nothing was sent")
     # The dialog names the chat as WhatsApp does ("Mrunal Patil" for a "Mronal" that was said): that's the OK.
     if confirm_hook is None or not confirm_hook("Send a WhatsApp message", f"To: {chat}\n\n{text[:1500]}"):
         raise ActionError("The user declined this on the PC.")  # nobody to ask = never send
     refocus(hwnd)
-    found = _composer(ui)
-    if found is None or not _same_person(chat, found[1]):
-        raise ActionError("the chat changed before sending; nothing was sent")
-    composer = found[0]
+    composer = _still_open(ui, chat, "sending", "nothing was sent")
     composer.SetFocus()
     time.sleep(0.15)
     _paste_into_focus(text)
     _keystroke(VK_RETURN)
     time.sleep(0.6)
     return {"sent_to": chat, "app": "WhatsApp", "characters": len(text)}
+
+
+CALL_SECONDS = 6.0  # how long WhatsApp gets to show its call screen
+_HANG_UP = ("End call", "Hang up", "Leave call")
+
+
+def _call_control(ui: _Uia, video: bool):  # noqa: ANN202
+    """The open chat's button for a voice (or video) call. Where WhatsApp has one "Call" button with a menu of
+    both, the menu's item: the menu is opened with Expand, which never starts a call by itself."""
+    names = ("Video call",) if video else ("Voice call", "Audio call")
+
+    def named():  # noqa: ANN202 - the exact name first: a "Missed voice call" note in the chat isn't the button
+        return next((found for contains in (False, True) for name in names for control in ("Button", "MenuItem")
+                     if (found := ui.first(name, control, contains=contains)) is not None), None)
+
+    if (found := named()) is not None:
+        return found
+    menu = ui.first("Call", "Button")
+    if menu is None or not ui.expand(menu):
+        return None
+    for _ in range(8):
+        time.sleep(0.2)
+        if (found := named()) is not None:
+            return found
+    _keystroke(VK_ESCAPE)  # close the menu again
+    return None
+
+
+def _call_started(ui: _Uia, before: set[int]) -> bool:
+    """Whether WhatsApp shows a call within CALL_SECONDS: a window of its own that wasn't there, or a hang-up button."""
+    deadline = time.monotonic() + CALL_SECONDS
+    while time.monotonic() < deadline:
+        time.sleep(0.5)
+        if any(process.lower().startswith("whatsapp") and handle not in before for _t, process, _pid, handle in _windows()):
+            return True
+        try:
+            if any(ui.first(name, "Button", contains=True) is not None for name in _HANG_UP):
+                return True
+        except Exception as exc:
+            if not _gone(exc):  # else WhatsApp is redrawing for the call: look again
+                raise
+    return False
+
+
+def call(contact: str, video: bool = False, app: str = "whatsapp", **_: object) -> dict:
+    """Open the chat named `contact` in WhatsApp, check it really is that chat, show the user who, and start a
+    voice (or video) call only if they allow it."""
+    kind = "video call" if video else "voice call"
+    hwnd, ui, chat = _chat_for(contact, "no call was made")
+    if confirm_hook is None or not confirm_hook(f"Start a WhatsApp {kind}", f"To: {chat}"):
+        raise ActionError("The user declined this on the PC.")  # nobody to ask = never call
+    refocus(hwnd)
+    _still_open(ui, chat, "calling", "no call was made")
+    button = _call_control(ui, video)
+    if button is None:
+        about = sorted({n for n in ui.names("Button") if "call" in n.lower()})[:5]
+        raise ActionError(f"WhatsApp shows no {kind} button in the chat with {chat} "
+                          + (f"(its buttons about calls: {', '.join(repr(n) for n in about)})" if about
+                             else "(a group, or a business that takes no calls?)") + "; no call was made")
+    before = {handle for _t, process, _pid, handle in _windows() if process.lower().startswith("whatsapp")}
+    ui.press(button)
+    if _call_started(ui, before):
+        return {"calling": chat, "app": "WhatsApp", "kind": kind}
+    return {"calling": chat, "app": "WhatsApp", "kind": kind, "call_screen_seen": False,
+            "note": f"WhatsApp's {kind} button was pressed, but its call screen didn't show within "
+                    f"{CALL_SECONDS:.0f} seconds: it may still be connecting, or asking for the microphone"}
 
 
 ACTIONS = {
@@ -1645,7 +1747,7 @@ ACTIONS = {
     "list_apps": list_apps, "close_app": close_app, "copy_file": copy_file, "create_folder": create_folder,
     "organize_folder": organize_folder, "write_in_app": write_in_app, "write_document": write_document,
     "read_screen": read_screen,
-    "click_element": click_element, "fill_field": fill_field, "send_message": send_message,
+    "click_element": click_element, "fill_field": fill_field, "send_message": send_message, "call": call,
     "do_not_disturb": do_not_disturb, "alarm": alarm, "say": say, "confirm_plan": confirm_plan,
     "notifications": lambda **a: notices.read(int(a.get("hours") or 24), str(a.get("app") or "")),
     # The vision model's eyes and hands (backend app/vision.py): only after you allowed pc_look or pc_click_on.
@@ -1659,8 +1761,8 @@ ACTIONS = {
     "restore_deleted": restore_deleted, "undo_moves": undo_moves, "remove_empty_folder": remove_empty_folder,
     "recycle_created": recycle_created, "restore_backup": restore_backup, "cancel_timer": cancel_timer,
 }
-SELF_CONFIRMING = {"send_message", "browser_click", "browser_fill"}  # they ask once they know exactly what they'll do
-_NOTHING_DONE = {"send_message": "nothing was sent - ask again"}
+SELF_CONFIRMING = {"send_message", "call", "browser_click", "browser_fill"}  # they ask once they know exactly what they'll do
+_NOTHING_DONE = {"send_message": "nothing was sent - ask again", "call": "no call was made - ask again"}
 # Of those, the ones the server doesn't mark "confirm": they ask only when what they found is risky
 # (a submit or "Place order" button, Enter in a form), so following a link never asks.
 ASK_WHEN_RISKY = {"browser_click", "browser_fill"}
@@ -1737,6 +1839,7 @@ def describe(function: str, args: dict) -> str:
         "organize_folder": lambda a: f"Sort the loose files in\n{a['path']}\ninto subfolders by type (Images, Documents, ...)",
         "write_in_app": lambda a: f"Open {a.get('app', 'notepad')} and write:\n\n{a['text'][:500]}",
         "click_element": lambda a: f"Click \u201c{a['name']}\u201d in \u201c{_window_title(a.get('window', ''))}\u201d",
+        "call": lambda a: f"Start a WhatsApp {'video' if a.get('video') else 'voice'} call to {a['contact']}",
         "fill_field": lambda a: f"Type into \u201c{a['name']}\u201d in \u201c{_window_title(a.get('window', ''))}\u201d:\n\n{a['text'][:300]}",
         "confirm_plan": lambda a: a.get("details") or "\n".join(f"\u2022 {step}" for step in a["steps"][:12]),
         "browser_download": lambda a: "Download into your Downloads folder:\n"

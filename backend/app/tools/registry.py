@@ -59,6 +59,7 @@ from .schemas import (
     PcTimerArgs,
     PcWriteInAppArgs,
     PcSendMessageArgs,
+    PcCallArgs,
     PcClickOnArgs,
     PcLookArgs,
     PcBrowserDownloadArgs,
@@ -386,6 +387,8 @@ FUNCTIONS: tuple[ToolFunction, ...] = (
              "confirms)."),
             ("send_message", "write", "messaging", True, PcSendMessageArgs,
              "Send a WhatsApp message to one chat by name. The PC shows the chat it found and the text, and sends only if the user allows."),
+            ("call", "write", "messaging", True, PcCallArgs,
+             "Call a person the user names, on WhatsApp (voice, or video). The PC shows the chat it found, and calls only if the user allows."),
             ("type_text", "write", "typing", True, PcTypeArgs, "Type text into the window in front (the user confirms)."),
             ("press_keys", "write", "typing", True, PcKeysArgs,
              "Press a key or shortcut such as 'ctrl+s' or 'alt+tab' (the user confirms)."),
@@ -628,7 +631,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
                "clipboard", "notepad", "word", "letter", "essay", "draft", "copy", "text", "report", "document",
                "research", "write up", "docx"),
     "messaging": ("whatsapp", "message", "messages", "msg", "send", "text", "texting", "tell", "reply", "wish", "ping",
-                  "notification", "notifications", "miss", "missed", "unread", "new messages", "telegram", "teams"),
+                  "notification", "notifications", "miss", "missed", "unread", "new messages", "telegram", "teams",
+                  "call", "calling", "ring", "dial"),
     "screen": ("on my screen", "on the screen", "on screen", "read the screen", "my screen", "click", "button", "fill",
                "form", "field", "screenshot", "you see", "showing", "sign in", "log in", "submit", "tick", "check box"),
     "speak": ("out loud", "aloud", "announce", "speak", "say it", "read it out"),
@@ -637,17 +641,26 @@ GROUPS: dict[str, tuple[str, ...]] = {
                 "register", "irctc", "amazon", "flipkart", "portal", "online", "submit"),
 }
 INTERNAL = "internal"  # never offered to the model; only Custodian's own code calls these
+# Held back when the message says to use the screen: "click voice call in whatsapp" means that button, in the
+# chat that's open - not a call to someone the model would have to guess.
+NOT_FOR: dict[str, tuple[str, ...]] = {"pc_call": ("click", "press", "tap", "button")}
+
+
+def _words(message: str | None) -> str:
+    return " " + " ".join(re.findall(r"[a-z0-9]+", (message or "").lower())) + " "
 
 
 def groups_for(message: str | None) -> set[str]:
-    text = " " + " ".join(re.findall(r"[a-z0-9]+", (message or "").lower())) + " "
+    text = _words(message)
     return {g for g, words in GROUPS.items() if any(f" {w} " in text for w in words)}
 
 
 def offer(functions: list[ToolFunction], message: str | None, *, everything_if_unclear: bool = False) -> list[ToolFunction]:
     """`functions` narrowed to the groups the message is about. A message matching no group
     gets only the ungrouped ones (opening apps, sites and pages), unless `everything_if_unclear`."""
-    functions = [f for f in functions if f.group != INTERNAL]
+    text = _words(message)
+    held = {name for name, words in NOT_FOR.items() if any(f" {w} " in text for w in words)}
+    functions = [f for f in functions if f.group != INTERNAL and f.exposed_name not in held]
     wanted = groups_for(message)
     if not wanted and everything_if_unclear:
         return functions

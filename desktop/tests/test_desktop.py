@@ -365,7 +365,7 @@ def _fake_whatsapp(monkeypatch, chat):
     sent = []
     monkeypatch.setattr(actions, "_whatsapp_window", lambda: 1)
     monkeypatch.setattr(actions, "refocus", lambda hwnd: None)
-    monkeypatch.setattr(actions, "_open_chat", lambda ui, contact: chat)
+    monkeypatch.setattr(actions, "_open_chat", lambda ui, contact, nothing: chat)
     monkeypatch.setattr(actions, "_paste_into_focus", lambda text: sent.append(text))
     monkeypatch.setattr(actions, "_keystroke", lambda *keys: None)
 
@@ -408,7 +408,7 @@ def test_when_whatsapp_keeps_redrawing_the_error_is_said_in_words_and_nothing_is
     sent = _fake_whatsapp(monkeypatch, "Tanishka")
     monkeypatch.setattr(actions, "confirm_hook", lambda title, details: True)
 
-    def redrawn(ui, contact):
+    def redrawn(ui, contact, nothing):
         raise _gone()
 
     monkeypatch.setattr(actions, "_open_chat", redrawn)
@@ -416,6 +416,86 @@ def test_when_whatsapp_keeps_redrawing_the_error_is_said_in_words_and_nothing_is
         actions.run("send_message", {"contact": "Tanishka", "text": "hi"}, PROTECTED)
     assert "redrew its window" in str(error.value) and "nothing was sent" in str(error.value)
     assert "subscribers" not in str(error.value) and sent == []
+
+
+def _fake_call(monkeypatch, chat, *, started=True):
+    """WhatsApp with `chat` open, for a call: what gets pressed, and what the user is asked."""
+    _fake_whatsapp(monkeypatch, chat)
+    pressed, asked = [], []
+    monkeypatch.setattr(actions._Uia, "press", lambda self, element: pressed.append(element), raising=False)
+    monkeypatch.setattr(actions, "_call_control", lambda ui, video: "Video call" if video else "Voice call")
+    monkeypatch.setattr(actions, "_call_started", lambda ui, before: started)
+    monkeypatch.setattr(actions, "_windows", lambda: [])
+    monkeypatch.setattr(actions, "confirm_hook", lambda title, details: asked.append((title, details)) or True)
+    return pressed, asked
+
+
+def test_a_call_goes_only_to_the_chat_found_and_only_when_allowed(monkeypatch):
+    pressed, asked = _fake_call(monkeypatch, "Piyush Sharma")
+    assert actions.run("call", {"contact": "piyush"}, PROTECTED) == {"calling": "Piyush Sharma", "app": "WhatsApp",
+                                                                     "kind": "voice call"}
+    assert asked == [("Start a WhatsApp voice call", "To: Piyush Sharma")] and pressed == ["Voice call"]
+    assert actions.run("call", {"contact": "Piyush", "video": True}, PROTECTED)["kind"] == "video call"
+    assert pressed == ["Voice call", "Video call"]
+
+    monkeypatch.setattr(actions, "confirm_hook", lambda title, details: False)
+    with pytest.raises(actions.ActionError, match="declined"):
+        actions.run("call", {"contact": "Piyush"}, PROTECTED)
+    monkeypatch.setattr(actions, "confirm_hook", None)  # nobody to ask: never called
+    with pytest.raises(actions.ActionError, match="declined"):
+        actions.run("call", {"contact": "Piyush"}, PROTECTED)
+    assert pressed == ["Voice call", "Video call"]
+
+
+def test_a_different_chat_is_never_called_and_a_missing_button_is_said(monkeypatch):
+    pressed, asked = _fake_call(monkeypatch, "+91 734 929 0925")
+    with pytest.raises(actions.ActionError, match="not 'Piyush'; no call was made"):
+        actions.run("call", {"contact": "Piyush"}, PROTECTED)
+    assert asked == [] and pressed == []
+
+    pressed, _asked = _fake_call(monkeypatch, "Family Group")
+    monkeypatch.setattr(actions, "_call_control", lambda ui, video: None)
+    monkeypatch.setattr(actions._Uia, "names", lambda self, control: ["Search", "Menu"], raising=False)
+    with pytest.raises(actions.ActionError, match=r"no voice call button in the chat with Family Group \(a group.*no call was made"):
+        actions.run("call", {"contact": "family group"}, PROTECTED)
+    # a WhatsApp whose buttons are named otherwise: the error says what it has, to fix the names here
+    monkeypatch.setattr(actions._Uia, "names", lambda self, control: ["Video call", "Search"], raising=False)
+    with pytest.raises(actions.ActionError, match=r"its buttons about calls: 'Video call'\); no call was made"):
+        actions.run("call", {"contact": "family group"}, PROTECTED)
+    assert pressed == []
+
+
+def test_a_call_whose_screen_never_shows_says_so(monkeypatch):
+    pressed, _asked = _fake_call(monkeypatch, "Mum", started=False)
+    result = actions.run("call", {"contact": "mum"}, PROTECTED)
+    assert pressed == ["Voice call"] and result["call_screen_seen"] is False and "didn't show" in result["note"]
+
+
+class _Header:
+    """An open chat's header, as _call_control sees it: buttons, and a menu that Expand shows."""
+
+    def __init__(self, buttons, menu=()):
+        self.buttons, self.menu, self.expanded = list(buttons), list(menu), False
+
+    def first(self, name=None, control=None, *, contains=False):
+        shown = self.buttons + (self.menu if self.expanded else [])
+        return next((n for n in shown if (name.lower() in n.lower() if contains else n == name)), None)
+
+    def expand(self, element):
+        self.expanded = bool(self.menu)
+        return self.expanded
+
+
+def test_the_call_button_is_whatsapps_own_never_a_note_in_the_chat(monkeypatch):
+    monkeypatch.setattr(actions.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(actions, "_keystroke", lambda *keys: None)
+    assert actions._call_control(_Header(["Video call", "Voice call"]), video=False) == "Voice call"
+    assert actions._call_control(_Header(["Video call", "Voice call"]), video=True) == "Video call"
+    assert actions._call_control(_Header(["Missed voice call at 10:02", "Voice call"]), video=False) == "Voice call"
+    menu = _Header(["Call"], menu=["Voice call", "Video call"])  # one "Call" button with a menu of both
+    assert actions._call_control(menu, video=True) == "Video call" and menu.expanded
+    assert actions._call_control(_Header(["Call"]), video=False) is None  # not a menu: never pressed blind
+    assert actions._call_control(_Header(["Search", "Menu"]), video=False) is None
 
 
 def test_the_mouse_in_a_corner_stops_an_action_with_a_clear_message(monkeypatch):
@@ -521,6 +601,16 @@ def test_a_remote_ok_for_a_message_never_carries_over_to_the_next_one(tmp_path, 
                        "approved": "remote"})
     assert hooks[0]("Send a WhatsApp message", "To: Mum") is True
     assert actions.confirm_hook is None  # the next send asks again (or, with nobody to ask, never sends)
+
+
+def test_a_call_is_asked_about_once_naming_the_chat_it_found(tmp_path, monkeypatch):
+    app = _app(True, tmp_path)
+    monkeypatch.setitem(actions.ACTIONS, "call", lambda **a: actions.confirm_hook("Start a WhatsApp voice call", "To: Piyush Sharma")
+                        and {"calling": "Piyush Sharma"})
+    app.handle_action({"id": 11, "function": "call", "args": {"contact": "piyush"}, "confirm": True,
+                       "description": "Start a WhatsApp voice or video call to one chat by name."})
+    assert app.window.asked == [("Start a WhatsApp voice call", "To: Piyush Sharma")]  # not a second, generic one
+    assert app.client.results == [(11, True, {"calling": "Piyush Sharma"}, None)]
 
 
 class _Announcer:

@@ -282,6 +282,12 @@ def test_a_personal_question_with_nothing_on_file_invites_i_dont_know(user_id):
         ("Sent a WhatsApp to Mrunal Patil - hi.", [("pc", "send_message", "succeeded")], False),
         ("I'll send it once you allow it on the PC.", [], False),  # a condition, not a promise
         ("I'll do that: send a WhatsApp to Mrunal saying hi.", [], True),
+        # calls: "calling" said with no call placed
+        ("Calling Piyush on WhatsApp now.", [], True),
+        ("I'm calling Piyush, sir.", [], True),
+        ("I've called Mrunal on WhatsApp.", [], True),
+        ("I'll call Piyush now.", [], True),
+        ("Calling Piyush Sharma on WhatsApp.", [("pc", "call", "succeeded")], False),
     ],
 )
 def test_claim_detection(reply, outcomes, flagged):
@@ -309,6 +315,13 @@ PC_ON = {"PC · read": True, "PC · write": True}
         # no PC tools this turn (a fragment that picked another skill), but it still names something on the PC
         ("I couldn't open YouTube: the desktop app isn't running.", [], None, "invented_failure"),
         ("The shop isn't open on Sundays, and I can't find its phone number.", [], None, None),  # nothing on the PC
+        # "open whatsapp and call to piyush", answered with the error of an earlier turn's send:
+        ("I couldn't do that - Jarvis says: An event was unable to invoke any of the subscribers. Try again later.", [],
+         PC_ON, "invented_failure"),
+        ("I couldn't do that - Jarvis says: An event was unable to invoke any of the subscribers.", [("pc", "call", "failed")],
+         PC_ON, None),
+        # a switch blamed is false_excuse's to check, not a made-up failure
+        ("I couldn't do that: the switch for it is off in Tools & Data.", [], {"PC · read": True, "PC · write": False}, None),
     ],
 )
 def test_a_pc_failure_with_nothing_tried_is_caught(reply, outcomes, switches, kind):
@@ -318,6 +331,13 @@ def test_a_pc_failure_with_nothing_tried_is_caught(reply, outcomes, switches, ki
     )
     kinds = {f.kind for f in grounding.review(reply, evidence)}
     assert (kind in kinds) if kind else ("invented_failure" not in kinds)
+
+
+@pytest.mark.parametrize("message", ["why didn't it send?", "What happened?", "what did Jarvis say", "मेसेज क्यों नहीं गया?"])
+def test_why_something_failed_is_answered_without_trying_again(message):
+    evidence = grounding.Evidence(message=message, switches=PC_ON, outcomes=[])
+    reply = "I couldn't send it - WhatsApp redrew its window while Jarvis was reading it, so nothing was sent."
+    assert "invented_failure" not in {f.kind for f in grounding.review(reply, evidence)}
 
 
 EXCUSE = "I couldn't open YouTube - it's not running.\n\nCustodian check: Nothing was tried on your PC: no PC action was attempted."

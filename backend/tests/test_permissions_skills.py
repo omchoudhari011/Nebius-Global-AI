@@ -70,6 +70,10 @@ def test_saved_versions_are_immutable(user_id):
         ("Give me a summary of my day", "daily-summary"),
         ("Tell me a joke", "general"),
         ("Add a note about the calendar sync", "general"),  # tie -> general
+        ("call piyush", "pc"),  # a WhatsApp call, from the PC
+        ("Call to Pius, upa D.", "pc"),
+        ("video call Tanishka", "pc"),
+        ("remind me to call mum at 6pm", "reminders"),  # a reminder that mentions a call isn't one
     ],
 )
 def test_pick_skill(message, expected):

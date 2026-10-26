@@ -49,7 +49,7 @@ REPAIR_TOOLS = {
     "unverified_send": ("gmail_send_email", "pc_send_message"),
     "unverified_draft": ("gmail_draft_email",),
     "unverified_pc_action": (),
-    "invented_failure": ("pc_send_message", "pc_play", "pc_media", "pc_open"),
+    "invented_failure": ("pc_send_message", "pc_call", "pc_play", "pc_media", "pc_open"),
     "false_excuse": (),
 }
 MAX_TOOL_ROUNDS = 6  # model turns that may call tools before it must answer (a PC task can take several)

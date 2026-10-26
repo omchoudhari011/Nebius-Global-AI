@@ -220,12 +220,13 @@ PC_COMMAND_STARTS = tuple(f" {w} " for w in (
     "open", "launch", "play", "fire up", "start up", "take me", "go to", "bring up", "pull up", "close", "quit", "kill",
     "whatsapp", "text", "message", "send a whatsapp", "send a message", "mute", "unmute", "pause", "resume", "skip",
     "lock", "put on", "switch to", "minimize", "turn up", "turn down", "dim", "brighten", "organize", "organise",
-    "i want to listen", "i want to watch", "i want to see", "show me", "click", "press", "type", "i need"))
+    "i want to listen", "i want to watch", "i want to see", "show me", "click", "press", "type", "i need",
+    "call", "video call", "voice call", "ring", "dial"))
 COMMAND_VERBS = {"open", "play", "launch", "start", "close", "quit", "take", "go", "show", "search", "set", "turn",
                  "mute", "pause", "skip", "lock", "type", "write", "find", "organize", "organise", "click", "fill",
                  "switch", "put", "make", "copy", "move", "delete", "save", "sort", "clean", "look", "check", "hit",
                  "press", "dim", "create", "kill", "stop", "resume", "connect", "minimize", "draft", "whatsapp", "text",
-                 "message", "bring", "fire", "pull", "listen", "watch"}
+                 "message", "bring", "fire", "pull", "listen", "watch", "call", "ring", "dial"}
 
 
 # A word: letters and digits - and Devanagari's vowel signs, which \w alone doesn't count, so

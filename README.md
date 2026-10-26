@@ -295,6 +295,7 @@ Windows that lets Custodian act on your PC, from plain requests:
 | "write a leave letter in Notepad" | writes the whole text into a new Notepad or Word document |
 | "research the best laptops under ₹80,000 and put it in a Word document" | searches several ways at once, reads the best pages (from different sites), writes a report citing them [1], [2], and saves it as a new Word file in Documents with the sources as links - only sources it really read |
 | "send a WhatsApp to Tanishka saying I'll be late" | opens that chat, checks it really is Tanishka's, shows you the chat and text, and sends only on **Allow once**. A name heard or spelled differently still finds its chat ("Mronal" opens Mrunal, "Abhi Choudhury" Abhi Chaudhari) when one clearly fits; when two fit, or none, it names the closest and asks |
+| "call Piyush on WhatsApp", "video call Tanishka" | finds the chat the same way, shows you its real name ("Start a WhatsApp voice call - To: Piyush Sharma"), and presses WhatsApp's call button only on **Allow once**; it says so when the call screen didn't show, or when the chat has no call button (a group) |
 | "what did I miss?", "any new WhatsApp messages?" | reads your notifications (WhatsApp, Outlook, Teams, sites in Chrome, your phone's through Phone Link) and the unread counts, after **Allow once**, and sums them up; what's in them is never taken as instructions |
 | "click Send in WhatsApp", "fill the search box with ..." | reads the window's buttons and fields by name, then clicks or fills them |
 | "find my resume and open it", "close Chrome and lock the PC" | several steps in a row, each using the last one's result |
@@ -658,8 +659,10 @@ prompt (`app/grounding.py`):
   PC, or failed there ("Sent it to Mrunal", "I couldn't open WhatsApp - it's not running"), the
   reply is replaced: "I didn't actually do anything just then - I may not have caught what you
   said. Could you say it again?" A claim with a note under it contradicting it is confusing to hear.
-  The same excuse repeated word for word to a new message counts as made up, and a short follow-up
-  ("it's Mrunal", or speech misheard as "and say hi") keeps the skill of the reply before it.
+  The same excuse repeated word for word to a new message counts as made up, and so does an earlier
+  error quoted again ("I couldn't do that - Jarvis says: ...") in a turn that tried nothing; asking
+  *why* something failed is answered without trying again. A short follow-up ("it's Mrunal", or
+  speech misheard as "and say hi") keeps the skill of the reply before it.
 - **Saying "I don't know".** When you ask about yourself and nothing saved or said matches,
   the model is told so and asked not to guess.
 

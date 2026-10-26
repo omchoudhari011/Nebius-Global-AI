@@ -59,7 +59,7 @@ The city is the Jarvis tab's setting, or the one your memories say you live in.
 | Settings | `config.py` | Settings in `%APPDATA%\Custodian\desktop.json`. The sign-in token is kept in Windows Credential Manager. |
 
 Actions that ask first:
-- `send_message` (WhatsApp), `type_text`, `press_keys`, `click`, `click_element`, `fill_field`, `write_in_app`
+- `send_message` and `call` (WhatsApp), `type_text`, `press_keys`, `click`, `click_element`, `fill_field`, `write_in_app`
 - `close_window`, `close_app`
 - `read_file`, `write_file`, `move_file`, `delete_file`, `organize_folder`
 - `get_clipboard`, `notifications` (Notification Centre's messages and the unread counts, read from a copy of Windows' list in `notices.py`)
@@ -89,6 +89,10 @@ Some details:
   list while search results come in, so a row that's gone by the time it's read or clicked means the
   search starts again (Windows' own text for that error, "An event was unable to invoke any of the
   subscribers", is never shown).
+- `call` opens the chat the same way, asks with its real name, then presses the chat's "Voice call"
+  (or "Video call") button - or, where WhatsApp has one "Call" button with a menu, opens the menu
+  (which can't start a call by itself) and picks from it. It reports whether WhatsApp's call screen
+  showed.
 - A window or app is matched by what you mean: "WhatsApp" is the WhatsApp app, not a file
   called `whatsapp_bot.py` open in an editor. The dialog names the exact window first.
 - For web pages in Chrome or Edge, run `.\run-desktop.ps1 -BrowserAccess` once and restart the
