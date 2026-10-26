@@ -52,6 +52,7 @@ from app.model_backends.base import ModelBackend
         ("open my pcs download folder", "pc_open", {"target": "downloads"}),
         ("show me my documents folder", "pc_open", {"target": "documents"}),
         ("open desktop", "pc_open", {"target": "desktop"}),
+        ("Open WhatsApp from my PC.", "pc_open", {"target": "whatsapp"}),
     ],
 )
 def test_exact_everyday_commands_are_recognised(said, function, args):
