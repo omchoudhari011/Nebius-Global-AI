@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from . import accounts, activity, approvals, conversations, db, documents, fastpath, grounding, history_search, memory, memory_graph, permissions, persona, plans, privacy, routines, sensitive, skills, usage, vectors, warmup
+from . import accounts, activity, approvals, conversations, db, documents, fastpath, grounding, history_search, memory, memory_graph, permissions, persona, plans, privacy, recipients, routines, sensitive, skills, usage, vectors, warmup
 from .config import get_settings
 from .crypto import decrypt, decrypt_json, encrypt, encrypt_json
 from .model_backends import ModelError, get_backend, get_large_backend, large_base_url
@@ -802,6 +802,15 @@ def _handle(
                 arguments = call.arguments
                 if call.name == "pc_write_document":  # a report cites only what was really found
                     arguments = grounding.keep_real_sources(arguments, evidence)
+                refuse = None
+                if call.name in recipients.GUARDED:  # a message or call goes only to someone the user named
+                    try:
+                        parsed_args = arguments if isinstance(arguments, dict) else json.loads(call.arguments_text() or "{}")
+                    except json.JSONDecodeError:
+                        parsed_args = {}
+                    heard = [message or "", *(str(t.get("content") or "") for t in history),
+                             *(json.dumps(o.result, ensure_ascii=False, default=str) for o in evidence.outcomes if o.result)]
+                    refuse = recipients.check(call.name, parsed_args, heard)
                 outcome = sandbox.execute(
                     user_id,
                     call.name,
@@ -810,6 +819,7 @@ def _handle(
                     allowed=allowed,
                     skill_name=skill.name if skill else None,
                     preapproved=call.id in getattr(backend, "preapproved", ()),
+                    refuse=refuse,
                 )
                 evidence.outcomes.append(outcome)
                 result = outcome.to_model_content()

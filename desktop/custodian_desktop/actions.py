@@ -92,7 +92,20 @@ class ActionError(RuntimeError):
 
 
 def _path(raw: str) -> Path:
-    return Path(os.path.expandvars(os.path.expanduser(raw.strip().strip('"')))).resolve()
+    """A path as said: "Downloads\\report.pdf" and "desktop" are the user's own folders (wherever Windows keeps
+    them - OneDrive too), "~\\Desktop\\x" likewise; anything else as written."""
+    path = Path(os.path.expandvars(os.path.expanduser(raw.strip().strip('"'))))
+    home = Path.home()
+    if path.is_absolute() and path.parts[: len(home.parts)] == home.parts and len(path.parts) > len(home.parts):
+        first, rest = path.parts[len(home.parts)], path.parts[len(home.parts) + 1:]
+    elif not path.is_absolute() and path.parts:
+        first, rest = path.parts[0], path.parts[1:]
+    else:
+        return path.resolve()
+    base = known_folder(first)
+    if base is not None and (not path.is_absolute() or not (home / first).is_dir()):
+        return base.joinpath(*rest).resolve()
+    return path.resolve()
 
 
 def _guard(path: Path, protected: list[str]) -> None:
@@ -100,6 +113,28 @@ def _guard(path: Path, protected: list[str]) -> None:
         root_path = Path(root).resolve()
         if path == root_path or root_path in path.parents:
             raise ActionError(f"{path} is inside {root_path}, which Custodian never changes")
+
+
+# Files that hold secrets: never read, copied or sent to Custodian, whatever is confirmed - passwords and keys
+# don't belong in a chat with a model. (The names are what they are on Windows; a folder named here covers
+# everything in it.)
+_SECRET_NAMES = re.compile(
+    r"^(?:\.env(?:\..+)?|.+\.(?:pem|key|pfx|p12|kdbx|ppk|asc|gpg|keystore|jks)|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?"
+    r"|\.git-credentials|\.netrc|_netrc|credentials|known_hosts|login data(?: for account)?|cookies|web data|local state"
+    r"|key[34]\.db|logins\.json|cert[89]\.db|sam|system|security|ntuser\.dat|custodian\.db.*|desktop\.json)$", re.I)
+_SECRET_FOLDERS = re.compile(r"(?:^|[\/])(?:\.ssh|\.aws|\.gnupg|\.azure|\.kube|\.docker|browser-profile"
+                             r"|credentials|protect|vault|user data[\/][^\/]+|profiles[\/][^\/]+\.default[^\/]*)(?:[\/]|$)", re.I)
+
+
+def _secret(path: Path) -> bool:
+    """A file (or folder) that holds secrets: .env, private keys, browser passwords and cookies, Windows'
+    account database, Custodian's own data."""
+    return bool(_SECRET_NAMES.match(path.name)) or bool(_SECRET_FOLDERS.search(str(path.parent) + "\\"))
+
+
+def _no_secrets(path: Path) -> None:
+    if _secret(path):
+        raise ActionError(f"Custodian never reads or copies {path.name}: it holds passwords or keys")
 
 
 def _key(vk: int, times: int = 1) -> None:
@@ -172,6 +207,7 @@ def find_files(query: str, folder: str = "~", **_: object) -> dict:
 
 def read_file(path: str, **_: object) -> dict:
     file = _path(path)
+    _no_secrets(file)
     if not file.is_file():
         raise ActionError(f"{file} isn't a file")
     data = file.read_bytes()[: MAX_READ * 4]
@@ -306,7 +342,7 @@ def open(target: str, **_: object) -> dict:  # noqa: A001 - the action's name
         return {"opened": url, "kind": "web page"}
     path = _path(target)
     if path.exists():
-        os.startfile(str(path))  # noqa: S606 - the user asked to open it
+        _start(path)
         return {"opened": str(path), "kind": "folder" if path.is_dir() else "file"}
     name = target.lower().removesuffix(".exe")
     folder = known_folder(name)
@@ -336,6 +372,29 @@ def open(target: str, **_: object) -> dict:  # noqa: A001 - the action's name
             raise ActionError(f"{target} doesn't seem to be installed") from None
         os.startfile(str(shortcut))  # noqa: S606
     return {"opened": target, "kind": "app"}
+
+
+def _store_app_type(suffix: str) -> bool:
+    """Files of this type open in a Microsoft Store app (the new Notepad's .txt, Photos' .jpg)."""
+    import winreg
+
+    key = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\" + suffix + "\\UserChoice"
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key) as k:
+            return str(winreg.QueryValueEx(k, "ProgId")[0]).startswith("AppX")
+    except OSError:
+        return False
+
+
+def _start(path: Path) -> None:
+    """Open a file or folder as a double-click does. A file type a Store app owns goes through Explorer:
+    started straight from here, Windows reports success and nothing opens (seen with Notepad's .txt)."""
+    if path.is_file() and _store_app_type(path.suffix.lower()):
+        import subprocess
+
+        subprocess.Popen(["explorer.exe", str(path)])  # noqa: S603, S607 - Explorer, with the user's own file
+    else:
+        os.startfile(str(path))  # noqa: S606 - the user asked to open it
 
 
 def _speakers():  # noqa: ANN202 - pycaw's IAudioEndpointVolume
@@ -1047,6 +1106,7 @@ def close_app(name: str, **_: object) -> dict:
 def copy_file(source: str, destination: str, *, protected: list[str], **_: object) -> dict:
     src, dest = _path(source), _path(destination)
     _guard(dest, protected)
+    _no_secrets(src)
     if not src.exists():
         raise ActionError(f"{src} doesn't exist")
     if dest.is_dir():
@@ -1054,6 +1114,8 @@ def copy_file(source: str, destination: str, *, protected: list[str], **_: objec
     if dest.exists():
         raise ActionError(f"{dest} already exists")
     if src.is_dir():
+        if any(_secret(p) for p in src.rglob("*")):
+            raise ActionError(f"{src.name} has files with passwords or keys in it; Custodian doesn't copy those")
         shutil.copytree(src, dest)
     else:
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -1206,7 +1268,7 @@ def write_document(title: str, sections: list[dict] | None = None, sources: list
     _guard(path, protected)
     folder.mkdir(parents=True, exist_ok=True)
     doc.save(str(path))
-    os.startfile(str(path))  # noqa: S606 - the file just made, in Word (or what opens .docx here)
+    _start(path)  # the file just made, in Word (or what opens .docx here)
     return {"saved": str(path), "opened": True, "sections": len(sections), "sources": len(sources or []),
             "undo": {"function": "recycle_created", "args": {"path": str(path)}, "label": f"delete {path.name}"}}
 
@@ -1468,6 +1530,53 @@ def _name_key(word: str) -> str:
     if not word:
         return ""
     return re.sub(r"(.)\1+", r"\1", word[0] + re.sub(r"[aeiouy]", "", word[1:]))
+
+
+_CONSONANTS = dict(zip("कखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसह",
+                       "k kh g gh n ch chh j jh n t th d dh n t th d dh n p ph b bh m y r l v sh sh s h".split()))
+_CONSONANTS.update({"ड़": "r", "ढ़": "rh", "फ़": "f", "ज़": "z", "क़": "k", "ख़": "kh", "ग़": "g"})
+_VOWELS = dict(zip("अआइईउऊऋएऐओऔ", "a aa i ee u oo ri e ai o au".split()))
+_MATRAS = dict(zip("ािीुूृेैोौ", "aa i ee u oo ri e ai o au".split()))
+_SIGNS = {"ं": "n", "ँ": "n", "ः": "h", "़": ""}
+
+
+def latin(text: str) -> str:
+    """A name said in Devanagari, in Latin letters as it's usually written: 'राहुल' -> 'rahul', 'मृणाल' ->
+    'mrinal', 'प्रिया' -> 'priya' (close enough for name_score's sound-alike match). Other text as it is."""
+    out, chars = [], text.replace("ड़", "ड़").replace("ढ़", "ढ़")
+    i = 0
+    while i < len(chars):
+        c = chars[i]
+        pair = chars[i:i + 2]
+        if pair in _CONSONANTS:
+            c, i = pair, i + 1
+        if c in _CONSONANTS:
+            out.append(_CONSONANTS[c])
+            nxt = chars[i + 1] if i + 1 < len(chars) else ""
+            if nxt in _MATRAS:
+                out.append(_MATRAS[nxt])
+                i += 1
+            elif nxt == "्":  # no vowel after it
+                i += 1
+            elif nxt and (nxt in _CONSONANTS or nxt in _SIGNS):
+                out.append("a")
+            elif nxt and nxt not in " ,.!?" :
+                out.append("a")
+            # a word's last consonant: no "a" (राहुल is rahul, not rahula)
+        elif c in _VOWELS:
+            out.append(_VOWELS[c])
+        elif c in _SIGNS:
+            out.append(_SIGNS[c])
+        elif c in _MATRAS:
+            out.append(_MATRAS[c])
+        else:
+            out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _devanagari(text: str) -> bool:
+    return any("ऀ" <= ch <= "ॿ" for ch in text)
 
 
 def name_score(wanted: str, chat: str) -> float:

@@ -232,12 +232,13 @@ def execute(
     allowed: frozenset[tuple[str, str]] | None,
     skill_name: str | None = None,
     preapproved: bool = False,
+    refuse: str | None = None,
 ) -> ToolCallOutcome:
     """Gate and run one proposed tool call. `allowed` is the current skill's
     (tool, scope) allowlist; None means no skill is in force (every scope allowed).
     `preapproved` means the user already allowed this exact step on the PC as part of a list
     (a routine, app/routines.py), so the desktop app doesn't ask again; only Custodian's own code
-    sets it, never the model."""
+    sets it, never the model. `refuse` records the call as rejected with that reason, unrun."""
     fn = registry.find(name)
     if fn is None:
         log.warning("model proposed unknown tool %r", name)
@@ -256,6 +257,10 @@ def execute(
             (message_id, tool["id"], fn.scope, fn.function, encrypt(args_text)),
         ).lastrowid
     outcome = ToolCallOutcome(name=name, status="running", tool_call_id=call_id, tool=fn.tool, function=fn.function, scope=fn.scope)
+    if refuse:  # Custodian's own rule says no (app/recipients.py): recorded, never run
+        outcome.status, outcome.error = "rejected", refuse
+        _finish(call_id, outcome.status, error=refuse)
+        return outcome
 
     # 1. Arguments
     try:
