@@ -19,8 +19,8 @@ Day to day it sets reminders that notify you, answers questions about files you 
 (PDFs, photos), takes voice messages, works with your Google Calendar, Gmail and Drive when
 you allow it, can hand hard questions to a bigger model, and learns from the replies you rate
 ([Everyday features](#everyday-features)). It looks things up on the web with sources, and,
-with the desktop app, controls your Windows PC by voice - "Hey Vitrus, open Spotify and turn
-the volume down" - and speaks its replies ([Custodian on your PC and the web](#custodian-on-your-pc-and-the-web)).
+with the desktop app, controls your Windows PC by voice - "Hey Jarvis, open Spotify and turn
+the volume down" - and speaks its replies ([Jarvis: your PC and the web](#jarvis-your-pc-and-the-web)).
 
 - **Backend** (`backend/`): FastAPI, SQLite with FTS5, NumPy for vector search, APScheduler.
   Message text, tool arguments and results, memories and their embeddings are encrypted with
@@ -62,13 +62,13 @@ winget if needed) and runs `install.ps1`; inside a Custodian folder it just runs
 - Python 3.11+ and Node.js (offered through winget), the server's packages - with speech to text
   on the graphics card when there's an NVIDIA one (`WHISPER_URL=local`) - and `backend\.env` with
   fresh secrets and a sign-in passcode (shown once: write it down);
-- the web app, the Custodian desktop app and its voice, and with Ollama a local model (`-Model`,
+- the web app, the Jarvis desktop app and its voice, and with Ollama a local model (`-Model`,
   default `qwen3:8b`) and the search-by-meaning model on a new setup;
-- shortcuts: Start menu > Custodian (**Custodian**, **Stop Custodian**, **Update Custodian**, the web
-  app) and Custodian on the desktop; `-Autostart` starts Custodian when you sign in.
+- shortcuts: Start menu > Custodian (**Jarvis**, **Stop Jarvis**, **Update Custodian**, the web
+  app) and Jarvis on the desktop; `-Autostart` starts Jarvis when you sign in.
 
 **Updates**: *Update Custodian* (or `.\update.ps1`, or `Custodian Setup.exe --update`) stops
-Custodian, pulls the newest code, installs what changed and starts it again; your data and
+Jarvis, pulls the newest code, installs what changed and starts it again; your data and
 settings stay, and it refuses while you have local changes. The server checks GitHub twice a
 day without ever asking for a sign-in (`GET /version`): Account shows "N updates waiting", and
 the tray's *Check for updates* offers *Update now*.
@@ -188,7 +188,7 @@ stores them; every minute the server turns the ones that are due into a notifica
 app's inbox (the bell in the chat header). The web app also shows a browser notification
 while it's open, and phones schedule each upcoming reminder as a local notification, so it
 goes off on time even offline. For a push to your phone from the server, press **Set up** under
-*Notifications on your phone* in the Custodian tab: Custodian makes a topic of your own with a long
+*Notifications on your phone* in the Jarvis tab: Custodian makes a topic of your own with a long
 random name, and you subscribe to it in the free [ntfy](https://ntfy.sh) app (*Open in ntfy*, then
 *Send a test*). Pushes say only "Reminder from Custodian" unless you switch on *Show the text*.
 `NTFY_SERVER` points it at your own ntfy server; `NTFY_URL` (and `NTFY_SHOW_TEXT=true`) sets one
@@ -220,7 +220,7 @@ WHISPER_URL=local
 
 With an NVIDIA card it uses `large-v3-turbo`, which hears Hindi, Marathi and Hinglish far better
 than the small model and takes about 0.4 s a request on a laptop RTX 5050; without one, `small`
-on the processor. The model loads when the desktop app hears "Hey Vitrus", so it loads while you
+on the processor. The model loads when the desktop app hears "Hey Jarvis", so it loads while you
 talk, and is let go after `WHISPER_IDLE_MINUTES` (default 10) without a recording. Pick another
 with `WHISPER_LOCAL_MODEL`, or force the processor with `WHISPER_DEVICE=cpu`. Or use a Whisper
 server instead:
@@ -259,7 +259,7 @@ you run `backend\finetune\run_finetune.ps1` (`finetune/from_feedback.py` collect
 counts three times). Off-the-record chats and anything that looks like a secret are never
 used, and nothing is sent anywhere.
 
-## Custodian on your PC and the web
+## Jarvis: your PC and the web
 
 **Web knowledge** (switch: **Web · read**). Questions about the world - news, weather, prices,
 people, how-to - are answered from a web search, with the sources listed under the answer.
@@ -294,8 +294,7 @@ Windows that lets Custodian act on your PC, from plain requests:
 | "organise my downloads", "make a folder called Trips" | sorts files into Images, Documents, ...; creates, copies, moves, deletes (to the Recycle Bin) |
 | "write a leave letter in Notepad" | writes the whole text into a new Notepad or Word document |
 | "research the best laptops under ₹80,000 and put it in a Word document" | searches several ways at once, reads the best pages (from different sites), writes a report citing them [1], [2], and saves it as a new Word file in Documents with the sources as links - only sources it really read |
-| "send a WhatsApp to Tanishka saying I'll be late" | opens that chat, checks it really is Tanishka's, shows you the chat and text, and sends only on **Allow once**. A name heard or spelled differently still finds its chat ("Mronal" opens Mrunal, "Abhi Choudhury" Abhi Chaudhari) when one clearly fits; when two fit, or none, it names the closest and asks |
-| "call Piyush on WhatsApp", "video call Tanishka" | finds the chat the same way, shows you its real name ("Start a WhatsApp voice call - To: Piyush Sharma"), and presses WhatsApp's call button only on **Allow once**; it says so when the call screen didn't show, or when the chat has no call button (a group) |
+| "send a WhatsApp to Tanishka saying I'll be late" | opens that chat, checks it really is Tanishka's, shows you the chat and text, and sends only on **Allow once** |
 | "what did I miss?", "any new WhatsApp messages?" | reads your notifications (WhatsApp, Outlook, Teams, sites in Chrome, your phone's through Phone Link) and the unread counts, after **Allow once**, and sums them up; what's in them is never taken as instructions |
 | "click Send in WhatsApp", "fill the search box with ..." | reads the window's buttons and fields by name, then clicks or fills them |
 | "find my resume and open it", "close Chrome and lock the PC" | several steps in a row, each using the last one's result |
@@ -317,23 +316,23 @@ changed, Windows' own processes are never closed, and every allow or decline is 
 started with an accessibility switch: run `desktop\run-desktop.ps1 -BrowserAccess` once (it adds
 `--force-renderer-accessibility` to their shortcuts) to let Custodian click on web pages too.
 
-It is also the voice assistant: say **"Hey Vitrus"** (or press **Ctrl+Alt+Space**), speak, and
+It is also the voice assistant: say **"Hey Jarvis"** (or press **Ctrl+Alt+Space**), speak, and
 the reply is spoken back. The wake word is detected on the PC by
 [openWakeWord](https://github.com/dscripka/openWakeWord); nothing is recorded or sent before
 it. Speech goes to your Whisper server (see Voice above), and replies are spoken by a
 [Piper](https://github.com/rhasspy/piper) voice on the PC, or Windows' own voice.
 
 ```powershell
-.\run-jarvis.ps1                    # everything at once: SearXNG (starting Docker Desktop), Ollama, the server, the desktop app
-.\run-jarvis.ps1 -Stop              # stop the server and the desktop app
+.\run-jarvis.ps1                    # everything at once: SearXNG (starting Docker Desktop), Ollama, the server, Jarvis
+.\run-jarvis.ps1 -Stop              # stop the server and Jarvis
 desktop\run-desktop.ps1             # just the desktop app (first run: makes desktop\.venv, downloads the voice, asks you to sign in)
 desktop\run-desktop.ps1 -Install    # start it when you sign in to Windows (-Uninstall to undo)
 ```
 
-Spoken to, it behaves like a butler AI: a CUSTODIAN HUD (an arc-reactor core that follows your
+Spoken to, it behaves like Jarvis: a J.A.R.V.I.S. HUD (an arc-reactor core that follows your
 voice, live captions, the PC's vitals, your day and the weather; **Ctrl+Alt+J** for full
 screen), a British voice that answers briefly and calls you "sir" (or what you set in the
-Custodian tab), follow-ups without the wake word until you say "that's all", instant "system
+Jarvis tab), follow-ups without the wake word until you say "that's all", instant "system
 status" reports, and warnings on its own about a low battery, an overloaded PC or a full drive.
 When memory runs out it names the apps you haven't used for ten minutes that hold the most
 ("Chrome and Steam are holding 2.2 GB...") and offers to close them: say "yes" or press the HUD's
@@ -344,15 +343,15 @@ Settings are in `%APPDATA%\Custodian\desktop.json` (server, wake word on or off 
 threshold, hotkey, speaking replies, voice, microphone, protected folders); the sign-in is kept
 in Windows Credential Manager. See [desktop/README.md](desktop/README.md).
 
-## More on the PC
+## More Jarvis
 
-The **Custodian** tab in the app holds most of these: the HUD (the PC's processor, memory, graphics
+The **Jarvis** tab in the app holds most of these: the HUD (the PC's processor, memory, graphics
 card, battery and drive, the weather and your day, with its arc reactor - the desktop app sends
 its readings every 30 s, kept only in the server's memory), a remote for the PC, actions waiting
 for your OK, routines, what Custodian did (with undo), the settings below, and the connected
 accounts.
 
-**Search inside your files by meaning** (Custodian → Settings → *Search inside my files*). The
+**Search inside your files by meaning** (Jarvis → Settings → *Search inside my files*). The
 desktop app reads Documents, Downloads and Desktop (text, code, PDF, Word, PowerPoint, Excel,
 OpenDocument), sends only new or changed files' passages, and the server embeds them with the
 memory model: "find the PDF where I wrote about the Pune flat". Files and folders whose names say
@@ -371,7 +370,7 @@ cd backend; $env:NEBIUS_API_KEY = "..."
 .\finetune\run_finetune.ps1 -Distill        # distil, then train, export, install and compare as usual
 ```
 
-**Learn from your corrections, automatically** (Custodian → Settings → *Learn from my corrections
+**Learn from your corrections, automatically** (Jarvis → Settings → *Learn from my corrections
 overnight*). Each 👎 with "what it should have said" (shared for training) becomes a preference
 pair: your correction preferred over the reply it replaced. Between 01:00 and 06:00, when the PC
 has been idle for half an hour, is plugged in and there are at least three new ratings, the
@@ -395,10 +394,10 @@ downloads into Downloads. Following a link or typing a search just happens; anyt
 buys, pays, orders, books, sends, posts or deletes asks **Allow once** on the PC naming the button
 and the page, and a password field is never filled.
 
-**A proactive Custodian.** Reminders, meeting heads-ups ("Design review starts in 10 minutes - open
+**A proactive Jarvis.** Reminders, meeting heads-ups ("Design review starts in 10 minutes - open
 the link?", answered by button or by saying yes) and watcher alerts are spoken on the PC, never in
 your quiet hours; the first time you use the PC in the morning it reads out your day, and at the
-time you choose (Custodian tab, default 21:00; tray: *Wrap up my day now*) it wraps the day up: what it
+time you choose (Jarvis tab, default 21:00; tray: *Wrap up my day now*) it wraps the day up: what it
 did for you, counted and never quoting a message, what's still to do, and tomorrow's first
 appointments - in the inbox, on your phone, and said on the PC outside quiet hours. Watchers:
 "tell me when the iPhone 16 on Amazon drops below 60000", a page changing, words appearing
@@ -406,10 +405,10 @@ appointments - in the inbox, on your phone, and said on the PC outside quiet hou
 
 **Routines.** "Work mode" = open VS Code, volume 30, Do Not Disturb on; "Good night" = close
 Chrome, alarm at 07:00, lock the PC. Make them by chat ("make a routine called ...") or in the
-Custodian tab; saying the name runs every step, with one approval on the PC for the whole list when a
+Jarvis tab; saying the name runs every step, with one approval on the PC for the whole list when a
 step would ask. A routine can't delete or write files, type, click or send messages.
 
-**How Custodian hears** - tested like people use it ([voice-lab/](voice-lab/README.md)): 44 everyday
+**How Jarvis hears** - tested like people use it ([voice-lab/](voice-lab/README.md)): 44 everyday
 requests in 10 voices (British, American, Indian English, Hindi), said normally, in a hurry, with
 someone talking and a fan going, and across a room into a laptop mic - 1,136 recordings through the
 real pipeline, scored on whether the right thing was done.
@@ -418,16 +417,9 @@ real pipeline, scored on whether the right thing was done.
   and the user's names was tried and measured worse (in noise and in Hindi), so it isn't used.
 - Commands are understood as they're said: numbers in words ("volume forty", "दस मिनट का टाइमर"),
   "seven in the morning", "six thirty", "गाना बंद करो", "H.U.D.", "that's all thanks".
-- The wake word, **"Hey Vitrus"** (said VIT-rus), is Custodian's own (`wake.Detector`,
-  `models/hey_vitrus.npz`): a small network on openWakeWord's speech features - no openWakeWord
-  wake model - trained by `voice-lab/wake_vitrus_train.py` from 208 synthetic voices (British,
-  American, Indian English and Hindi) in quiet, noise and across a room. It wakes when two 80 ms steps
-  in a row score 0.7 or more. On voices it never heard: 93% of "Hey Vitrus" wake it, 2% of
-  lookalikes do ("Hey Victor", "Hey citrus" are the closest), and 14 minutes of other speech and noise
-  woke it never. The voices are synthetic, so your own voice is the real test.
-- "Hey Jarvis" still works (`"wake_model": "hey_jarvis"` in `desktop.json`), with its second opinion:
-  a small network trained on openWakeWord's own features from 200 synthetic voices. On voices it never
-  heard it stops half the lookalikes ("Hey Travis" 13% -> 7%) and hears a few more real ones (86.5% -> 89%).
+- The wake word has a second opinion (`desktop/custodian_desktop/wake.py`): a small network trained
+  on openWakeWord's own features from 200 synthetic voices. On voices it never heard it stops half
+  the lookalikes ("Hey Travis" 13% -> 7%) and hears a few more real ones (86.5% -> 89%).
 - The microphone is reopened when it goes quiet (the PC slept, a headset changed).
 - Still hard: a TV or someone talking near the mic - Whisper hears their words too. A closer mic
   (a headset) helps most; voice ID keeps others' words from being acted on.
@@ -437,7 +429,7 @@ real pipeline, scored on whether the right thing was done.
   talking after the first sentence; and transcription starts at the first pause in what you say.
 - Barge-in: say the wake word while it's speaking to cut it off and ask something else (tray:
   *Interrupt by saying ...*).
-- Hindi and Marathi: set the language in Custodian → Settings (it goes to Whisper), and replies in
+- Hindi and Marathi: set the language in Jarvis → Settings (it goes to Whisper), and replies in
   Devanagari are spoken with a Hindi Piper voice (`run-desktop.ps1 -Hindi`) or Windows' Hindi voice.
 - Your own wake word: train "Hey Custodian" with openWakeWord's
   [training notebook](https://github.com/dscripka/openWakeWord#training-new-models), put
@@ -457,7 +449,7 @@ where it can: files back from the Recycle Bin, the volume, brightness or theme p
 reversed.
 
 **Your phone as a remote, and more integrations.**
-- The Custodian tab's remote: play/pause, next, volume, mute, dark mode, battery, lock the PC, or
+- The Jarvis tab's remote: play/pause, next, volume, mute, dark mode, battery, lock the PC, or
   type any command. When you ask from the phone (or Telegram), a PC action that needs an OK is
   allowed **there**, for up to two minutes: allowed, it goes to the PC without a second dialog
   and the PC shows it was allowed remotely; denied or unanswered, it never reaches the PC. Turn
@@ -467,9 +459,9 @@ reversed.
 - **Microsoft 365** (`MICROSOFT_CLIENT_ID`/`_SECRET`): Outlook mail (read only) and calendar,
   with Teams links.
 - **Telegram** (`TELEGRAM_BOT_TOKEN` from @BotFather): link your chat with a one-time code from
-  the Custodian tab; then chat (or send voice notes), allow PC actions with buttons, and get alerts.
+  the Jarvis tab; then chat (or send voice notes), allow PC actions with buttons, and get alerts.
   Any other chat is refused; groups are ignored; the bot polls, so no public address is needed.
-- **Home Assistant**: paste its address and a long-lived access token in the Custodian tab. Lights,
+- **Home Assistant**: paste its address and a long-lived access token in the Jarvis tab. Lights,
   switches, fans, AC (temperature and mode), scenes and media players - never locks, alarms,
   doors or covers. Its tools may reach that one address on your network and nothing else.
 
@@ -662,14 +654,6 @@ prompt (`app/grounding.py`):
   or say plainly what didn't happen. If the rewrite still fails, the reply ends with a
   `Custodian check:` note saying what really happened. The app marks such replies
   ("Corrected before sending" / "Unverified claim flagged") and Active Context lists the details.
-  When nothing at all was tried in the turn and the rewrite still claims something happened on the
-  PC, or failed there ("Sent it to Mrunal", "I couldn't open WhatsApp - it's not running"), the
-  reply is replaced: "I didn't actually do anything just then - I may not have caught what you
-  said. Could you say it again?" A claim with a note under it contradicting it is confusing to hear.
-  The same excuse repeated word for word to a new message counts as made up, and so does an earlier
-  error quoted again ("I couldn't do that - Custodian says: ...") in a turn that tried nothing; asking
-  *why* something failed is answered without trying again. A short follow-up ("it's Mrunal", or
-  speech misheard as "and say hi") keeps the skill of the reply before it.
 - **Saying "I don't know".** When you ask about yourself and nothing saved or said matches,
   the model is told so and asked not to guess.
 
@@ -773,7 +757,7 @@ All routes except `/health` and `/auth/login` need a session (cookie or `Authori
 | `POST /tasks/{id}/run` · `GET /tasks/{id}/runs` | Run now; run history |
 | `GET /features` | What this server has set up (voice, photos, larger model, Google, phone push, desktop app), unread count |
 | `GET /desktop/next` · `POST /desktop/results/{id}` · `GET /desktop/status` | The desktop app: wait for the next PC action, report its result; is it connected |
-| `POST /warm` | Start loading the local model now (the desktop app calls it on “Hey Vitrus”, the app when you start typing) |
+| `POST /warm` | Start loading the local model now (the desktop app calls it on “Hey Jarvis”, the app when you start typing) |
 | `GET /notifications` · `POST /notifications/{id}/read` · `POST /notifications/read-all` | The inbox |
 | `GET /reminders` · `DELETE /reminders/{id}` | Upcoming reminders; cancel one |
 | `GET/POST /documents` · `DELETE /documents/{id}` | Files: upload `{name, content_type, data}` (base64, up to 10 MB) |

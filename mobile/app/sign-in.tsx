@@ -1,9 +1,10 @@
-// Sign in with the server's passcode (CUSTODIAN_PASSCODE). The native app also asks which
-// server to use, since a phone can't reach the laptop's "localhost".
+// Sign in with the server's passcode (CUSTODIAN_PASSCODE).
+// Futuristic experience with glowing cybernetic gradient card, radiant AI core halo, and tactile inputs.
 
 import { Redirect, router } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "../components/Typography";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -19,16 +20,24 @@ const useStyles = themed((t) => ({
     width: "100%",
     maxWidth: 420,
     alignSelf: "center",
-    backgroundColor: t.surface,
     borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: t.hairline,
     padding: space.xl,
     paddingTop: 40,
     gap: space.lg,
+    overflow: "hidden",
     ...softShadow(t, 2),
   },
-  title: { fontFamily: fonts.display, fontSize: 32, lineHeight: 38, color: t.ink, textAlign: "center", marginTop: space.sm },
+  orbWell: {
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    marginBottom: space.xs,
+    ...softShadow(t, 1),
+  },
+  title: { fontFamily: fonts.display, fontSize: 32, lineHeight: 38, color: t.ink, textAlign: "center", marginTop: space.sm, letterSpacing: 0.5 },
   text: { fontSize: 16, color: t.inkSoft, lineHeight: 23, textAlign: "center" },
   hint: { fontSize: 13, lineHeight: 18, color: t.inkSoft },
 }));
@@ -48,7 +57,7 @@ export default function SignIn() {
   if (status === "loading") {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: t.bg }}>
-        <ActivityIndicator color={t.accent2} />
+        <ActivityIndicator color={t.accent} />
       </View>
     );
   }
@@ -58,7 +67,12 @@ export default function SignIn() {
     setBusy(true);
     setError(null);
     try {
-      await signIn(passcode, native ? server : undefined);
+      let targetServer = server?.trim();
+      if (targetServer && /:8081\/?$/.test(targetServer)) {
+        targetServer = targetServer.replace(/:8081\/?$/, ":8000");
+        setServer(targetServer);
+      }
+      await signIn(passcode, native ? targetServer : undefined);
       setPasscode("");
       router.replace("/");
     } catch (err) {
@@ -75,9 +89,22 @@ export default function SignIn() {
         contentContainerStyle={[s.page, { paddingTop: insets.top + space.xl, paddingBottom: insets.bottom + space.xl }]}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={s.card}>
+        <LinearGradient
+          colors={t.gradients.card}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0.9, y: 1 }}
+          style={s.card}
+        >
           <View style={{ gap: space.sm, alignItems: "center" }}>
-            <Orb size={88} mood={busy ? "thinking" : "idle"} />
+            <View style={s.orbWell}>
+              <LinearGradient
+                colors={["rgba(6, 18, 16, 0.96)", "rgba(18, 44, 38, 0.85)"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <Orb size={82} mood={busy ? "thinking" : "idle"} />
+            </View>
             <Text accessibilityRole="header" style={s.title}>
               Welcome back
             </Text>
@@ -120,7 +147,7 @@ export default function SignIn() {
           />
           <Button label="Sign in" onPress={submit} loading={busy} disabled={!passcode} />
           <Text style={[s.hint, { textAlign: "center" }]}>Forgot it? It's CUSTODIAN_PASSCODE in the server's settings.</Text>
-        </View>
+        </LinearGradient>
       </ScrollView>
     </KeyboardAvoidingView>
   );

@@ -1,6 +1,6 @@
 # Brings Custodian up to date: the newest code from GitHub, then whatever it needs installed.
 #
-#   .\update.ps1            update now (Custodian and its server are stopped and started again)
+#   .\update.ps1            update now (Jarvis and the server are stopped and started again)
 #   .\update.ps1 -Check     only say whether an update is waiting
 #
 # Your data (backend\data), your settings (backend\.env) and your models aren't touched; a
@@ -44,12 +44,12 @@ if ($changes) {
 }
 
 $running = [bool](Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match "custodian_desktop|uvicorn app\.main:app" })
-if ($running) { Say "Stopping Custodian and its server..."; & (Join-Path $root "run-jarvis.ps1") -Stop }
+if ($running) { Say "Stopping Jarvis and the server..."; & (Join-Path $root "run-jarvis.ps1") -Stop }
 
 git -C $root pull --ff-only --quiet
 if ($LASTEXITCODE -ne 0) { Say "The update couldn't be applied (git pull failed); nothing was changed." Yellow; Done 1 }
 Say "Updated to $(git -C $root log -1 --format='%h: %s')." Green
 
 & (Join-Path $root "install.ps1") -NoShortcuts -Yes
-if ($running) { Say "Starting Custodian again..."; & (Join-Path $root "run-jarvis.ps1") }
+if ($running) { Say "Starting Jarvis again..."; & (Join-Path $root "run-jarvis.ps1") }
 Done 0

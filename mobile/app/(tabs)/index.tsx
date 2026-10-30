@@ -8,7 +8,7 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, View, useWindowDimensions, type NativeSyntheticEvent, type TextInputKeyPressEventData } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View, useWindowDimensions, type NativeSyntheticEvent, type TextInputKeyPressEventData } from "react-native";
 import { Text, TextInput } from "../../components/Typography";
 
 import { ChatThread, type ChatItem } from "../../components/ChatThread";
@@ -19,10 +19,11 @@ import { StatusPill } from "../../components/StatusPill";
 import { Button, IconButton, Notice, ScreenGradient, ScreenHeader } from "../../components/ui";
 import { VoiceButton } from "../../components/VoiceButton";
 import { Welcome } from "../../components/Welcome";
+import { LinearGradient } from "expo-linear-gradient";
 import * as api from "../../lib/api";
 import { useInbox } from "../../lib/inbox";
 import { pickFile } from "../../lib/media";
-import { radius, softShadow, space, themed, useTokens } from "../../lib/tokens";
+import { neuSunken, radius, softShadow, space, themed, useTokens } from "../../lib/tokens";
 import type { DocumentFile, Feedback, Memory, Used } from "../../lib/types";
 
 const MAX_LENGTH = 8000;
@@ -34,37 +35,73 @@ const useStyles = themed((t) => ({
   composerCard: {
     flexDirection: "row",
     alignItems: "flex-end",
-    gap: 2,
-    backgroundColor: t.surface,
+    gap: 6,
     borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: t.hairline,
-    padding: 6,
+    padding: 8,
+    overflow: "hidden",
     ...softShadow(t, 2),
   },
   input: {
     flex: 1,
     minHeight: 44,
     maxHeight: 140,
-    paddingHorizontal: space.sm,
+    paddingHorizontal: space.md,
     paddingTop: 11,
     paddingBottom: 11,
     color: t.ink,
     fontSize: 16,
-    outlineWidth: 0, // the card around it shows focus instead
+    outlineWidth: 0,
+    borderRadius: radius.lg,
+    ...neuSunken(t),
   },
-  send: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: t.accent },
+  send: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    ...softShadow(t, 2),
+  },
   sendDisabled: { opacity: 0.35 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   notice: { paddingHorizontal: space.lg, paddingTop: space.sm },
-  tool: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 22 },
-  deep: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", marginLeft: space.lg + 4, marginBottom: 2,
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill, borderWidth: 1, borderColor: t.border, backgroundColor: t.surface },
-  deepOn: { borderColor: t.accent, backgroundColor: t.accentSoft },
+  tool: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 22,
+    backgroundColor: t.surface,
+    ...softShadow(t, 1),
+  },
+  deep: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    marginLeft: space.lg + 4,
+    marginBottom: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    backgroundColor: t.surface,
+    ...softShadow(t, 1),
+  },
+  deepOn: { borderLeftWidth: 2, borderLeftColor: t.accent },
   deepText: { color: t.inkSoft, fontSize: 13, fontWeight: "700" },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.sm },
-  chip: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 260, paddingHorizontal: 12, paddingVertical: 6,
-    borderRadius: radius.pill, backgroundColor: t.accentSoft },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    maxWidth: 260,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: t.surface,
+    ...softShadow(t, 1),
+  },
   chipText: { color: t.ink, fontSize: 13, fontWeight: "600", flexShrink: 1 },
 }));
 
@@ -320,7 +357,12 @@ export default function ChatScreen() {
               </View>
             ) : null}
             <View style={s.composer}>
-              <View style={[s.composerCard, focused && { borderColor: t.accent }]}>
+              <LinearGradient
+                colors={t.gradients.card}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0.9, y: 1 }}
+                style={[s.composerCard, focused && { borderColor: t.accent }]}
+              >
                 <Pressable accessibilityRole="button" accessibilityLabel="Attach a file" style={s.tool} disabled={uploading || sending} onPress={() => void attach()}>
                   {uploading ? <ActivityIndicator size="small" color={t.accent2} /> : <Ionicons name="add-circle-outline" size={26} color={t.inkSoft} />}
                 </Pressable>
@@ -357,9 +399,23 @@ export default function ChatScreen() {
                   onPress={submit}
                   style={({ pressed }) => [s.send, !canSend && s.sendDisabled, pressed && { transform: [{ scale: 0.94 }] }]}
                 >
-                  {sending ? <ActivityIndicator size="small" color={t.onAccent} /> : <Ionicons name="arrow-up" size={22} color={t.onAccent} />}
+                  {canSend ? (
+                    <LinearGradient
+                      colors={t.gradients.primary}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+                  ) : (
+                    <View style={[StyleSheet.absoluteFill, { backgroundColor: t.surface }]} />
+                  )}
+                  {sending ? (
+                    <ActivityIndicator size="small" color={canSend ? t.onAccent : t.inkSoft} />
+                  ) : (
+                    <Ionicons name="arrow-up" size={22} color={canSend ? t.onAccent : t.inkSoft} />
+                  )}
                 </Pressable>
-              </View>
+              </LinearGradient>
             </View>
           </View>
           {wide ? <ContextRail used={lastUsed} wide /> : null}

@@ -247,7 +247,7 @@ export default function ToolsDataScreen() {
             </View>
           ) : (
             <Text style={s.meta}>
-              I can't reach your PC right now. Start the Custodian desktop app (desktop\run-desktop.ps1), then say “Hey Vitrus” or
+              I can't reach your PC right now. Start the Custodian desktop app (desktop\run-desktop.ps1), then say “Hey Jarvis” or
               press Ctrl+Alt+Space to talk to me.
             </Text>
           )}

@@ -2,6 +2,7 @@
 // downloading or erasing it, and signing out.
 
 import { useFocusEffect } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useState } from "react";
 import { ActivityIndicator, Linking, Platform, RefreshControl, ScrollView, Share, View } from "react-native";
 import { Text } from "../../components/Typography";
@@ -10,7 +11,7 @@ import { Button, Card, Chip, Field, Notice, ScreenGradient, ScreenHeader, Sectio
 import * as api from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { confirmAction, formatDateTime, formatWhen } from "../../lib/format";
-import { radius, space, themed, useTokens } from "../../lib/tokens";
+import { radius, softShadow, space, themed, useTokens } from "../../lib/tokens";
 import type { BackupStatus, VersionInfo, Billing, DataService, Limit, Plan, PrivacySummary, RedactMode, ServiceLocation, Session } from "../../lib/types";
 
 const RETENTION = [
@@ -45,8 +46,8 @@ const useStyles = themed((t) => ({
   stat: { minWidth: 96, gap: 2 },
   statValue: { color: t.ink, fontSize: 20, fontWeight: "700" },
   plans: { flexDirection: "row", flexWrap: "wrap", gap: space.md },
-  planCard: { flexGrow: 1, flexBasis: 200, borderWidth: 1, borderColor: t.border, borderRadius: radius.md, padding: space.md, gap: 6 },
-  planCardCurrent: { borderColor: t.accent, borderWidth: 2 },
+  planCard: { flexGrow: 1, flexBasis: 200, borderRadius: radius.md, padding: space.md, gap: 6, ...softShadow(t, 1) },
+  planCardCurrent: { ...softShadow(t, 2) },
   planCardName: { color: t.ink, fontSize: 16, fontWeight: "700" },
   feature: { color: t.ink, fontSize: 13, lineHeight: 18 },
 }));
@@ -62,7 +63,7 @@ function Meter({ label, limit }: { label: string; limit: Limit }) {
   const t = useTokens();
   const s = useStyles();
   const ratio = limit.limit ? Math.min(1, limit.used / limit.limit) : 0;
-  const color = ratio >= 1 ? t.danger : ratio >= 0.8 ? t.warning : t.accent2;
+  const gradient = ratio >= 1 ? t.gradients.gaugeRed : ratio >= 0.8 ? t.gradients.gaugeAmber : t.gradients.gaugeCyan;
   return (
     <View style={{ gap: 6 }}>
       <View style={s.rowBetween}>
@@ -76,7 +77,12 @@ function Meter({ label, limit }: { label: string; limit: Limit }) {
           accessibilityValue={{ min: 0, max: limit.limit, now: Math.min(limit.used, limit.limit) }}
           style={{ height: 6, borderRadius: radius.pill, backgroundColor: t.neutralBg, overflow: "hidden" }}
         >
-          <View style={{ width: `${Math.round(ratio * 100)}%`, height: "100%", backgroundColor: color }} />
+          <LinearGradient
+            colors={gradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{ width: `${Math.round(ratio * 100)}%`, height: "100%", borderRadius: radius.pill }}
+          />
         </View>
       ) : null}
     </View>
@@ -132,8 +138,20 @@ async function saveExport(data: Record<string, unknown>): Promise<void> {
 
 function PlanOption({ plan, current }: { plan: Plan; current: boolean }) {
   const s = useStyles();
+  const t = useTokens();
   return (
-    <View style={[s.planCard, current && s.planCardCurrent]}>
+    <LinearGradient
+      colors={current ? t.gradients.cardElevated : t.gradients.card}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[
+        s.planCard,
+        current && s.planCardCurrent,
+        {
+          overflow: "hidden",
+        },
+      ]}
+    >
       <View style={s.rowBetween}>
         <Text style={s.planCardName}>{plan.name}</Text>
         {current ? <Chip label="Your plan" tone="accent" /> : null}
@@ -145,7 +163,7 @@ function PlanOption({ plan, current }: { plan: Plan; current: boolean }) {
           ✓ {feature}
         </Text>
       ))}
-    </View>
+    </LinearGradient>
   );
 }
 

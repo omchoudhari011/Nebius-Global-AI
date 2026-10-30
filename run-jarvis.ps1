@@ -20,10 +20,15 @@ $backend = Join-Path $root "backend"
 $python = Join-Path $backend ".venv\Scripts\python.exe"
 $settingsFile = Join-Path $env:APPDATA "Custodian\desktop.json"
 
-# The server the desktop app uses (desktop.json), else http://localhost:8001.
+# The server the desktop app uses and the phrase it wakes to (desktop.json), else its defaults.
 $server = "http://localhost:8001"
+$wakePhrase = "Hey Vitrus"
 if (Test-Path $settingsFile) {
-    try { $server = ((Get-Content $settingsFile -Raw | ConvertFrom-Json).server).TrimEnd("/") } catch { }
+    try {
+        $settings = Get-Content $settingsFile -Raw | ConvertFrom-Json
+        if ($settings.server) { $server = $settings.server.TrimEnd("/") }
+        if ($settings.wake_phrase) { $wakePhrase = $settings.wake_phrase }
+    } catch { }
 }
 $port = ([Uri]$server).Port
 # "localhost" tries IPv6 first and the server listens on IPv4: check it directly, without the 2 s detour.
@@ -114,5 +119,5 @@ if (DesktopProcesses) {
 } else {
     & (Join-Path $root "desktop\run-desktop.ps1")
 }
-Say "Say `"Hey Vitrus`", press Ctrl+Alt+Space to talk, or Ctrl+Alt+J for the HUD." Green
+Say "Say `"$wakePhrase`", press Ctrl+Alt+Space to talk, or Ctrl+Alt+J for the HUD." Green
 exit 0  # Docker's own exit code (it may be off) isn't a failure of this script

@@ -7,11 +7,12 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder } from "expo-audio";
 import { File } from "expo-file-system";
+import { LinearGradient } from "expo-linear-gradient";
 import { useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable } from "react-native";
 
 import * as api from "../lib/api";
-import { useTokens } from "../lib/tokens";
+import { softShadow, useTokens } from "../lib/tokens";
 
 type Props = { disabled?: boolean; onText: (text: string) => void; onError: (message: string) => void };
 
@@ -54,7 +55,7 @@ function WebVoiceButton({ disabled, onText, onError }: Props) {
     }
   }
 
-  return <Mic state={state} disabled={disabled} onPress={press} color={state === "recording" ? t.danger : t.inkSoft} />;
+  return <Mic state={state} disabled={disabled} onPress={press} color={state === "recording" ? t.turquoise : t.inkSoft} />;
 }
 
 function NativeVoiceButton({ disabled, onText, onError }: Props) {
@@ -89,12 +90,13 @@ function NativeVoiceButton({ disabled, onText, onError }: Props) {
     setState("recording");
   }
 
-  return <Mic state={state} disabled={disabled} onPress={press} color={state === "recording" ? t.danger : t.inkSoft} />;
+  return <Mic state={state} disabled={disabled} onPress={press} color={state === "recording" ? t.turquoise : t.inkSoft} />;
 }
 
 function Mic({ state, disabled, onPress, color }: { state: string; disabled?: boolean; onPress: () => void; color: string }) {
   const t = useTokens();
   const label = state === "recording" ? "Stop recording" : state === "working" ? "Transcribing" : "Record a voice message";
+  const recording = state === "recording";
   return (
     <Pressable
       accessibilityRole="button"
@@ -102,12 +104,25 @@ function Mic({ state, disabled, onPress, color }: { state: string; disabled?: bo
       accessibilityState={{ disabled: !!disabled, busy: state === "working" }}
       disabled={disabled}
       onPress={onPress}
-      style={[styles, { backgroundColor: state === "recording" ? t.dangerBg : "transparent", opacity: disabled ? 0.4 : 1 }]}
+      style={[
+        styles,
+        {
+          overflow: "hidden",
+          ...softShadow(t, 2),
+        },
+        disabled && { opacity: 0.4 },
+      ]}
     >
+      <LinearGradient
+        colors={recording ? t.gradients.gaugeRed : t.gradients.card}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{ ...styles, position: "absolute", top: 0, left: 0 }}
+      />
       {state === "working" ? (
-        <ActivityIndicator size="small" color={t.accent2} />
+        <ActivityIndicator size="small" color={t.accent} />
       ) : (
-        <Ionicons name={state === "recording" ? "stop-circle" : "mic-outline"} size={24} color={color} />
+        <Ionicons name={recording ? "radio" : "mic-outline"} size={22} color={recording ? "#FFFFFF" : color} />
       )}
     </Pressable>
   );
@@ -116,3 +131,4 @@ function Mic({ state, disabled, onPress, color }: { state: string; disabled?: bo
 export function VoiceButton(props: Props) {
   return Platform.OS === "web" ? <WebVoiceButton {...props} /> : <NativeVoiceButton {...props} />;
 }
+

@@ -2,18 +2,19 @@
 // this reply may be used to improve the model. Sharing stays on your server: it only lets the
 // fine-tuning scripts there learn from it (backend/finetune/from_feedback.py).
 
+import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useState } from "react";
 import { Modal, Pressable, View } from "react-native";
 import { Text } from "./Typography";
 
 import * as api from "../lib/api";
-import { radius, space, themed } from "../lib/tokens";
+import { radius, softShadow, space, themed, useTokens } from "../lib/tokens";
 import type { Feedback } from "../lib/types";
 import { Button, Field, Notice, ToggleSwitch } from "./ui";
 
 const useStyles = themed((t) => ({
-  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", padding: space.lg },
-  sheet: { backgroundColor: t.surface, borderRadius: radius.lg, padding: space.lg, gap: space.md, width: "100%", maxWidth: 520, alignSelf: "center" },
+  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: space.lg },
+  sheet: { borderRadius: radius.xl, padding: space.xl, gap: space.md, width: "100%", maxWidth: 520, alignSelf: "center", overflow: "hidden", ...softShadow(t, 2) },
   title: { color: t.ink, fontSize: 18, fontWeight: "700" },
   text: { color: t.inkSoft, fontSize: 14, lineHeight: 20 },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.md },
@@ -35,6 +36,7 @@ export function FeedbackSheet({
   onSaved: (feedback: Feedback | null) => void;
 }) {
   const s = useStyles();
+  const t = useTokens();
   const [correction, setCorrection] = useState("");
   const [share, setShare] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -76,7 +78,12 @@ export function FeedbackSheet({
   return (
     <Modal visible={messageId != null} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={s.backdrop} onPress={onClose} accessibilityLabel="Close">
-        <Pressable style={s.sheet} onPress={() => undefined}>
+        <LinearGradient
+          colors={t.gradients.card}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={s.sheet}
+        >
           <Text style={s.title}>{rating === 1 ? "Good reply" : "What went wrong?"}</Text>
           {rating === -1 ? (
             <Field
@@ -107,7 +114,7 @@ export function FeedbackSheet({
             <Button compact variant="secondary" label="Cancel" onPress={onClose} disabled={busy} />
             <Button compact label="Save" onPress={() => void save()} loading={busy} />
           </View>
-        </Pressable>
+        </LinearGradient>
       </Pressable>
     </Modal>
   );

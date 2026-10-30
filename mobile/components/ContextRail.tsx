@@ -4,6 +4,7 @@
 // panel beside the chat; on narrow ones a collapsible strip above the message box.
 
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useState, type ReactNode } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { Text } from "./Typography";
@@ -16,9 +17,9 @@ import { Chip, statusTone } from "./ui";
 const TYPE_LABEL = { semantic: "fact", preference: "preference", episodic: "event" } as const;
 
 const useStyles = themed((t) => ({
-  panel: { width: 290, backgroundColor: t.surface, borderLeftWidth: 1, borderLeftColor: t.hairline },
+  panel: { width: 290, borderLeftWidth: 1, borderLeftColor: t.hairline },
   panelInner: { padding: space.lg, gap: space.lg },
-  strip: { backgroundColor: t.surface, borderTopWidth: 1, borderTopColor: t.hairline },
+  strip: { borderTopWidth: 1, borderTopColor: t.hairline },
   stripHeader: { flexDirection: "row", alignItems: "center", gap: space.sm, paddingHorizontal: space.lg, minHeight: 40 },
   stripBody: { maxHeight: 240 },
   stripInner: { paddingHorizontal: space.lg, paddingBottom: space.md, gap: space.md },
@@ -169,12 +170,18 @@ export function ContextRail({ used, wide }: { used: Used | null; wide: boolean }
 
   if (wide) {
     return (
-      <View style={s.panel} accessibilityLabel="Active context">
+      <LinearGradient
+        colors={t.gradients.card}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={s.panel}
+        accessibilityLabel="Active context"
+      >
         <ScrollView contentContainerStyle={s.panelInner}>
           <Text style={s.heading}>What shaped my reply</Text>
           <Details used={used} />
         </ScrollView>
-      </View>
+      </LinearGradient>
     );
   }
 
@@ -183,7 +190,12 @@ export function ContextRail({ used, wide }: { used: Used | null; wide: boolean }
     ? `${matchedCount} ${matchedCount === 1 ? "memory" : "memories"} · ${used.earlier.length} earlier · ${used.tools.length} ${used.tools.length === 1 ? "tool" : "tools"}${used.skill ? ` · ${used.skill.name}` : ""}`
     : "nothing yet";
   return (
-    <View style={s.strip}>
+    <LinearGradient
+      colors={t.gradients.card}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={s.strip}
+    >
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
@@ -202,6 +214,6 @@ export function ContextRail({ used, wide }: { used: Used | null; wide: boolean }
           <Details used={used} />
         </ScrollView>
       ) : null}
-    </View>
+    </LinearGradient>
   );
 }

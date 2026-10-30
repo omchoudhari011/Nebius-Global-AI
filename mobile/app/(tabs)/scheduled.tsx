@@ -2,6 +2,7 @@
 // schedule, pinned skill version, last run and output. Run one now, pause it, or add one.
 
 import { useFocusEffect } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useState } from "react";
 import { ActivityIndicator, RefreshControl, ScrollView, View } from "react-native";
 import { Text } from "../../components/Typography";
@@ -9,7 +10,7 @@ import { Text } from "../../components/Typography";
 import { Button, Card, Chip, Field, Notice, ScreenGradient, ScreenHeader, SectionTitle, Segmented, ToggleSwitch, statusTone } from "../../components/ui";
 import * as api from "../../lib/api";
 import { confirmAction, describeCron, deviceTimeZone, formatWhen } from "../../lib/format";
-import { space, themed, useTokens } from "../../lib/tokens";
+import { softShadow, space, themed, useTokens } from "../../lib/tokens";
 import type { Conversation, Skill, Task } from "../../lib/types";
 
 const PRESETS = [
@@ -95,12 +96,17 @@ function TaskCard({
 
       {output === "loading" ? <ActivityIndicator color={t.accent2} /> : null}
       {reply ? (
-        <View style={s.output}>
-          <Text style={s.label}>OUTPUT</Text>
+        <LinearGradient
+          colors={t.gradients.assistantBubble}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[s.output, { overflow: "hidden", ...softShadow(t, 1) }]}
+        >
+          <Text style={[s.label, { color: t.accent, letterSpacing: 0.8 }]}>OUTPUT</Text>
           <Text selectable style={s.body}>
             {reply.content}
           </Text>
-        </View>
+        </LinearGradient>
       ) : null}
 
       <View style={s.row}>

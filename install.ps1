@@ -1,7 +1,7 @@
 # Sets Custodian up on this Windows PC - or brings an existing setup up to date. Safe to run again.
 #
-#   .\install.ps1                    everything: the server, the web app, the voice assistant, shortcuts
-#   .\install.ps1 -Autostart         also start Custodian when you sign in to Windows
+#   .\install.ps1                    everything: the server, the web app, Jarvis, shortcuts
+#   .\install.ps1 -Autostart         also start Jarvis when you sign in to Windows
 #   .\install.ps1 -Model qwen3:8b    the local model to use on a new setup (Ollama)
 #   .\install.ps1 -Yes               install missing tools (Python, Node, Ollama) without asking
 #
@@ -11,9 +11,9 @@
 #      there is an NVIDIA one (WHISPER_URL=local: no Docker needed for voice)
 #   3. backend\.env with fresh secrets and a sign-in passcode (shown once - write it down)
 #   4. the web app (mobile\dist), rebuilt when the app's packages change
-#   5. the Custodian desktop app (desktop\.venv) and its voice
+#   5. the Jarvis desktop app (desktop\.venv) and its voice
 #   6. Ollama's models, when Ollama is installed and this is a new setup
-#   7. shortcuts in the Start menu and on the desktop: Custodian, Stop Custodian, Update Custodian
+#   7. shortcuts in the Start menu and on the desktop: Jarvis, Stop Jarvis, Update Custodian
 # Docker Desktop is optional: web search (SearXNG) runs in it; see README.
 
 param([switch]$Autostart, [switch]$Yes, [switch]$NoShortcuts, [string]$Model = "qwen3:8b")
@@ -132,7 +132,7 @@ if ($needsWeb) {
     } finally { Pop-Location }
 }
 
-# 5. Custodian on the desktop: its environment, packages and voice (run-desktop.ps1 does the work).
+# 5. Jarvis on the desktop: its environment, packages and voice (run-desktop.ps1 does the work).
 & (Join-Path $desktop "run-desktop.ps1") -SetupOnly
 if ($Autostart) { & (Join-Path $desktop "run-desktop.ps1") -Install -SetupOnly }
 
@@ -152,23 +152,18 @@ if ($fresh) {
     }
 }
 
-# 7. Shortcuts: the Start menu's Custodian folder, and Custodian on the desktop.
+# 7. Shortcuts: the Start menu's Custodian folder, and Jarvis on the desktop.
 if (-not $NoShortcuts) {
     $shell = New-Object -ComObject WScript.Shell
     $icon = Join-Path $root "installer\custodian.ico"
     $menu = Join-Path ([Environment]::GetFolderPath("Programs")) "Custodian"
     New-Item -ItemType Directory -Force $menu | Out-Null
     $ps = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
-    # Jarvis was the old name: its shortcuts go, so there aren't two of each.
-    foreach ($old in (Join-Path $menu "Jarvis.lnk"), (Join-Path $menu "Stop Jarvis.lnk"), (Join-Path $menu "Custodian.url"),
-                     (Join-Path ([Environment]::GetFolderPath("Desktop")) "Jarvis.lnk")) {
-        Remove-Item $old -ErrorAction SilentlyContinue
-    }
     $links = @(
-        @{ Path = Join-Path $menu "Custodian.lnk"; Args = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$root\run-jarvis.ps1`""; Tip = "Start Custodian: the server and the voice assistant" },
-        @{ Path = Join-Path $menu "Stop Custodian.lnk"; Args = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$root\run-jarvis.ps1`" -Stop"; Tip = "Stop the Custodian server and voice assistant" },
+        @{ Path = Join-Path $menu "Jarvis.lnk"; Args = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$root\run-jarvis.ps1`""; Tip = "Start Jarvis: the Custodian server and the voice assistant" },
+        @{ Path = Join-Path $menu "Stop Jarvis.lnk"; Args = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$root\run-jarvis.ps1`" -Stop"; Tip = "Stop the Custodian server and Jarvis" },
         @{ Path = Join-Path $menu "Update Custodian.lnk"; Args = "-NoProfile -ExecutionPolicy Bypass -File `"$root\update.ps1`""; Tip = "Get the newest Custodian and restart it" },
-        @{ Path = Join-Path ([Environment]::GetFolderPath("Desktop")) "Custodian.lnk"; Args = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$root\run-jarvis.ps1`""; Tip = "Start Custodian" }
+        @{ Path = Join-Path ([Environment]::GetFolderPath("Desktop")) "Jarvis.lnk"; Args = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$root\run-jarvis.ps1`""; Tip = "Start Jarvis" }
     )
     foreach ($item in $links) {
         $link = $shell.CreateShortcut($item.Path)
@@ -179,11 +174,11 @@ if (-not $NoShortcuts) {
         if (Test-Path $icon) { $link.IconLocation = $icon }
         $link.Save()
     }
-    $web = $shell.CreateShortcut((Join-Path $menu "Custodian web app.url"))
+    $web = $shell.CreateShortcut((Join-Path $menu "Custodian.url"))
     $web.TargetPath = "http://localhost:8001"
     $web.Save()
-    Say "  Shortcuts: Start menu > Custodian (Custodian, Stop Custodian, Update Custodian), and Custodian on the desktop." Green
+    Say "  Shortcuts: Start menu > Custodian (Jarvis, Stop Jarvis, Update Custodian), and Jarvis on the desktop." Green
 }
 
-Say "Custodian is set up. Start it with the Custodian shortcut (or .\run-jarvis.ps1)." Green
+Say "Custodian is set up. Start it with the Jarvis shortcut (or .\run-jarvis.ps1)." Green
 exit 0

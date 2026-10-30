@@ -1,27 +1,49 @@
-// The Jarvis HUD, in the app: the PC's vital signs (sent by the desktop app every 30 s), the
-// weather where you are, and your day - a small dark "screen" in the HUD's own cyan, like the
-// one on the PC. Its arc reactor breathes while the PC reports in, and stays still when the
-// system asks for reduced motion.
+// The Jarvis HUD, in the app: the PC's vital signs, weather, and day schedule.
+// Enhanced with futuristic gradient gauges, cybernetic display bezels, and arc reactor core.
 
 import { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Easing, Platform, StyleSheet, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 
 import type { HudSnapshot, PcVitals } from "../lib/types";
 import { Text } from "./Typography";
 
-const HUD = { bg: "#04101A", panel: "#071A28", line: "#12405A", cyan: "#5FE3FF", ink: "#D7F6FF", soft: "#8FB8C8", warn: "#FFB547", bad: "#FF6B6B" };
+const HUD = {
+  bg: "#0B1816",
+  panel: "rgba(18, 46, 40, 0.88)",
+  line: "rgba(0, 229, 188, 0.25)",
+  lineStrong: "rgba(0, 229, 188, 0.45)",
+  lime: "#C9E750",
+  turquoise: "#00E5BC",
+  emerald: "#00E5BC",
+  bioGreen: "#4CD964",
+  ink: "#E8FAF4",
+  soft: "#7FA89E",
+  warn: "#E5B83B",
+  bad: "#FF5E5E",
+};
 
-function level(percent: number, warnAt = 80, badAt = 92): string {
-  return percent >= badAt ? HUD.bad : percent >= warnAt ? HUD.warn : HUD.cyan;
+function levelColors(percent: number, warnAt = 80, badAt = 92): [string, string] {
+  return percent >= badAt
+    ? ["#FF5E5E", "#C02020"]
+    : percent >= warnAt
+      ? ["#E5B83B", "#FF8F3B"]
+      : ["#00E5BC", "#4CD964"];
 }
 
 function Gauge({ label, percent, value, color }: { label: string; percent: number; value: string; color?: string }) {
   const shown = Math.max(0, Math.min(100, percent));
+  const grad = levelColors(shown);
   return (
     <View style={s.gauge} accessible accessibilityLabel={`${label}: ${value}`}>
       <Text style={s.gaugeLabel}>{label}</Text>
       <View style={s.track}>
-        <View style={[s.fill, { width: `${shown}%`, backgroundColor: color ?? level(shown) }]} />
+        <LinearGradient
+          colors={color ? [color, color] : grad}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={[s.fill, { width: `${shown}%` }]}
+        />
       </View>
       <Text style={s.gaugeValue}>{value}</Text>
     </View>
@@ -30,6 +52,7 @@ function Gauge({ label, percent, value, color }: { label: string; percent: numbe
 
 function Reactor({ live }: { live: boolean }) {
   const pulse = useRef(new Animated.Value(0)).current;
+  const rotate = useRef(new Animated.Value(0)).current;
   const [reduceMotion, setReduceMotion] = useState(false);
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => undefined);
@@ -39,22 +62,33 @@ function Reactor({ live }: { live: boolean }) {
   useEffect(() => {
     if (!live || reduceMotion) {
       pulse.setValue(0);
+      rotate.setValue(0);
       return;
     }
     const native = Platform.OS !== "web";
     const loop = Animated.loop(Animated.sequence([
-      Animated.timing(pulse, { toValue: 1, duration: 1800, easing: Easing.inOut(Easing.sin), useNativeDriver: native }),
-      Animated.timing(pulse, { toValue: 0, duration: 1800, easing: Easing.inOut(Easing.sin), useNativeDriver: native }),
+      Animated.timing(pulse, { toValue: 1, duration: 1600, easing: Easing.inOut(Easing.sin), useNativeDriver: native }),
+      Animated.timing(pulse, { toValue: 0, duration: 1600, easing: Easing.inOut(Easing.sin), useNativeDriver: native }),
     ]));
+    const spinLoop = Animated.loop(
+      Animated.timing(rotate, { toValue: 1, duration: 8000, easing: Easing.linear, useNativeDriver: native })
+    );
     loop.start();
-    return () => loop.stop();
-  }, [live, reduceMotion, pulse]);
-  const glow = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] });
-  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1.04] });
+    spinLoop.start();
+    return () => {
+      loop.stop();
+      spinLoop.stop();
+    };
+  }, [live, reduceMotion, pulse, rotate]);
+
+  const glow = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] });
+  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1.08] });
+  const spin = rotate.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
+
   return (
     <View style={s.reactor} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-      <View style={[s.ring, { width: 64, height: 64, opacity: live ? 0.5 : 0.2 }]} />
-      <View style={[s.ring, { width: 46, height: 46, borderStyle: "dashed", opacity: live ? 0.8 : 0.3 }]} />
+      <View style={[s.ring, { width: 68, height: 68, opacity: live ? 0.35 : 0.15 }]} />
+      <Animated.View style={[s.ring, { width: 52, height: 52, borderStyle: "dashed", borderColor: HUD.lime, opacity: live ? 0.75 : 0.25, transform: [{ rotate: spin }] }]} />
       <Animated.View style={[s.core, { opacity: live ? glow : 0.25, transform: [{ scale }] }]} />
     </View>
   );
@@ -77,13 +111,13 @@ function vitals(pc: PcVitals) {
   if (pc.battery) {
     const b = pc.battery;
     const low = !b.charging && b.percent <= 20;
-    rows.push(<Gauge key="bat" label="Battery" percent={b.percent} color={low ? HUD.bad : HUD.cyan}
+    rows.push(<Gauge key="bat" label="Battery" percent={b.percent} color={low ? HUD.bad : undefined}
       value={`${b.percent}%${b.charging ? " · charging" : b.minutes_left ? ` · ${b.minutes_left} min` : ""}`} />);
   }
   const disk = pc.disks[0];
   if (disk) {
     rows.push(<Gauge key="disk" label={`Drive ${disk.drive.replace(/[\\:]+$/, "")}`} percent={disk.used_percent}
-      value={`${disk.free_gb} GB free`} color={level(disk.used_percent, 85, 95)} />);
+      value={`${disk.free_gb} GB free`} />);
   }
   return rows;
 }
@@ -95,15 +129,23 @@ export function PcHud({ hud, connected }: { hud: HudSnapshot | null; connected: 
   const upcoming = (hud?.events ?? []).filter((e) => !e.past).slice(0, 3);
   const busiest = pc?.top_apps?.[0];
   return (
-    <View style={s.screen}>
+    <LinearGradient
+      colors={["#081716", "#0E2925"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0.9, y: 1 }}
+      style={s.screen}
+    >
       <View style={s.head}>
         <Reactor live={live} />
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={s.title}>CUSTODIAN</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text style={s.title}>J.A.R.V.I.S.</Text>
+            <View style={[s.liveDot, { backgroundColor: live ? HUD.bioGreen : HUD.soft }]} />
+          </View>
           <Text style={s.soft}>
             {live && pc ? `${pc.device ?? "Your PC"} · online · updated ${ago(pc.age_seconds)}`
               : connected ? "Your PC is connected; its readings arrive within half a minute"
-              : "Your PC is offline - start Custodian with the Custodian icon on its desktop"}
+              : "Your PC is offline - start Jarvis with the Jarvis icon on its desktop"}
           </Text>
           {weather ? (
             <Text style={s.ink}>
@@ -114,11 +156,25 @@ export function PcHud({ hud, connected }: { hud: HudSnapshot | null; connected: 
           ) : null}
         </View>
       </View>
-      {pc ? <View style={s.panel}>{vitals(pc)}</View> : null}
+      {pc ? (
+        <LinearGradient
+          colors={["rgba(18, 46, 40, 0.92)", "rgba(10, 26, 23, 0.96)"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={s.panel}
+        >
+          {vitals(pc)}
+        </LinearGradient>
+      ) : null}
       {busiest && busiest.cpu_percent >= 10 ? (
         <Text style={s.soft}>Busiest: {busiest.app} · {Math.round(busiest.cpu_percent)}% CPU · {busiest.memory_mb} MB</Text>
       ) : null}
-      <View style={s.panel}>
+      <LinearGradient
+        colors={["rgba(18, 46, 40, 0.92)", "rgba(10, 26, 23, 0.96)"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={s.panel}
+      >
         <Text style={s.section}>TODAY</Text>
         {upcoming.length ? upcoming.map((e, i) => (
           <Text key={`${e.time}-${i}`} style={s.ink}><Text style={s.time}>{e.time}</Text>  {e.title}</Text>
@@ -127,27 +183,51 @@ export function PcHud({ hud, connected }: { hud: HudSnapshot | null; connected: 
           <Text key={`r-${i}`} style={s.ink}><Text style={s.time}>⏰</Text>  {r.text}</Text>
         ))}
         {hud?.activity?.length ? <Text style={s.soft}>Last: {hud.activity[0].label}</Text> : null}
-      </View>
-    </View>
+      </LinearGradient>
+    </LinearGradient>
   );
 }
 
 const s = StyleSheet.create({
-  screen: { backgroundColor: HUD.bg, borderRadius: 18, padding: 16, gap: 12, borderWidth: 1, borderColor: HUD.line },
+  screen: {
+    borderRadius: 24,
+    padding: 18,
+    gap: 14,
+    shadowColor: "#000000",
+    shadowOpacity: 0.6,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+    overflow: "hidden",
+  },
   head: { flexDirection: "row", alignItems: "center", gap: 14 },
   reactor: { width: 68, height: 68, alignItems: "center", justifyContent: "center" },
-  ring: { position: "absolute", borderRadius: 999, borderWidth: 2, borderColor: HUD.cyan },
-  core: { width: 26, height: 26, borderRadius: 13, backgroundColor: HUD.cyan, shadowColor: HUD.cyan, shadowOpacity: 0.9,
-          shadowRadius: 12, shadowOffset: { width: 0, height: 0 } },
-  title: { color: HUD.cyan, fontSize: 16, fontWeight: "700", letterSpacing: 3 },
+  ring: { position: "absolute", borderRadius: 999, borderWidth: 1.5, borderColor: HUD.turquoise },
+  core: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: HUD.turquoise,
+    shadowColor: HUD.turquoise,
+    shadowOpacity: 0.95,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  liveDot: { width: 6, height: 6, borderRadius: 3 },
+  title: { color: HUD.lime, fontSize: 16, fontWeight: "800", letterSpacing: 4 },
   ink: { color: HUD.ink, fontSize: 14 },
   soft: { color: HUD.soft, fontSize: 12 },
-  time: { color: HUD.cyan, fontWeight: "700" },
-  section: { color: HUD.cyan, fontSize: 11, fontWeight: "700", letterSpacing: 2 },
-  panel: { backgroundColor: HUD.panel, borderRadius: 12, padding: 12, gap: 8 },
+  time: { color: HUD.turquoise, fontWeight: "700" },
+  section: { color: HUD.lime, fontSize: 11, fontWeight: "800", letterSpacing: 2 },
+  panel: {
+    borderRadius: 16,
+    padding: 14,
+    gap: 10,
+    overflow: "hidden",
+  },
   gauge: { flexDirection: "row", alignItems: "center", gap: 10 },
-  gaugeLabel: { color: HUD.soft, fontSize: 12, width: 66 },
-  track: { flex: 1, height: 6, borderRadius: 3, backgroundColor: HUD.line, overflow: "hidden" },
-  fill: { height: 6, borderRadius: 3 },
-  gaugeValue: { color: HUD.ink, fontSize: 12, minWidth: 96, textAlign: "right" },
+  gaugeLabel: { color: HUD.soft, fontSize: 12, width: 66, fontWeight: "600" },
+  track: { flex: 1, height: 8, borderRadius: 4, backgroundColor: "rgba(0, 0, 0, 0.55)", overflow: "hidden" },
+  fill: { height: 8, borderRadius: 4 },
+  gaugeValue: { color: HUD.ink, fontSize: 12, minWidth: 96, textAlign: "right", fontVariant: ["tabular-nums"] },
 });

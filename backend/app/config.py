@@ -239,7 +239,7 @@ def load_settings() -> Settings:
 
     cors_origins = tuple(
         origin.strip().rstrip("/")
-        for origin in os.getenv("CORS_ORIGINS", "" if production else "http://localhost:8081").split(",")
+        for origin in os.getenv("CORS_ORIGINS", "" if production else "http://localhost:8081,http://127.0.0.1:8081,http://10.113.97.202:8081").split(",")
         if origin.strip()
     )
     if "*" in cors_origins:

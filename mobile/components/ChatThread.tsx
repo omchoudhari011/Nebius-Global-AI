@@ -38,21 +38,32 @@ const useStyles = themed((t) => ({
   rowUser: { alignSelf: "flex-end", alignItems: "flex-end" },
   rowAssistant: { alignSelf: "flex-start" },
   bubble: { paddingHorizontal: 16, paddingVertical: 12, borderRadius: radius.lg },
-  bubbleUser: { borderBottomRightRadius: 8, ...softShadow(t) },
-  bubbleAssistant: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.hairline, borderBottomLeftRadius: 8, ...softShadow(t) },
-  textUser: { color: t.onBubble, fontSize: 16, lineHeight: 23 },
+  bubbleUser: {
+    borderBottomRightRadius: 6,
+    ...softShadow(t, 2),
+  },
+  bubbleAssistant: {
+    borderBottomLeftRadius: 6,
+    ...softShadow(t, 1),
+  },
+  textUser: { color: t.ink, fontSize: 16, lineHeight: 23 },
   textAssistant: { color: t.ink, fontSize: 16, lineHeight: 23 },
   assistantLine: { flexDirection: "row", alignItems: "flex-end", gap: space.sm },
-  under: { paddingLeft: 36, gap: 6 },
+  under: { paddingLeft: 38, gap: 6 },
   failed: { color: t.danger, fontSize: 13 },
   retry: { color: t.danger, fontSize: 13, fontWeight: "700", textDecorationLine: "underline" },
   provenance: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
   thinking: { flexDirection: "row", alignItems: "center", gap: space.sm, alignSelf: "flex-start", paddingVertical: space.xs },
-  thinkingBubble: { backgroundColor: t.surface, borderRadius: radius.lg, borderBottomLeftRadius: 8, paddingHorizontal: 16,
-    paddingVertical: 10, borderWidth: 1, borderColor: t.hairline },
-  thinkingText: { color: t.inkSoft, fontSize: 15 },
-  actions: { flexDirection: "row", gap: 2, marginLeft: -6 },
-  action: { width: 34, height: 30, alignItems: "center", justifyContent: "center", borderRadius: radius.sm },
+  thinkingBubble: {
+    borderRadius: radius.lg,
+    borderBottomLeftRadius: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    ...softShadow(t, 1),
+  },
+  thinkingText: { color: t.accentText, fontSize: 14, fontWeight: "700", letterSpacing: 0.5 },
+  actions: { flexDirection: "row", gap: 6, marginLeft: -4, marginTop: 2 },
+  action: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderRadius: radius.pill, backgroundColor: t.surface, ...softShadow(t, 1) },
 }));
 
 function Provenance({ used }: { used: Used }) {
@@ -127,14 +138,19 @@ export function ChatThread({
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-        ListEmptyComponent={pending ? null : <>{empty}</>}
+        ListEmptyComponent={!pending && empty ? () => <>{empty}</> : null}
         ListFooterComponent={
           pending ? (
             <View style={s.thinking} accessibilityLiveRegion="polite" accessibilityLabel="Custodian is thinking">
               <Orb size={28} mood="thinking" />
-              <View style={s.thinkingBubble}>
+              <LinearGradient
+                colors={t.gradients.assistantBubble}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={s.thinkingBubble}
+              >
                 <Text style={s.thinkingText}>Thinking…</Text>
-              </View>
+              </LinearGradient>
             </View>
           ) : null
         }
@@ -144,7 +160,7 @@ export function ChatThread({
             <View style={[s.row, mine ? s.rowUser : s.rowAssistant]}>
               {mine ? (
                 <LinearGradient
-                  colors={[t.bubbleTop, t.bubbleBottom]}
+                  colors={t.gradients.userBubble}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={[s.bubble, s.bubbleUser]}
@@ -156,11 +172,16 @@ export function ChatThread({
               ) : (
                 <View style={s.assistantLine}>
                   <Orb size={28} still />
-                  <View style={[s.bubble, s.bubbleAssistant, { flexShrink: 1 }]}>
+                  <LinearGradient
+                    colors={t.gradients.assistantBubble}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0.9, y: 1 }}
+                    style={[s.bubble, s.bubbleAssistant, { flexShrink: 1 }]}
+                  >
                     <Text selectable style={s.textAssistant}>
                       {item.content}
                     </Text>
-                  </View>
+                  </LinearGradient>
                 </View>
               )}
               <View style={mine ? { alignItems: "flex-end", gap: 6 } : s.under}>

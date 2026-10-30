@@ -10,6 +10,7 @@
 // Auth: the web build uses the httpOnly session cookie (credentials: "include"); the native
 // app sends the token it keeps in the device keychain as a Bearer header.
 
+import Constants from "expo-constants";
 import { Platform } from "react-native";
 
 import type {
@@ -65,9 +66,27 @@ export function errorMessage(err: unknown): string {
 }
 
 export function defaultApiBase(): string {
-  if (Platform.OS === "web" && !__DEV__) return ""; // a developer's EXPO_PUBLIC_API_BASE mustn't pin it to localhost
+  if (Platform.OS === "web") {
+    if (!__DEV__) return ""; // a developer's EXPO_PUBLIC_API_BASE mustn't pin it to localhost
+    if (typeof window !== "undefined" && window.location?.hostname) {
+      const host = window.location.hostname;
+      if (host && host !== "localhost" && host !== "127.0.0.1") {
+        return `http://${host}:8000`;
+      }
+    }
+  }
+
   const fromEnv = process.env.EXPO_PUBLIC_API_BASE;
   if (fromEnv && fromEnv.trim()) return normalizeBase(fromEnv);
+
+  const hostUri = Constants.expoConfig?.hostUri ?? (Constants as any).manifest2?.extra?.expoGo?.debuggerHost;
+  if (hostUri) {
+    const host = hostUri.split(":")[0];
+    if (host && host !== "localhost" && host !== "127.0.0.1") {
+      return `http://${host}:8000`;
+    }
+  }
+
   return "http://localhost:8000";
 }
 
@@ -141,7 +160,24 @@ async function request<T>(path: string, { method = "GET", body, timeoutMs = 30_0
     throw new ApiError(res.status, detail);
   }
   if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  const rawText = await res.text();
+  try {
+    return JSON.parse(rawText) as T;
+  } catch {
+    if (rawText.trim().startsWith("<")) {
+      if (apiBase.includes(":8081")) {
+        throw new ApiError(
+          res.status,
+          "Connected to port 8081 (Expo app bundler) instead of the backend. Please change the Server port to 8000 (http://10.113.97.202:8000).",
+        );
+      }
+      throw new ApiError(
+        res.status,
+        `The server returned a web page instead of API data. Ensure the Server address points to the backend on port 8000.`,
+      );
+    }
+    throw new ApiError(res.status, "The server returned an invalid response.");
+  }
 }
 
 // Auth --------------------------------------------------------------------------------

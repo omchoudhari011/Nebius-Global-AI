@@ -75,8 +75,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [restore]);
 
   const signIn = useCallback(async (passcode: string, url?: string) => {
-    if (url !== undefined && Platform.OS !== "web") {
-      api.configureApi({ base: url });
+    let cleanUrl = url?.trim();
+    if (cleanUrl && /:8081\/?$/.test(cleanUrl)) {
+      cleanUrl = cleanUrl.replace(/:8081\/?$/, ":8000");
+    }
+    if (cleanUrl !== undefined && Platform.OS !== "web") {
+      api.configureApi({ base: cleanUrl });
       setServerUrl(api.getApiBase());
     }
     const res = await api.login(passcode);

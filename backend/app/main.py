@@ -55,6 +55,12 @@ HTML_CSP = (
 )
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+# Development only: the Expo dev server (and a phone running it) on this PC or the local network.
+# Public sites on those ports stay cross-site.
+DEV_ORIGIN = re.compile(
+    r"^https?://(?:localhost|127\.0\.0\.1|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}"
+    r"|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}):(?:8081|8000|19000|19006)$"
+)
 # The largest real request is a chat message (8,000 characters, under 50 KB as escaped JSON).
 MAX_BODY_BYTES = 256 * 1024
 # Uploads: a 10 MB file is ~13.4 MB in base64; a voice message is sent as raw audio.
@@ -108,6 +114,8 @@ def _is_cross_site_write(request: Request, settings: Settings) -> bool:
     origin = request.headers.get("Origin")
     if origin:
         if origin.rstrip("/") in settings.cors_origins:
+            return False
+        if not settings.is_production and DEV_ORIGIN.match(origin.rstrip("/")):
             return False
         return urlsplit(origin).netloc.lower() != request.headers.get("Host", "").lower()
     return request.headers.get("Sec-Fetch-Site") == "cross-site"
@@ -186,6 +194,7 @@ def create_app() -> FastAPI:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=list(settings.cors_origins),
+            allow_origin_regex=None if production else DEV_ORIGIN.pattern,
             allow_credentials=True,
             allow_methods=["GET", "POST", "PATCH", "DELETE"],
             allow_headers=["Content-Type", "Authorization", "X-Request-ID"],

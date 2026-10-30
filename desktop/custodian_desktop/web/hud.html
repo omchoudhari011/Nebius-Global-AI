@@ -3,45 +3,38 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CUSTODIAN</title>
+<title>J.A.R.V.I.S.</title>
 <!-- The Jarvis HUD. Shown by custodian_desktop/hud_window.py (pywebview), which passes in
      messages from the desktop app with hud.receive({...}); hud.html?demo shows made-up data in
      any browser. Everything is in this file: no fonts or scripts from the internet. -->
 <style>
 :root {
-  --bg: #03070d;
-  --bg2: #071422;
-  --panel: rgba(10, 30, 48, 0.55);
-  --line: rgba(64, 200, 255, 0.22);
-  --line-strong: rgba(64, 200, 255, 0.55);
-  --cyan: #45d3ff;
-  --cyan-bright: #a8ecff;
-  --ink: #d6f3ff;
-  --ink-dim: #7fa9bf;
-  --amber: #ffb547;
-  --red: #ff6464;
-  --green: #5cf2b0;
+  --bg: #181C23;
+  --bg2: #12151B;
+  --panel: #181C23;
+  --panel-sunken: #12151B;
+  --neu-light: rgba(255, 255, 255, 0.065);
+  --neu-dark: rgba(7, 9, 13, 0.70);
+  --line: rgba(255, 255, 255, 0.05);
+  --line-strong: rgba(0, 229, 188, 0.4);
+  --cyan: #00E5BC; /* Electric Turquoise */
+  --cyan-bright: #C9E750; /* Primary Luminous Lime */
+  --ink: #F0F4F8;
+  --ink-dim: #8695A6;
+  --amber: #E5B83B;
+  --red: #FF5E5E;
+  --green: #4CD964; /* Bioluminescent Green */
+  --emerald: #00E5BC;
   --level: 0;
-  --font: "Bahnschrift", "DIN", "Segoe UI", system-ui, sans-serif;
+  --font: "Space Grotesk", "Bahnschrift", "DIN", "Segoe UI", system-ui, sans-serif;
   --mono: "Cascadia Mono", "Consolas", monospace;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
 body {
-  background: radial-gradient(ellipse at 50% 38%, var(--bg2) 0%, var(--bg) 62%);
+  background: var(--bg);
   color: var(--ink); font-family: var(--font); overflow: hidden; user-select: none;
   -webkit-font-smoothing: antialiased;
-}
-/* faint grid and scanlines */
-body::before {
-  content: ""; position: fixed; inset: 0; pointer-events: none;
-  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
-  background-size: 48px 48px; opacity: 0.18;
-  mask-image: radial-gradient(ellipse at center, #000 30%, transparent 78%);
-}
-body::after {
-  content: ""; position: fixed; inset: 0; pointer-events: none;
-  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0 1px, transparent 1px 3px);
 }
 .label { font-size: 11px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--ink-dim); }
 .value { font-variant-numeric: tabular-nums; }
@@ -50,25 +43,28 @@ body::after {
 .frame { position: relative; height: 100%; display: grid; grid-template-columns: minmax(0, 1fr); padding: 18px 22px; gap: 14px; }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; -webkit-app-region: drag; }
 .brand { display: flex; align-items: baseline; gap: 14px; }
-.wordmark { font-size: 22px; font-weight: 600; letter-spacing: 0.42em; color: var(--cyan-bright); text-shadow: 0 0 18px rgba(69,211,255,.55); }
+.wordmark { font-size: 22px; font-weight: 700; letter-spacing: 0.42em; color: var(--cyan-bright); text-shadow: 0 0 18px rgba(201, 231, 80, .55); }
 .link { display: flex; align-items: center; gap: 7px; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); }
 .dot.off { background: var(--red); box-shadow: 0 0 10px var(--red); }
 .clock { font-size: 22px; letter-spacing: 0.08em; color: var(--ink); }
-.controls { display: flex; gap: 6px; -webkit-app-region: no-drag; }
+.controls { display: flex; gap: 10px; -webkit-app-region: no-drag; }
 .btn {
-  height: 28px; min-width: 28px; padding: 0 10px; border: 1px solid var(--line-strong); background: rgba(69,211,255,.06);
-  color: var(--cyan); font: 600 12px var(--font); letter-spacing: 0.18em; cursor: pointer; border-radius: 3px;
+  height: 32px; min-width: 32px; padding: 0 14px; border: none; background: var(--panel);
+  color: var(--cyan); font: 700 12px var(--font); letter-spacing: 0.18em; cursor: pointer; border-radius: 999px;
+  box-shadow: -4px -4px 10px var(--neu-light), 4px 4px 10px var(--neu-dark);
+  transition: all .2s ease;
 }
-.btn:hover { background: rgba(69,211,255,.16); color: var(--cyan-bright); }
+.btn:hover { color: var(--cyan-bright); box-shadow: -2px -2px 6px var(--neu-light), 2px 2px 6px var(--neu-dark); }
+.btn:active { box-shadow: inset 2px 2px 5px var(--neu-dark), inset -2px -2px 5px var(--neu-light); transform: scale(0.98); }
 .btn:focus-visible { outline: 2px solid var(--cyan-bright); outline-offset: 2px; }
 
-/* bracketed panels */
-.panel { position: relative; background: var(--panel); border: 1px solid var(--line); padding: 14px 16px; border-radius: 2px; }
-.panel::before, .panel::after { content: ""; position: absolute; width: 14px; height: 14px; border: 2px solid var(--cyan); opacity: .8; }
-.panel::before { top: -2px; left: -2px; border-right: none; border-bottom: none; }
-.panel::after { bottom: -2px; right: -2px; border-left: none; border-top: none; }
-.panel h2 { font-size: 12px; font-weight: 600; letter-spacing: 0.3em; color: var(--cyan); margin-bottom: 12px; display: flex; justify-content: space-between; }
+/* Neumorphic Extruded Panels */
+.panel {
+  position: relative; background: var(--panel); border: 1px solid rgba(255, 255, 255, 0.04); padding: 16px 18px; border-radius: 18px;
+  box-shadow: -6px -6px 16px var(--neu-light), 6px 6px 16px var(--neu-dark);
+}
+.panel h2 { font-size: 12px; font-weight: 700; letter-spacing: 0.3em; color: var(--cyan-bright); margin-bottom: 12px; display: flex; justify-content: space-between; }
 .panel h2 small { color: var(--ink-dim); font-weight: 400; letter-spacing: .15em; }
 
 /* ---------- the core ---------- */
@@ -78,50 +74,53 @@ body::after {
 .reactor svg { width: 100%; height: 100%; overflow: visible; }
 .ring { fill: none; stroke: var(--cyan); transform-origin: 150px 150px; }
 .r-outer { stroke-width: 1; stroke-dasharray: 2 6; opacity: .55; animation: spin 60s linear infinite; }
-.r-ticks { stroke-width: 7; stroke-dasharray: 1 11.1; opacity: .45; animation: spin 40s linear infinite reverse; }
-.r-segments { stroke-width: 9; stroke-dasharray: 52 13; opacity: calc(.35 + var(--level) * .65); animation: spin 18s linear infinite;
-  filter: drop-shadow(0 0 6px var(--cyan)); }
-.r-inner { stroke-width: 2; opacity: .8; stroke-dasharray: 110 30; animation: spin 9s linear infinite reverse; }
-.r-arc { stroke-width: 3; stroke-linecap: round; stroke-dasharray: 60 400; opacity: 0; transition: opacity .3s; animation: spin 1.1s linear infinite; }
-.core { fill: url(#coreGlow); transform-origin: 150px 150px; transform: scale(calc(.82 + var(--level) * .35)); transition: transform .08s linear; }
-.core-ring { fill: none; stroke: var(--cyan-bright); stroke-width: 2.5; opacity: .9; filter: drop-shadow(0 0 10px var(--cyan)); }
-.halo { position: absolute; inset: 14%; border-radius: 50%; box-shadow: 0 0 calc(40px + var(--level) * 90px) rgba(69,211,255,calc(.18 + var(--level) * .4)); pointer-events: none; }
+.r-ticks { stroke-width: 7; stroke-dasharray: 1 11.1; opacity: .45; animation: spin 40s linear infinite reverse; stroke: var(--emerald); }
+.r-segments { stroke-width: 9; stroke-dasharray: 52 13; opacity: calc(.4 + var(--level) * .6); animation: spin 18s linear infinite;
+  stroke: var(--cyan); filter: drop-shadow(0 0 8px var(--cyan)); }
+.r-inner { stroke-width: 2; opacity: .85; stroke-dasharray: 110 30; stroke: var(--cyan-bright); animation: spin 9s linear infinite reverse; }
+.r-arc { stroke-width: 3.5; stroke-linecap: round; stroke-dasharray: 60 400; opacity: 0; transition: opacity .3s; stroke: var(--cyan-bright); animation: spin 1.1s linear infinite; }
+.core { fill: url(#coreGlow); transform-origin: 150px 150px; transform: scale(calc(.84 + var(--level) * .35)); transition: transform .08s linear; }
+.core-ring { fill: none; stroke: var(--cyan-bright); stroke-width: 2.5; opacity: .9; filter: drop-shadow(0 0 12px var(--cyan-bright)); }
+.halo { position: absolute; inset: 12%; border-radius: 50%; box-shadow: 0 0 calc(45px + var(--level) * 90px) rgba(0,229,188,calc(.22 + var(--level) * .45)); pointer-events: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
-@keyframes breathe { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
-@keyframes talk { 0%, 100% { transform: scale(.88); } 35% { transform: scale(1.06); } 70% { transform: scale(.95); } }
+@keyframes breathe { 0%, 100% { opacity: .55; transform: scale(0.96); } 50% { opacity: 1; transform: scale(1.04); } }
+@keyframes talk { 0%, 100% { transform: scale(.88); } 35% { transform: scale(1.08); } 70% { transform: scale(.95); } }
 
 body.idle .core { animation: breathe 4s ease-in-out infinite; }
-body.listening .r-segments { animation-duration: 6s; }
+body.listening .r-segments { animation-duration: 6s; stroke: var(--cyan); }
 body.listening .r-outer { animation-duration: 20s; }
 body.thinking .r-arc { opacity: 1; }
-body.thinking .r-segments { animation-duration: 2.4s; }
+body.thinking .r-segments { animation-duration: 2.4s; stroke: var(--cyan-bright); }
 body.thinking .r-inner { animation-duration: 2s; }
 body.speaking .core { animation: talk .6s ease-in-out infinite; }
-body.speaking .r-segments { opacity: .95; }
+body.speaking .r-segments { opacity: .95; stroke: var(--cyan-bright); }
 body.alert { --cyan: var(--amber); --cyan-bright: #ffe2b0; }
 
-.status { margin-top: 10px; text-align: center; font-size: 13px; letter-spacing: .5em; color: var(--cyan); text-shadow: 0 0 12px rgba(69,211,255,.6); }
+.status {
+  margin-top: 12px; text-align: center; font-size: 13px; letter-spacing: .45em; color: var(--cyan);
+  font-weight: 700; padding: 7px 20px; border-radius: 999px; background: var(--panel);
+  box-shadow: -4px -4px 10px var(--neu-light), 4px 4px 10px var(--neu-dark); display: inline-block;
+}
 .captions { text-align: center; width: 100%; max-width: 720px; margin: 10px auto 0; min-height: 3.5em; overflow-wrap: anywhere; }
 .heard { color: var(--ink-dim); font-style: italic; font-size: 15px; line-height: 1.4; }
-.reply { margin-top: 8px; font-size: 19px; line-height: 1.45; color: var(--ink); text-shadow: 0 0 14px rgba(69,211,255,.25); }
-.reply .caret { display: inline-block; width: .5em; height: 1em; background: var(--cyan); vertical-align: -2px; margin-left: 2px; animation: breathe .9s steps(2) infinite; }
+.reply { margin-top: 8px; font-size: 19px; line-height: 1.45; color: var(--ink); text-shadow: 0 0 14px rgba(0,229,188,.25); }
+.reply .caret { display: inline-block; width: .5em; height: 1em; background: var(--cyan-bright); vertical-align: -2px; margin-left: 2px; animation: breathe .9s steps(2) infinite; }
 .offer { margin-top: 12px; display: none; }
 .offer.on { display: inline-flex; }
 
 /* ---------- systems ---------- */
 .gauges { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
 .gauge { text-align: center; }
-.gauge svg { width: 100%; max-width: 92px; aspect-ratio: 1; }
-.gauge .track { fill: none; stroke: rgba(69,211,255,.12); stroke-width: 7; }
-.gauge .fill { fill: none; stroke: var(--cyan); stroke-width: 7; stroke-linecap: butt; transform: rotate(-90deg); transform-origin: 50px 50px;
-  transition: stroke-dashoffset .8s ease, stroke .4s; filter: drop-shadow(0 0 4px rgba(69,211,255,.6)); }
+.gauge .track { fill: none; stroke: rgba(0, 0, 0, .45); stroke-width: 7; }
+.gauge .fill { fill: none; stroke: var(--cyan); stroke-width: 7; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50px 50px;
+  transition: stroke-dashoffset .8s ease, stroke .4s; filter: drop-shadow(0 0 6px rgba(0, 229, 188, .75)); }
 .gauge .fill.warn { stroke: var(--amber); } .gauge .fill.bad { stroke: var(--red); }
-.gauge text { fill: var(--ink); font: 600 20px var(--font); text-anchor: middle; dominant-baseline: central; }
+.gauge text { fill: var(--ink); font: 700 20px var(--font); text-anchor: middle; dominant-baseline: central; }
 .gauge .label { margin-top: 2px; font-size: 10px; }
 .rows { display: grid; gap: 9px; }
 .row { display: grid; grid-template-columns: 84px 1fr auto; align-items: center; gap: 10px; font-size: 13px; }
-.bar { height: 5px; background: rgba(69,211,255,.12); position: relative; overflow: hidden; }
-.bar i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); transition: width .8s ease; }
+.bar { height: 8px; background: var(--panel-sunken); box-shadow: inset 1px 1px 3px var(--neu-dark), inset -1px -1px 3px var(--neu-light); position: relative; overflow: hidden; border-radius: 4px; }
+.bar i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); transition: width .8s ease; border-radius: 4px; }
 .bar i.warn { background: var(--amber); box-shadow: 0 0 8px var(--amber); } .bar i.bad { background: var(--red); box-shadow: 0 0 8px var(--red); }
 canvas.spark { width: 100%; height: 46px; display: block; margin: 4px 0 10px; }
 .apps { display: grid; gap: 4px; font-size: 12px; color: var(--ink-dim); margin-top: 10px; }
@@ -179,7 +178,7 @@ body.compact .heard { font-size: 13px; }
 <div class="frame">
   <header class="topbar pywebview-drag-region">
     <div class="brand">
-      <span class="wordmark">CUSTODIAN</span>
+      <span class="wordmark">J.A.R.V.I.S.</span>
       <span class="link label"><span class="dot" id="linkDot"></span><span id="linkText">Custodian online</span></span>
     </div>
     <span class="clock value" id="clock">--:--:--</span>
@@ -206,7 +205,7 @@ body.compact .heard { font-size: 13px; }
       </div>
     </section>
 
-    <section class="core-wrap" aria-label="Custodian">
+    <section class="core-wrap" aria-label="Jarvis">
       <div>
         <div class="reactor" id="reactor">
           <div class="halo"></div>
@@ -214,9 +213,10 @@ body.compact .heard { font-size: 13px; }
             <defs>
               <radialGradient id="coreGlow">
                 <stop offset="0%" stop-color="#ffffff"/>
-                <stop offset="35%" stop-color="#bff1ff"/>
-                <stop offset="70%" stop-color="#45d3ff" stop-opacity=".55"/>
-                <stop offset="100%" stop-color="#45d3ff" stop-opacity="0"/>
+                <stop offset="26%" stop-color="#C9E750"/>
+                <stop offset="60%" stop-color="#23DFBC" stop-opacity=".75"/>
+                <stop offset="85%" stop-color="#17844B" stop-opacity=".45"/>
+                <stop offset="100%" stop-color="#0E1B1A" stop-opacity="0"/>
               </radialGradient>
             </defs>
             <circle class="ring r-outer" cx="150" cy="150" r="146"/>
@@ -360,14 +360,14 @@ body.compact .heard { font-size: 13px; }
     const c = $("spark"), ctx = c.getContext("2d");
     const w = c.width, h = c.height;
     ctx.clearRect(0, 0, w, h);
-    const color = getComputedStyle(document.body).getPropertyValue("--cyan").trim() || "#45d3ff";
-    ctx.strokeStyle = "rgba(69,211,255,.14)";
+    const color = getComputedStyle(document.body).getPropertyValue("--cyan").trim() || "#23DFBC";
+    ctx.strokeStyle = "rgba(35, 223, 188, .16)";
     for (let y = 0; y <= 4; y++) { ctx.beginPath(); ctx.moveTo(0, (h / 4) * y); ctx.lineTo(w, (h / 4) * y); ctx.stroke(); }
     if (cpuHistory.length < 2) return;
     const step = w / 59;
     const off = 60 - cpuHistory.length;
     const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, "rgba(69,211,255,.35)"); grad.addColorStop(1, "rgba(69,211,255,0)");
+    grad.addColorStop(0, "rgba(35, 223, 188, .38)"); grad.addColorStop(1, "rgba(23, 132, 75, 0)");
     ctx.beginPath();
     cpuHistory.forEach((v, i) => { const x = (off + i) * step, y = h - (v / 100) * (h - 4) - 2; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
     ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.shadowColor = color; ctx.shadowBlur = 8; ctx.stroke();
@@ -473,7 +473,7 @@ body.compact .heard { font-size: 13px; }
       battery: { percent: 84, charging: true }, disks: [{ drive: "C:\\", free_gb: 120.5, total_gb: 476 }, { drive: "D:\\", free_gb: 312, total_gb: 931 }],
       network: { online: true, down_kbps: 4200, up_kbps: 380 }, top_apps: [{ app: "chrome", cpu_percent: 6.1, memory_mb: 1210 }, { app: "Code", cpu_percent: 2.3, memory_mb: 640 }] };
     cpuHistory.pop(); stats(reading);
-    receive({ type: "heard", text: "Vitrus, what's my day looking like?" });
+    receive({ type: "heard", text: "Jarvis, what's my day looking like?" });
     receive({ type: "reply", text: "Good afternoon, sir. You have a design review at four and the gym at half past six. It's 26 degrees and overcast in Pune." });
     receive({ type: "state", state: query.get("state") || "speaking" });
     target = 0.6;

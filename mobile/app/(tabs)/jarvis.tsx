@@ -6,13 +6,15 @@ import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Linking, Platform, RefreshControl, ScrollView, View } from "react-native";
 
+import { LinearGradient } from "expo-linear-gradient";
 import { ApprovalPrompt } from "../../components/ApprovalPrompt";
+import { Orb } from "../../components/Orb";
 import { PcHud } from "../../components/PcHud";
 import { Text } from "../../components/Typography";
 import { Button, Card, Chip, Field, IconButton, Notice, ScreenGradient, ScreenHeader, SectionTitle, Segmented, ToggleSwitch } from "../../components/ui";
 import * as api from "../../lib/api";
 import { confirmAction, formatWhen } from "../../lib/format";
-import { space, themed, useTokens } from "../../lib/tokens";
+import { radius, softShadow, space, themed, useTokens } from "../../lib/tokens";
 import type { Activity, HudSnapshot, Integration, LearningStatus, Prefs, PushInfo, Routine, VoiceLanguage } from "../../lib/types";
 
 type IconName = Parameters<typeof Button>[0]["icon"];
@@ -40,7 +42,7 @@ const SETTINGS: { key: keyof Prefs; label: string; hint: string }[] = [
 ];
 
 const PERSONAS: { value: Prefs["persona"]; label: string }[] = [
-  { value: "jarvis", label: "Custodian" },
+  { value: "jarvis", label: "Jarvis" },
   { value: "plain", label: "Plain" },
 ];
 const LANGUAGES: { value: VoiceLanguage; label: string }[] = [
@@ -53,6 +55,42 @@ const LANGUAGES: { value: VoiceLanguage; label: string }[] = [
 const useStyles = themed((t) => ({
   screen: { flex: 1, backgroundColor: t.bg },
   content: { padding: space.lg, paddingTop: 0, gap: space.lg, width: "100%", maxWidth: 760, alignSelf: "center" },
+  hero: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: space.md,
+    gap: space.md,
+  },
+  orbDish: {
+    width: 152,
+    height: 152,
+    borderRadius: 76,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    ...softShadow(t, 2),
+  },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 9,
+    borderRadius: radius.pill,
+    overflow: "hidden",
+    ...softShadow(t, 1),
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusText: {
+    color: t.accentText,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 2,
+  },
   title: { fontSize: 17, fontWeight: "700", color: t.ink },
   body: { color: t.ink, fontSize: 15, lineHeight: 21 },
   meta: { color: t.inkSoft, fontSize: 13, lineHeight: 18 },
@@ -318,7 +356,7 @@ export default function JarvisScreen() {
   return (
     <View style={s.screen}>
       <ScreenGradient />
-      <ScreenHeader title="Custodian" subtitle={pc?.connected ? `Connected to ${pc.device ?? "your PC"}` : "Your PC isn't connected"} />
+      <ScreenHeader title="Jarvis" subtitle={pc?.connected ? `Connected to ${pc.device ?? "your PC"}` : "Your PC isn't connected"} />
       <ScrollView
         contentContainerStyle={s.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} tintColor={t.accent2} />}
@@ -327,6 +365,31 @@ export default function JarvisScreen() {
         {error ? <Notice message={error} actionLabel="Dismiss" onAction={() => setError(null)} /> : null}
         {loading ? <ActivityIndicator color={t.accent2} /> : null}
         <ApprovalPrompt active={busy !== null} />
+        {/* Signature Kinetic AI Core */}
+        <View style={s.hero}>
+          <LinearGradient
+            colors={t.gradients.hudBezel}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={s.orbDish}
+          >
+            <Orb
+              size={116}
+              mood={busy ? "thinking" : pc?.connected ? "idle" : "disconnected"}
+            />
+          </LinearGradient>
+          <LinearGradient
+            colors={["rgba(16, 44, 38, 0.94)", "rgba(8, 22, 19, 0.98)"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={s.statusBadge}
+          >
+            <View style={[s.statusDot, { backgroundColor: pc?.connected ? t.bioGreen : t.inkSoft }]} />
+            <Text style={s.statusText}>
+              {busy ? "PROCESSING COMMAND" : pc?.connected ? "JARVIS ONLINE · STANDING BY" : "CORE DISCONNECTED"}
+            </Text>
+          </LinearGradient>
+        </View>
 
         <PcHud hud={hud} connected={Boolean(pc?.connected)} />
 
@@ -412,8 +475,8 @@ export default function JarvisScreen() {
             <View style={s.divider} />
             <Text style={s.body}>How the PC talks when you speak to it</Text>
             <Segmented options={PERSONAS} value={prefs.persona} onChange={(v) => void savePrefs("persona", { persona: v })} />
-            <Text style={s.meta}>Custodian is calm, brief and polite, and calls you what you choose below. Typed chats keep Custodian's own voice.</Text>
-            <Field label="Custodian calls you" value={address} onChangeText={setAddress} placeholder="sir" maxLength={40} autoCorrect={false} />
+            <Text style={s.meta}>Jarvis is calm, brief and polite, and calls you what you choose below. Typed chats keep Custodian's own voice.</Text>
+            <Field label="Jarvis calls you" value={address} onChangeText={setAddress} placeholder="sir" maxLength={40} autoCorrect={false} />
             <Field label="Your city, for the weather" value={city} onChangeText={setCity} maxLength={40}
               placeholder="Empty: the city your memories say you live in" />
             <Field label="Wrap up my day at" value={evening} onChangeText={setEvening} maxLength={5} autoCorrect={false}
